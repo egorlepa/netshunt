@@ -265,6 +265,14 @@ func InstallOpkgDeps(ctx context.Context, packages []string) error {
 	return platform.RunSilent(ctx, "opkg", args...)
 }
 
+// UninstallNDMHooks removes all NDM hook scripts installed by KST.
+func UninstallNDMHooks() {
+	for _, h := range ndmHooks {
+		dest := filepath.Join(platform.NDMDir, h.subdir, h.name)
+		os.Remove(dest)
+	}
+}
+
 func hookEvent(h ndmHook) string {
 	switch h.subdir {
 	case "fs.d":

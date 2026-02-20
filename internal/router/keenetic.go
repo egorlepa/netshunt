@@ -158,6 +158,33 @@ func (c *Client) EnableDNSOverride(ctx context.Context) error {
 	return nil
 }
 
+// DisableDNSOverride disables opkg dns-override, returning DNS control to Keenetic.
+// Equivalent to: no opkg dns-override && system configuration save
+func (c *Client) DisableDNSOverride(ctx context.Context) error {
+	url := rciBaseURL + "/opkg/dns-override"
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("rci disable dns-override: %w", err)
+	}
+	resp.Body.Close()
+
+	saveURL := rciBaseURL + "/system/configuration/save"
+	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, saveURL, nil)
+	if err != nil {
+		return err
+	}
+	resp2, err := c.http.Do(req2)
+	if err != nil {
+		return fmt.Errorf("rci save config: %w", err)
+	}
+	resp2.Body.Close()
+	return nil
+}
+
 // IsInternetConnected checks if the router has internet connectivity.
 func (c *Client) IsInternetConnected(ctx context.Context) (bool, error) {
 	data, err := c.rciGet(ctx, "show/internet/status")
