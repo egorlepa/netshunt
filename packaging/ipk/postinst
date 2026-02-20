@@ -1,0 +1,27 @@
+#!/bin/sh
+
+chmod +x /opt/bin/kst
+
+# Create config directory.
+mkdir -p /opt/etc/kst
+
+# Install NDM hooks if directory exists.
+if [ -d /opt/etc/ndm ]; then
+    for dir in fs.d netfilter.d ifstatechanged.d ifcreated.d ifdestroyed.d wan.d; do
+        if [ -d "/opt/etc/ndm/$dir" ]; then
+            for f in /opt/etc/kst/ndm/"$dir"/*; do
+                [ -f "$f" ] && cp "$f" "/opt/etc/ndm/$dir/"
+            done
+        fi
+    done
+fi
+
+# Install init.d script.
+if [ -d /opt/etc/init.d ]; then
+    cp /opt/etc/kst/init.d/S96kst /opt/etc/init.d/S96kst
+    chmod +x /opt/etc/init.d/S96kst
+fi
+
+echo ""
+echo "KST installed successfully."
+echo "Run 'kst setup' to configure."

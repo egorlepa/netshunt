@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Remove NDM hooks.
+for f in 100-ipset 100-proxy-redirect 100-dns-local 100-unblock kst-iface-add kst-iface-del internet-up; do
+    find /opt/etc/ndm -name "$f" -delete 2>/dev/null || true
+done
+
+# Remove init.d script.
+rm -f /opt/etc/init.d/S96kst
+
+# Remove binary.
+rm -f /opt/bin/kst
+
+echo "KST removed. Config files left in /opt/etc/kst/."

@@ -1,0 +1,33 @@
+#!/bin/sh
+
+PIDFILE=/var/run/kst.pid
+DAEMON=/opt/bin/kst
+
+case "$1" in
+  start)
+    echo "Starting kst daemon..."
+    $DAEMON update
+    start-stop-daemon -S -b -m -p $PIDFILE -x $DAEMON -- daemon
+    ;;
+  stop)
+    echo "Stopping kst daemon..."
+    start-stop-daemon -K -p $PIDFILE 2>/dev/null
+    rm -f $PIDFILE
+    ;;
+  restart)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  status)
+    if [ -f $PIDFILE ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
+      echo "kst daemon is running (PID $(cat $PIDFILE))"
+    else
+      echo "kst daemon is not running"
+    fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac

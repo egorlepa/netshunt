@@ -1,0 +1,81 @@
+package templates
+
+import "github.com/guras256/keenetic-split-tunnel/internal/config"
+
+templ SettingsPage(cfg *config.Config) {
+	@Layout("Settings", "settings") {
+		<h1 class="mb-16">Settings</h1>
+		<form hx-put="/settings" hx-swap="none">
+			<div class="grid-2">
+				<div class="card">
+					<h2>Shadowsocks</h2>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Server</label>
+						<input type="text" name="ss_server" value={ cfg.Shadowsocks.Server }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Server Port</label>
+						<input type="text" name="ss_server_port" value={ itoa(cfg.Shadowsocks.ServerPort) }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Local Port</label>
+						<input type="text" name="ss_local_port" value={ itoa(cfg.Shadowsocks.LocalPort) }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Password</label>
+						<input type="text" name="ss_password" value={ cfg.Shadowsocks.Password }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Method</label>
+						<input type="text" name="ss_method" value={ cfg.Shadowsocks.Method }/>
+					</div>
+				</div>
+				<div class="card">
+					<h2>DNS</h2>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Primary DNS</label>
+						<input type="text" name="dns_primary" value={ cfg.DNS.Primary }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Secondary DNS</label>
+						<input type="text" name="dns_secondary" value={ cfg.DNS.Secondary }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">dnsmasq Port</label>
+						<input type="text" name="dns_port" value={ itoa(cfg.DNS.DnsmasqPort) }/>
+					</div>
+				</div>
+			</div>
+			<div class="grid-2">
+				<div class="card">
+					<h2>Network</h2>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Entware Interface</label>
+						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
+					</div>
+				</div>
+				<div class="card">
+					<h2>Daemon</h2>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Web Listen Address</label>
+						<input type="text" name="web_listen" value={ cfg.Daemon.WebListen }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Resolve Interval</label>
+						<input type="text" name="resolve_interval" value={ cfg.Daemon.ResolveInterval }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Log Level</label>
+						<select name="log_level">
+							<option value="debug" if cfg.Daemon.LogLevel == "debug" { selected }>debug</option>
+							<option value="info" if cfg.Daemon.LogLevel == "info" { selected }>info</option>
+							<option value="warn" if cfg.Daemon.LogLevel == "warn" { selected }>warn</option>
+							<option value="error" if cfg.Daemon.LogLevel == "error" { selected }>error</option>
+						</select>
+					</div>
+				</div>
+			</div>
+			<button class="btn btn-accent" type="submit">Save Settings</button>
+		</form>
+	}
+}

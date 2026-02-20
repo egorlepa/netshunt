@@ -1,0 +1,68 @@
+package templates
+
+type ServiceStatus struct {
+	Name      string
+	Installed bool
+	Running   bool
+}
+
+type DashboardData struct {
+	Services   []ServiceStatus
+	IPSetCount int
+	GroupCount int
+	EntryCount int
+	Mode       string
+}
+
+templ Dashboard(data DashboardData) {
+	@Layout("Dashboard", "dashboard") {
+		<h1 class="mb-16">Dashboard</h1>
+		<div class="grid-2">
+			<div class="card">
+				<h2>Services</h2>
+				<table>
+					<thead>
+						<tr><th>Service</th><th>Status</th></tr>
+					</thead>
+					<tbody>
+						for _, svc := range data.Services {
+							<tr>
+								<td>{ svc.Name }</td>
+								<td>
+									if !svc.Installed {
+										<span class="badge badge-yellow">not installed</span>
+									} else if svc.Running {
+										<span class="badge badge-green">running</span>
+									} else {
+										<span class="badge badge-red">stopped</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			<div class="card">
+				<h2>Overview</h2>
+				<table>
+					<tbody>
+						<tr><td class="text-muted">Mode</td><td>{ data.Mode }</td></tr>
+						<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
+						<tr><td class="text-muted">Groups</td><td>{ itoa(data.GroupCount) }</td></tr>
+						<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
+					</tbody>
+				</table>
+				<div class="mt-8 flex gap-8">
+					<button class="btn btn-accent" hx-post="/actions/update" hx-swap="none">
+						Update
+						<span class="htmx-indicator">...</span>
+					</button>
+					<button class="btn" hx-post="/actions/restart" hx-swap="none">
+						Restart Services
+						<span class="htmx-indicator">...</span>
+					</button>
+				</div>
+			</div>
+		</div>
+	}
+}

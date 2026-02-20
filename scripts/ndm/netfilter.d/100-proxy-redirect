@@ -1,0 +1,2 @@
+#!/bin/sh
+[ "$type" = "iptables" ] && [ "$table" = "nat" ] && /opt/bin/kst hook netfilter "$type" "$table"

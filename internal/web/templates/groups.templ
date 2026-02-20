@@ -1,0 +1,109 @@
+package templates
+
+import "github.com/guras256/keenetic-split-tunnel/internal/group"
+
+templ GroupsPage(groups []group.Group) {
+	@Layout("Groups", "groups") {
+		<div class="flex-between mb-16">
+			<h1>Groups</h1>
+			<button class="btn btn-accent" onclick="document.getElementById('create-form').style.display='block'">
+				New Group
+			</button>
+		</div>
+		<div id="create-form" class="card mb-16" style="display:none">
+			<h2>Create Group</h2>
+			<form hx-post="/groups" hx-target="#group-list" hx-swap="innerHTML" class="flex gap-8 mt-8">
+				<input type="text" name="name" placeholder="Group name" required/>
+				<input type="text" name="description" placeholder="Description (optional)"/>
+				<button class="btn btn-accent" type="submit">Create</button>
+			</form>
+		</div>
+		<div id="group-list">
+			@GroupList(groups)
+		</div>
+	}
+}
+
+templ GroupList(groups []group.Group) {
+	if len(groups) == 0 {
+		<div class="card">
+			<p class="text-muted">No groups configured. Create one to get started.</p>
+		</div>
+	}
+	for _, g := range groups {
+		@GroupCard(g)
+	}
+}
+
+templ GroupCard(g group.Group) {
+	<div class="card" id={ "group-" + g.Name }>
+		<div class="flex-between mb-8">
+			<div class="flex gap-8" style="align-items:center">
+				<h2 style="margin:0">{ g.Name }</h2>
+				if g.Description != "" {
+					<span class="text-muted text-sm">{ g.Description }</span>
+				}
+				<span class="text-muted text-sm">({ itoa(len(g.Entries)) } entries)</span>
+			</div>
+			<div class="flex gap-8">
+				if g.Enabled {
+					<button
+						class="btn btn-sm"
+						hx-put={ "/groups/" + g.Name + "/disable" }
+						hx-target={ "#group-" + g.Name }
+						hx-swap="outerHTML"
+					>Disable</button>
+				} else {
+					<button
+						class="btn btn-sm btn-accent"
+						hx-put={ "/groups/" + g.Name + "/enable" }
+						hx-target={ "#group-" + g.Name }
+						hx-swap="outerHTML"
+					>Enable</button>
+				}
+				<button
+					class="btn btn-sm btn-danger"
+					hx-delete={ "/groups/" + g.Name }
+					hx-target={ "#group-" + g.Name }
+					hx-swap="outerHTML"
+					hx-confirm={ "Delete group \"" + g.Name + "\"?" }
+				>Delete</button>
+			</div>
+		</div>
+		if !g.Enabled {
+			<span class="badge badge-yellow mb-8">disabled</span>
+		}
+		<div id={ "entries-" + g.Name }>
+			@EntryList(g.Name, g.Entries)
+		</div>
+		<form
+			hx-post={ "/groups/" + g.Name + "/entries" }
+			hx-target={ "#entries-" + g.Name }
+			hx-swap="innerHTML"
+			class="flex gap-8 mt-8"
+		>
+			<input type="text" name="value" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8" required/>
+			<button class="btn btn-sm btn-accent" type="submit">Add</button>
+		</form>
+	</div>
+}
+
+templ EntryList(groupName string, entries []group.Entry) {
+	if len(entries) == 0 {
+		<p class="text-muted text-sm">No entries yet.</p>
+	} else {
+		<ul class="entry-list">
+			for _, e := range entries {
+				<li class="entry-item">
+					<span>{ e.Value }</span>
+					<button
+						class="btn btn-sm btn-danger"
+						hx-delete={ "/groups/" + groupName + "/entries/" + e.Value }
+						hx-target={ "#entries-" + groupName }
+						hx-swap="innerHTML"
+					>&times;</button>
+				</li>
+			}
+		</ul>
+	}
+}

@@ -1,0 +1,216 @@
+package cli
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/guras256/keenetic-split-tunnel/internal/config"
+	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
+	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
+	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/guras256/keenetic-split-tunnel/internal/router"
+)
+
+func newSetupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Interactive initial setup wizard",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reader := bufio.NewReader(os.Stdin)
+			ctx := cmd.Context()
+
+			fmt.Println("=== KST Setup ===")
+			fmt.Println()
+
+			// 1. Check dependencies.
+			fmt.Println("Checking dependencies...")
+			missing, optional := deploy.CheckDependencies()
+			if len(missing) > 0 {
+				fmt.Println("  Missing required packages:")
+				var pkgs []string
+				for _, m := range missing {
+					fmt.Printf("    - %s (opkg: %s)\n", m.Dep.Name, m.Dep.Package)
+					pkgs = append(pkgs, m.Dep.Package)
+				}
+				fmt.Println()
+				answer := prompt(reader, "Install missing packages now? [y/N]", "n")
+				if strings.ToLower(answer) == "y" {
+					fmt.Println("Running opkg install...")
+					if err := deploy.InstallOpkgDeps(ctx, pkgs); err != nil {
+						return fmt.Errorf("opkg install failed: %w\nInstall manually: opkg install %s", err, strings.Join(pkgs, " "))
+					}
+					fmt.Println("  Packages installed.")
+				} else {
+					return fmt.Errorf("required packages not installed. Run: opkg install %s", strings.Join(pkgs, " "))
+				}
+			} else {
+				fmt.Println("  All required packages found.")
+			}
+			for _, o := range optional {
+				if !o.Installed {
+					fmt.Printf("  Optional: %s not installed (opkg: %s)\n", o.Dep.Name, o.Dep.Package)
+				}
+			}
+			fmt.Println()
+
+			// 2. Check dns-override (Keenetic must delegate DNS to Entware dnsmasq).
+			fmt.Println("Checking DNS override...")
+			rci := router.NewClient()
+			dnsOverride, err := rci.IsDNSOverrideEnabled(ctx)
+			if err != nil {
+				fmt.Printf("  Warning: could not check dns-override: %v\n", err)
+				fmt.Println("  Make sure dns-override is enabled in the router CLI:")
+				fmt.Println("    opkg dns-override")
+				fmt.Println("    system configuration save")
+			} else if !dnsOverride {
+				fmt.Println("  dns-override is NOT enabled.")
+				fmt.Println("  KST needs to take over DNS (port 53) from the router's built-in DNS.")
+				answer := prompt(reader, "Enable dns-override now? [Y/n]", "y")
+				if strings.ToLower(answer) != "n" {
+					if err := rci.EnableDNSOverride(ctx); err != nil {
+						fmt.Printf("  Warning: failed to enable dns-override: %v\n", err)
+						fmt.Println("  Enable manually in the router CLI:")
+						fmt.Println("    opkg dns-override")
+						fmt.Println("    system configuration save")
+					} else {
+						fmt.Println("  dns-override enabled and config saved.")
+					}
+				} else {
+					fmt.Println("  Warning: without dns-override, dnsmasq will conflict with the built-in DNS.")
+					fmt.Println("  Enable it manually later: opkg dns-override && system configuration save")
+				}
+			} else {
+				fmt.Println("  dns-override is enabled.")
+			}
+			fmt.Println()
+
+			// 3. Create directories.
+			if err := deploy.EnsureDirectories(); err != nil {
+				return err
+			}
+
+			// 3. Load or create config.
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			// 4. Shadowsocks configuration.
+			fmt.Println("Shadowsocks configuration:")
+			cfg.Shadowsocks.Server = prompt(reader, "  Server address", cfg.Shadowsocks.Server)
+			cfg.Shadowsocks.ServerPort = promptInt(reader, "  Server port", cfg.Shadowsocks.ServerPort)
+			cfg.Shadowsocks.LocalPort = promptInt(reader, "  Local port", cfg.Shadowsocks.LocalPort)
+			cfg.Shadowsocks.Password = prompt(reader, "  Password", cfg.Shadowsocks.Password)
+			cfg.Shadowsocks.Method = prompt(reader, "  Encryption method", cfg.Shadowsocks.Method)
+			fmt.Println()
+
+			if err := deploy.ValidateShadowsocksConfig(cfg); err != nil {
+				return fmt.Errorf("invalid config: %w", err)
+			}
+
+			// 5. DNS configuration.
+			fmt.Println("DNS configuration:")
+			cfg.DNS.Primary = prompt(reader, "  Primary DNS", cfg.DNS.Primary)
+			cfg.DNS.Secondary = prompt(reader, "  Secondary DNS", cfg.DNS.Secondary)
+			fmt.Println()
+
+			// 6. Network interface.
+			fmt.Println("Network interface:")
+			cfg.Network.EntwareInterface = prompt(reader, "  Entware interface (e.g., br0)", cfg.Network.EntwareInterface)
+			fmt.Println()
+
+			cfg.SetupFinished = true
+
+			// 7. Save KST config.
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("save config: %w", err)
+			}
+			fmt.Println("Config saved.")
+
+			// 8. Generate shadowsocks.json.
+			fmt.Println("Generating shadowsocks.json...")
+			if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
+				return fmt.Errorf("write shadowsocks.json: %w", err)
+			}
+			fmt.Printf("  Written to %s\n", platform.ShadowsocksConfig)
+
+			// 9. Generate dnsmasq.conf.
+			fmt.Println("Generating dnsmasq.conf...")
+			if err := deploy.WriteDnsmasqConf(cfg); err != nil {
+				return fmt.Errorf("write dnsmasq.conf: %w", err)
+			}
+			fmt.Printf("  Written to %s\n", platform.DnsmasqConfFile)
+
+			// 10. Install NDM hooks.
+			fmt.Println("Installing NDM hooks...")
+			n, err := deploy.InstallNDMHooks()
+			if err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Printf("  Installed %d hooks.\n", n)
+			}
+
+			// 11. Install init.d script.
+			fmt.Println("Installing init.d script...")
+			if err := deploy.InstallInitScript(); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Printf("  Installed %s\n", platform.InitScript)
+			}
+
+			// 12. Create default group if needed.
+			store := group.NewDefaultStore()
+			if err := store.EnsureDefaultGroup(); err != nil {
+				return err
+			}
+
+			// 13. Run initial reconcile.
+			fmt.Println()
+			fmt.Println("Running initial reconcile...")
+			logger := platform.NewLogger(cfg.Daemon.LogLevel)
+			r := daemon.NewReconciler(cfg, store, logger)
+			if err := r.Reconcile(ctx); err != nil {
+				fmt.Printf("Warning: initial reconcile failed: %v\n", err)
+				fmt.Println("You can retry with: kst update")
+			} else {
+				fmt.Println("Setup complete!")
+			}
+
+			fmt.Println()
+			fmt.Println("Next steps:")
+			fmt.Println("  kst add youtube.com       # add a domain")
+			fmt.Println("  kst update                # apply changes")
+			fmt.Println("  kst daemon                # start web UI on :8080")
+
+			return nil
+		},
+	}
+}
+
+func prompt(reader *bufio.Reader, label, defaultVal string) string {
+	if defaultVal != "" {
+		fmt.Printf("%s [%s]: ", label, defaultVal)
+	} else {
+		fmt.Printf("%s: ", label)
+	}
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return defaultVal
+	}
+	return line
+}
+
+func promptInt(reader *bufio.Reader, label string, defaultVal int) int {
+	s := prompt(reader, label, fmt.Sprintf("%d", defaultVal))
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return defaultVal
+	}
+	return n
+}
