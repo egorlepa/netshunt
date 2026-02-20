@@ -190,13 +190,8 @@ func InstallNDMHooks() (int, error) {
 }
 
 // InstallInitScript installs the init.d startup script.
+// Always generated from code — never copied from IPK files to avoid stale scripts.
 func InstallInitScript() error {
-	src := filepath.Join(platform.ConfigDir, "init.d", "S96kst")
-	if data, err := os.ReadFile(src); err == nil {
-		return os.WriteFile(platform.InitScript, data, 0o755)
-	}
-
-	// Generate a minimal init script.
 	script := `#!/bin/sh
 ENABLED=yes
 PROCS=kst

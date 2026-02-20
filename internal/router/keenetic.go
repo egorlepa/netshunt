@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,25 @@ func NewClient() *Client {
 	return &Client{
 		http: &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// rciPost sends a POST request to /rci/ with a JSON body for configuration changes.
+func (c *Client) rciPost(ctx context.Context, body any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rciBaseURL+"/", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // rciGet performs a GET request to the RCI API and returns the parsed JSON.
@@ -132,56 +152,35 @@ func (c *Client) IsDNSOverrideEnabled(ctx context.Context) (bool, error) {
 }
 
 // EnableDNSOverride enables opkg dns-override so Entware dnsmasq can take over port 53.
+// Equivalent to: opkg dns-override && system configuration save
 func (c *Client) EnableDNSOverride(ctx context.Context) error {
-	url := rciBaseURL + "/opkg/dns-override"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
+	if err := c.rciPost(ctx, map[string]any{
+		"opkg": map[string]any{"dns-override": true},
+	}); err != nil {
 		return fmt.Errorf("rci enable dns-override: %w", err)
 	}
-	resp.Body.Close()
-
-	// Save config.
-	saveURL := rciBaseURL + "/system/configuration/save"
-	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, saveURL, nil)
-	if err != nil {
-		return err
-	}
-	resp2, err := c.http.Do(req2)
-	if err != nil {
-		return fmt.Errorf("rci save config: %w", err)
-	}
-	resp2.Body.Close()
-	return nil
+	return c.saveConfig(ctx)
 }
 
 // DisableDNSOverride disables opkg dns-override, returning DNS control to Keenetic.
 // Equivalent to: no opkg dns-override && system configuration save
 func (c *Client) DisableDNSOverride(ctx context.Context) error {
-	url := rciBaseURL + "/opkg/dns-override"
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
+	if err := c.rciPost(ctx, map[string]any{
+		"opkg": map[string]any{"dns-override": false},
+	}); err != nil {
 		return fmt.Errorf("rci disable dns-override: %w", err)
 	}
-	resp.Body.Close()
+	return c.saveConfig(ctx)
+}
 
-	saveURL := rciBaseURL + "/system/configuration/save"
-	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, saveURL, nil)
-	if err != nil {
-		return err
-	}
-	resp2, err := c.http.Do(req2)
-	if err != nil {
+func (c *Client) saveConfig(ctx context.Context) error {
+	if err := c.rciPost(ctx, map[string]any{
+		"system": map[string]any{
+			"configuration": map[string]any{"save": true},
+		},
+	}); err != nil {
 		return fmt.Errorf("rci save config: %w", err)
 	}
-	resp2.Body.Close()
 	return nil
 }
 

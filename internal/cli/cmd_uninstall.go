@@ -39,6 +39,12 @@ func newUninstallCmd() *cobra.Command {
 				fmt.Printf("  Warning: %v\n", err)
 			}
 
+			// 3. Stop dnscrypt-proxy.
+			fmt.Println("Stopping dnscrypt-proxy...")
+			if err := service.DNSCrypt.Stop(ctx); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			}
+
 			// 3. Remove iptables rules.
 			fmt.Println("Removing iptables rules...")
 			logger := platform.NewLogger("error")
@@ -94,9 +100,7 @@ func newUninstallCmd() *cobra.Command {
 
 			fmt.Println()
 			fmt.Println("KST removed. Next steps:")
-			fmt.Printf("  opkg remove shadowsocks-libev-ss-redir dnsmasq-full dnscrypt-proxy2\n")
-			fmt.Printf("  rm %s\n", platform.BinaryPath)
-			fmt.Println("  Reboot the router to complete cleanup.")
+			fmt.Println("  opkg remove kst shadowsocks-libev-ss-redir dnsmasq-full dnscrypt-proxy2")
 			return nil
 		},
 	}

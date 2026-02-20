@@ -118,7 +118,7 @@ func newHookDNSLocalCmd() *cobra.Command {
 
 // hook ifstate — interface state change.
 func newHookIfstateCmd() *cobra.Command {
-	var id, connected, link, up string
+	var id, systemName, connected, link, up string
 
 	cmd := &cobra.Command{
 		Use:   "ifstate",
@@ -129,8 +129,18 @@ func newHookIfstateCmd() *cobra.Command {
 				return err
 			}
 
-			// Only react to the configured Entware interface.
-			if id != cfg.Network.EntwareInterface {
+			// NDM passes the Linux system name as --system-name (or SYSTEM_NAME env).
+			// EntwareInterface is stored as the Linux name (e.g., "br0"), not the
+			// Keenetic logical ID (e.g., "Bridge0") that --id carries.
+			name := systemName
+			if name == "" {
+				name = os.Getenv("SYSTEM_NAME")
+			}
+			if name == "" {
+				name = id // last-resort fallback
+			}
+
+			if name != cfg.Network.EntwareInterface {
 				return nil
 			}
 
@@ -139,12 +149,12 @@ func newHookIfstateCmd() *cobra.Command {
 			r := daemon.NewReconciler(cfg, groups, logger)
 
 			if connected == "yes" && link == "up" {
-				logger.Info("interface up, setting up rules", "id", id)
+				logger.Info("interface up, setting up rules", "system-name", name)
 				return r.Mode.SetupRules(cmd.Context())
 			}
 
 			if link == "down" {
-				logger.Info("interface down, tearing down rules", "id", id)
+				logger.Info("interface down, tearing down rules", "system-name", name)
 				return r.Mode.TeardownRules(cmd.Context())
 			}
 
@@ -153,7 +163,8 @@ func newHookIfstateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&id, "id", "", "interface id")
+	cmd.Flags().StringVar(&id, "id", "", "Keenetic logical interface id")
+	cmd.Flags().StringVar(&systemName, "system-name", "", "Linux interface name (e.g., br0)")
 	cmd.Flags().StringVar(&connected, "connected", "", "connection state")
 	cmd.Flags().StringVar(&link, "link", "", "link state")
 	cmd.Flags().StringVar(&up, "up", "", "up state")

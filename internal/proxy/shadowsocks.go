@@ -102,17 +102,25 @@ func (s *Shadowsocks) SetupRules(ctx context.Context) error {
 	return nil
 }
 
-// TeardownRules removes all Shadowsocks iptables rules.
+// TeardownRules removes all KST iptables rules: Shadowsocks redirect and DNS DNAT.
 func (s *Shadowsocks) TeardownRules(ctx context.Context) error {
 	table := "nat"
 
-	s.logger.Info("tearing down shadowsocks iptables rules")
+	s.logger.Info("tearing down iptables rules")
 
-	// Remove jump rules from PREROUTING.
+	// Remove jump rules from PREROUTING and delete the SHADOWSOCKS chain.
 	_ = s.ipt.RemoveJumpRules(ctx, table, "PREROUTING", ssChainName)
-
-	// Flush and delete the chain.
 	_ = s.ipt.DeleteChain(ctx, table, ssChainName)
+
+	// Remove DNS DNAT rules added by the dns-local hook.
+	iface := s.cfg.Network.EntwareInterface
+	if iface == "" {
+		iface = "br0"
+	}
+	_ = s.ipt.DeleteRule(ctx, table, "PREROUTING",
+		"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
+	_ = s.ipt.DeleteRule(ctx, table, "PREROUTING",
+		"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
 
 	return nil
 }

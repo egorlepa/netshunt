@@ -159,12 +159,22 @@ func newSetupCmd() *cobra.Command {
 				fmt.Println("  dnscrypt-proxy2 is running.")
 			}
 
-			// 9. Generate dnsmasq.conf.
+			// 9. Generate dnsmasq.conf and start dnsmasq.
 			fmt.Println("Generating dnsmasq.conf...")
 			if err := deploy.WriteDnsmasqConf(cfg); err != nil {
 				return fmt.Errorf("write dnsmasq.conf: %w", err)
 			}
 			fmt.Printf("  Written to %s\n", platform.DnsmasqConfFile)
+
+			fmt.Println("Starting dnsmasq...")
+			if err := service.Dnsmasq.Restart(ctx); err != nil {
+				fmt.Printf("  Warning: failed to start dnsmasq: %v\n", err)
+				fmt.Println("  Port 53 may still be held by Keenetic's built-in DNS.")
+				fmt.Println("  Ensure dns-override is enabled, then start manually:")
+				fmt.Println("    /opt/etc/init.d/S56dnsmasq start")
+			} else {
+				fmt.Println("  dnsmasq is running.")
+			}
 
 			// 10. Install NDM hooks.
 			fmt.Println("Installing NDM hooks...")
