@@ -36,10 +36,20 @@ func (s *IPSet) EnsureTable(ctx context.Context) error {
 				return nil // already good
 			}
 		}
-		// Exists without timeout — destroy and recreate.
-		if err := platform.RunSilent(ctx, "ipset", "destroy", s.Name); err != nil {
-			return fmt.Errorf("destroy incompatible ipset table: %w", err)
+		// Exists without timeout — upgrade via swap to avoid "set in use" errors.
+		// iptables holds a reference by name; swapping keeps the name intact.
+		tmp := s.Name + "_tmp"
+		platform.RunSilent(ctx, "ipset", "destroy", tmp) // clean up any leftover
+		if err := platform.RunSilent(ctx, "ipset", "create", tmp, "hash:net",
+			"timeout", strconv.Itoa(entryTimeout)); err != nil {
+			return fmt.Errorf("create temporary ipset: %w", err)
 		}
+		if err := platform.RunSilent(ctx, "ipset", "swap", s.Name, tmp); err != nil {
+			platform.RunSilent(ctx, "ipset", "destroy", tmp)
+			return fmt.Errorf("swap ipset to add timeout support: %w", err)
+		}
+		platform.RunSilent(ctx, "ipset", "destroy", tmp) // old set, now safely unreferenced
+		return nil
 	}
 	return platform.RunSilent(ctx, "ipset", "create", s.Name, "hash:net",
 		"timeout", strconv.Itoa(entryTimeout))

@@ -217,13 +217,11 @@ func newSetupCmd() *cobra.Command {
 				fmt.Println()
 				fmt.Println("WARNING: ss-redir is not running. The tunnel will NOT work.")
 				fmt.Println("  Check: opkg install shadowsocks-libev-ss-redir")
-				fmt.Println("  Then:  kst update")
 			}
 
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Println("  kst add youtube.com       # add a domain")
-			fmt.Println("  kst update                # apply changes")
 
 			return nil
 		},

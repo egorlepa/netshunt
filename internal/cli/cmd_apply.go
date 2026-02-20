@@ -12,10 +12,10 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 )
 
-func newUpdateCmd() *cobra.Command {
+func newApplyCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "update",
-		Short: "Re-resolve all domains and refresh ipset + dnsmasq config",
+		Use:   "apply",
+		Short: "Force-apply current groups and config (ipset, iptables, dnsmasq)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
