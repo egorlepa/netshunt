@@ -191,17 +191,54 @@ func InstallNDMHooks() (int, error) {
 
 // InstallInitScript installs the init.d startup script.
 // Always generated from code — never copied from IPK files to avoid stale scripts.
+// Uses PID file check instead of rc.func's pidof, so that calling "S96kst start"
+// while any other kst CLI command is running does not falsely report "already running".
 func InstallInitScript() error {
-	script := `#!/bin/sh
-ENABLED=yes
-PROCS=kst
-ARGS="daemon"
-PREARGS=""
-DESC=$PROCS
+	script := fmt.Sprintf(`#!/bin/sh
+PIDFILE=%s
+BINARY=%s
 PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-. /opt/etc/init.d/rc.func
-`
+is_running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+case "$1" in
+    start)
+        if is_running; then
+            echo "kst daemon already running (pid $(cat $PIDFILE))"
+            exit 0
+        fi
+        start-stop-daemon -S -b -m -p "$PIDFILE" -a "$BINARY" -- daemon
+        echo "kst daemon started"
+        ;;
+    stop)
+        if is_running; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null
+            rm -f "$PIDFILE"
+            echo "kst daemon stopped"
+        else
+            echo "kst daemon not running"
+        fi
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    status)
+        if is_running; then
+            echo "kst daemon running (pid $(cat $PIDFILE))"
+        else
+            echo "kst daemon stopped"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+`, platform.PidFile, platform.BinaryPath)
 	return os.WriteFile(platform.InitScript, []byte(script), 0o755)
 }
 

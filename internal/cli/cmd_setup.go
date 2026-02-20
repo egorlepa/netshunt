@@ -206,20 +206,20 @@ func newSetupCmd() *cobra.Command {
 			r := daemon.NewReconciler(cfg, store, logger)
 			if err := r.Reconcile(ctx); err != nil {
 				fmt.Printf("Warning: initial reconcile failed: %v\n", err)
-				fmt.Println("You can retry with: kst update")
+				fmt.Println("You can retry with: kst apply")
 			} else {
 				fmt.Println("Setup complete!")
 			}
 
-			// 14. Start daemon.
+			// 14. Start the KST daemon.
 			fmt.Println("Starting KST daemon...")
 			if err := service.Daemon.Start(ctx); err != nil {
 				fmt.Printf("  Warning: %v\n", err)
+				fmt.Println("  Start manually: /opt/etc/init.d/S96kst start")
 			} else {
-				fmt.Println("  Daemon is running (web UI on :8080).")
+				fmt.Println("  KST daemon started.")
 			}
 
-			// 15. Final validation.
 			fmt.Println()
 			printServiceStatus(ctx)
 
@@ -231,7 +231,7 @@ func newSetupCmd() *cobra.Command {
 
 			fmt.Println()
 			fmt.Println("Next steps:")
-			fmt.Println("  kst add youtube.com       # add a domain")
+			fmt.Println("  kst add youtube.com   # add a domain")
 
 			return nil
 		},
