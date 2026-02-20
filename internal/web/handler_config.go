@@ -46,14 +46,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// DNS.
-	if v := r.FormValue("dns_primary"); v != "" {
-		cfg.DNS.Primary = v
-	}
-	if v := r.FormValue("dns_secondary"); v != "" {
-		cfg.DNS.Secondary = v
-	}
-	if v := r.FormValue("dns_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.DNS.DnsmasqPort)
+	if v := r.FormValue("dnscrypt_port"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.DNSCrypt.Port)
 	}
 
 	// Network.
@@ -62,9 +56,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Daemon.
 	if v := r.FormValue("web_listen"); v != "" {
 		cfg.Daemon.WebListen = v
-	}
-	if v := r.FormValue("resolve_interval"); v != "" {
-		cfg.Daemon.ResolveInterval = v
 	}
 	if v := r.FormValue("log_level"); v != "" {
 		cfg.Daemon.LogLevel = v

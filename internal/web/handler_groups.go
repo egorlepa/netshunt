@@ -46,6 +46,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.triggerMutation()
 	s.renderGroupList(w, r)
 }
 
@@ -55,6 +56,7 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.triggerMutation()
 	// Return empty response — htmx outerHTML swap removes the card.
 	w.WriteHeader(http.StatusOK)
 }
@@ -65,6 +67,7 @@ func (s *Server) handleEnableGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.triggerMutation()
 	s.renderGroupCard(w, r, name)
 }
 
@@ -74,6 +77,7 @@ func (s *Server) handleDisableGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	s.triggerMutation()
 	s.renderGroupCard(w, r, name)
 }
 
@@ -91,6 +95,7 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.triggerMutation()
 	s.renderEntryList(w, r, name)
 }
 
@@ -103,6 +108,7 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.triggerMutation()
 	s.renderEntryList(w, r, name)
 }
 

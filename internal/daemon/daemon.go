@@ -16,7 +16,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/web"
 )
 
-// Daemon runs the long-lived process: web UI server + periodic ipset refresh.
+// Daemon runs the long-lived process: web UI server.
 type Daemon struct {
 	Config     *config.Config
 	Groups     *group.Store
@@ -65,26 +65,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}()
 
-	// Start periodic ipset refresh.
-	interval := d.Config.Daemon.ResolveIntervalDuration()
-	d.Logger.Info("starting periodic ipset refresh", "interval", interval)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	d.Logger.Info("daemon started")
 
-	for {
-		select {
-		case <-ctx.Done():
-			d.Logger.Info("shutting down")
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			httpServer.Shutdown(shutdownCtx)
-			return nil
-		case <-ticker.C:
-			if err := d.Reconciler.RefreshIPSet(ctx); err != nil {
-				d.Logger.Error("periodic refresh failed", "error", err)
-			}
-		}
-	}
+	<-ctx.Done()
+	d.Logger.Info("shutting down")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	httpServer.Shutdown(shutdownCtx)
+	return nil
 }

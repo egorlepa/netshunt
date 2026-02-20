@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +16,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 	"github.com/guras256/keenetic-split-tunnel/internal/router"
+	"github.com/guras256/keenetic-split-tunnel/internal/service"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -29,7 +32,7 @@ func newSetupCmd() *cobra.Command {
 
 			// 1. Check dependencies.
 			fmt.Println("Checking dependencies...")
-			missing, optional := deploy.CheckDependencies()
+			missing := deploy.CheckDependencies()
 			if len(missing) > 0 {
 				fmt.Println("  Missing required packages:")
 				var pkgs []string
@@ -50,11 +53,6 @@ func newSetupCmd() *cobra.Command {
 				}
 			} else {
 				fmt.Println("  All required packages found.")
-			}
-			for _, o := range optional {
-				if !o.Installed {
-					fmt.Printf("  Optional: %s not installed (opkg: %s)\n", o.Dep.Name, o.Dep.Package)
-				}
 			}
 			fmt.Println()
 
@@ -115,13 +113,12 @@ func newSetupCmd() *cobra.Command {
 
 			// 5. DNS configuration.
 			fmt.Println("DNS configuration:")
-			cfg.DNS.Primary = prompt(reader, "  Primary DNS", cfg.DNS.Primary)
-			cfg.DNS.Secondary = prompt(reader, "  Secondary DNS", cfg.DNS.Secondary)
+			fmt.Printf("  DNS queries: dnsmasq -> dnscrypt-proxy (:%d) -> encrypted upstream\n", cfg.DNSCrypt.Port)
 			fmt.Println()
 
 			// 6. Network interface.
 			fmt.Println("Network interface:")
-			cfg.Network.EntwareInterface = prompt(reader, "  Entware interface (e.g., br0)", cfg.Network.EntwareInterface)
+			cfg.Network.EntwareInterface = promptInterface(reader, ctx, cfg.Network.EntwareInterface)
 			fmt.Println()
 
 			cfg.SetupFinished = true
@@ -132,12 +129,35 @@ func newSetupCmd() *cobra.Command {
 			}
 			fmt.Println("Config saved.")
 
-			// 8. Generate shadowsocks.json.
+			// 8. Generate shadowsocks.json and start ss-redir.
 			fmt.Println("Generating shadowsocks.json...")
 			if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
 				return fmt.Errorf("write shadowsocks.json: %w", err)
 			}
 			fmt.Printf("  Written to %s\n", platform.ShadowsocksConfig)
+
+			fmt.Println("Installing ss-redir init script...")
+			if err := deploy.InstallSSRedirInitScript(); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Printf("  Installed %s\n", platform.SSRedirInitScript)
+			}
+
+			fmt.Println("Starting ss-redir...")
+			if err := service.Shadowsocks.EnsureRunning(ctx); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+				fmt.Println("  ss-redir must be running for tunnel to work.")
+				fmt.Println("  Install: opkg install shadowsocks-libev-ss-redir")
+			} else {
+				fmt.Println("  ss-redir is running.")
+			}
+
+			fmt.Println("Starting dnscrypt-proxy2...")
+			if err := service.DNSCrypt.EnsureRunning(ctx); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Println("  dnscrypt-proxy2 is running.")
+			}
 
 			// 9. Generate dnsmasq.conf.
 			fmt.Println("Generating dnsmasq.conf...")
@@ -181,11 +201,29 @@ func newSetupCmd() *cobra.Command {
 				fmt.Println("Setup complete!")
 			}
 
+			// 14. Start daemon.
+			fmt.Println("Starting KST daemon...")
+			if err := service.Daemon.Start(ctx); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Println("  Daemon is running (web UI on :8080).")
+			}
+
+			// 15. Final validation.
+			fmt.Println()
+			printServiceStatus(ctx)
+
+			if !service.Shadowsocks.IsRunning(ctx) {
+				fmt.Println()
+				fmt.Println("WARNING: ss-redir is not running. The tunnel will NOT work.")
+				fmt.Println("  Check: opkg install shadowsocks-libev-ss-redir")
+				fmt.Println("  Then:  kst update")
+			}
+
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Println("  kst add youtube.com       # add a domain")
 			fmt.Println("  kst update                # apply changes")
-			fmt.Println("  kst daemon                # start web UI on :8080")
 
 			return nil
 		},
@@ -213,4 +251,94 @@ func promptInt(reader *bufio.Reader, label string, defaultVal int) int {
 		return defaultVal
 	}
 	return n
+}
+
+// promptInterface lists available bridge interfaces and lets the user pick one.
+// Falls back to a plain text prompt if interface detection fails.
+func promptInterface(reader *bufio.Reader, ctx context.Context, defaultVal string) string {
+	bridges := detectBridgeInterfaces(ctx)
+
+	if len(bridges) == 0 {
+		return prompt(reader, "  Entware interface (e.g., br0)", defaultVal)
+	}
+
+	// Ensure the current default is in the list, or prepend it.
+	if defaultVal != "" {
+		found := false
+		for _, b := range bridges {
+			if b == defaultVal {
+				found = true
+				break
+			}
+		}
+		if !found {
+			bridges = append([]string{defaultVal}, bridges...)
+		}
+	}
+
+	fmt.Println("  Available bridge interfaces:")
+	defaultIdx := 1
+	for i, b := range bridges {
+		marker := ""
+		if b == defaultVal || (defaultVal == "" && i == 0) {
+			marker = " (default)"
+			defaultIdx = i + 1
+		}
+		fmt.Printf("    %d) %s%s\n", i+1, b, marker)
+	}
+
+	for {
+		s := prompt(reader, fmt.Sprintf("  Pick interface [%d]", defaultIdx), "")
+		if s == "" {
+			return bridges[defaultIdx-1]
+		}
+		var n int
+		if _, err := fmt.Sscanf(s, "%d", &n); err == nil && n >= 1 && n <= len(bridges) {
+			return bridges[n-1]
+		}
+		// Accept a typed interface name directly.
+		for _, b := range bridges {
+			if b == s {
+				return s
+			}
+		}
+		fmt.Printf("  Invalid choice. Enter a number between 1 and %d.\n", len(bridges))
+	}
+}
+
+// detectBridgeInterfaces returns bridge interface names (Linux system names, e.g., "br0").
+// Tries the Keenetic RCI API first, then falls back to /sys/class/net/.
+func detectBridgeInterfaces(ctx context.Context) []string {
+	// Try RCI API.
+	rci := router.NewClient()
+	if ifaces, err := rci.GetInterfaces(ctx); err == nil {
+		var bridges []string
+		for _, iface := range ifaces {
+			name := iface.SystemName
+			if name == "" {
+				name = iface.ID
+			}
+			if strings.HasPrefix(name, "br") {
+				bridges = append(bridges, name)
+			}
+		}
+		if len(bridges) > 0 {
+			sort.Strings(bridges)
+			return bridges
+		}
+	}
+
+	// Fallback: scan /sys/class/net/ for br* entries.
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return nil
+	}
+	var bridges []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "br") {
+			bridges = append(bridges, e.Name())
+		}
+	}
+	sort.Strings(bridges)
+	return bridges
 }

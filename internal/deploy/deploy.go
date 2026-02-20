@@ -25,10 +25,6 @@ var RequiredDeps = []Dependency{
 	{Name: "iptables", Binary: "iptables", Package: "iptables"},
 	{Name: "dnsmasq", Binary: "dnsmasq", Package: "dnsmasq-full"},
 	{Name: "ss-redir", Binary: "ss-redir", Package: "shadowsocks-libev-ss-redir"},
-}
-
-// OptionalDeps lists packages that are optional.
-var OptionalDeps = []Dependency{
 	{Name: "dnscrypt-proxy", Binary: "dnscrypt-proxy", Package: "dnscrypt-proxy2"},
 }
 
@@ -39,18 +35,14 @@ type CheckResult struct {
 }
 
 // CheckDependencies verifies that required binaries are available.
-func CheckDependencies() (missing []CheckResult, optional []CheckResult) {
+func CheckDependencies() []CheckResult {
+	var missing []CheckResult
 	for _, dep := range RequiredDeps {
-		installed := binaryExists(dep.Binary)
-		if !installed {
+		if !binaryExists(dep.Binary) {
 			missing = append(missing, CheckResult{Dep: dep, Installed: false})
 		}
 	}
-	for _, dep := range OptionalDeps {
-		installed := binaryExists(dep.Binary)
-		optional = append(optional, CheckResult{Dep: dep, Installed: installed})
-	}
-	return missing, optional
+	return missing
 }
 
 func binaryExists(name string) bool {
@@ -99,18 +91,16 @@ func WriteShadowsocksConfig(cfg *config.Config) error {
 		return fmt.Errorf("marshal shadowsocks config: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(platform.ShadowsocksConfig), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(platform.ShadowsocksConfig), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(platform.ShadowsocksConfig, append(data, '\n'), 0600)
+	return os.WriteFile(platform.ShadowsocksConfig, append(data, '\n'), 0o600)
 }
 
 // WriteDnsmasqConf writes a working dnsmasq.conf for KST.
+// DNS queries are always forwarded to dnscrypt-proxy for encrypted resolution.
 func WriteDnsmasqConf(cfg *config.Config) error {
-	upstream := cfg.DNS.Primary
-	if cfg.DNSCrypt.Enabled {
-		upstream = fmt.Sprintf("127.0.0.1#%d", cfg.DNSCrypt.Port)
-	}
+	upstream := fmt.Sprintf("127.0.0.1#%d", cfg.DNSCrypt.Port)
 
 	iface := cfg.Network.EntwareInterface
 	if iface == "" {
@@ -123,7 +113,7 @@ func WriteDnsmasqConf(cfg *config.Config) error {
 	b.WriteString(fmt.Sprintf("pid-file=%s\n", platform.DnsmasqPidFile))
 	b.WriteString(fmt.Sprintf("interface=%s\n", iface))
 	b.WriteString("listen-address=127.0.0.1\n")
-	b.WriteString(fmt.Sprintf("port=%d\n", cfg.DNS.DnsmasqPort))
+	b.WriteString("port=53\n")
 	b.WriteString("min-port=4096\n")
 	if cfg.DNS.CacheEnabled {
 		b.WriteString(fmt.Sprintf("cache-size=%d\n", cfg.DNS.CacheSize))
@@ -141,15 +131,12 @@ func WriteDnsmasqConf(cfg *config.Config) error {
 	b.WriteString("log-async\n")
 	b.WriteString("rebind-localhost-ok\n")
 	b.WriteString(fmt.Sprintf("server=%s\n", upstream))
-	if cfg.DNS.Secondary != "" && !cfg.DNSCrypt.Enabled {
-		b.WriteString(fmt.Sprintf("server=%s\n", cfg.DNS.Secondary))
-	}
 	b.WriteString(fmt.Sprintf("conf-dir=%s/,*.dnsmasq\n", platform.DnsmasqDir))
 
-	if err := os.MkdirAll(filepath.Dir(platform.DnsmasqConfFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(platform.DnsmasqConfFile), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(platform.DnsmasqConfFile, []byte(b.String()), 0644)
+	return os.WriteFile(platform.DnsmasqConfFile, []byte(b.String()), 0o644)
 }
 
 // ndmHook maps a source script path to its destination under /opt/etc/ndm/.
@@ -175,7 +162,7 @@ func InstallNDMHooks() (int, error) {
 	installed := 0
 	for _, h := range ndmHooks {
 		destDir := filepath.Join(platform.NDMDir, h.subdir)
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return installed, fmt.Errorf("create %s: %w", destDir, err)
 		}
 
@@ -184,7 +171,7 @@ func InstallNDMHooks() (int, error) {
 		// Try to copy from the IPK-installed source first.
 		src := filepath.Join(platform.ConfigDir, "ndm", h.subdir, h.name)
 		if data, err := os.ReadFile(src); err == nil {
-			if err := os.WriteFile(dest, data, 0755); err != nil {
+			if err := os.WriteFile(dest, data, 0o755); err != nil {
 				return installed, fmt.Errorf("write %s: %w", dest, err)
 			}
 			installed++
@@ -194,7 +181,7 @@ func InstallNDMHooks() (int, error) {
 		// Generate a minimal hook script.
 		script := fmt.Sprintf("#!/bin/sh\n[ -x %s ] && %s hook %s \"$@\"\n",
 			platform.BinaryPath, platform.BinaryPath, hookEvent(h))
-		if err := os.WriteFile(dest, []byte(script), 0755); err != nil {
+		if err := os.WriteFile(dest, []byte(script), 0o755); err != nil {
 			return installed, fmt.Errorf("write %s: %w", dest, err)
 		}
 		installed++
@@ -206,11 +193,12 @@ func InstallNDMHooks() (int, error) {
 func InstallInitScript() error {
 	src := filepath.Join(platform.ConfigDir, "init.d", "S96kst")
 	if data, err := os.ReadFile(src); err == nil {
-		return os.WriteFile(platform.InitScript, data, 0755)
+		return os.WriteFile(platform.InitScript, data, 0o755)
 	}
 
 	// Generate a minimal init script.
 	script := `#!/bin/sh
+ENABLED=yes
 PROCS=kst
 ARGS="daemon"
 PREARGS=""
@@ -219,7 +207,28 @@ PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
 
 . /opt/etc/init.d/rc.func
 `
-	return os.WriteFile(platform.InitScript, []byte(script), 0755)
+	return os.WriteFile(platform.InitScript, []byte(script), 0o755)
+}
+
+// InstallSSRedirInitScript generates an init.d script for ss-redir.
+// The Entware package shadowsocks-libev-ss-redir only ships the binary,
+// so we need to create the init script ourselves.
+func InstallSSRedirInitScript() error {
+	script := fmt.Sprintf(`#!/bin/sh
+ENABLED=yes
+PROCS=ss-redir
+ARGS="-c %s"
+PREARGS=""
+DESC=$PROCS
+PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+. /opt/etc/init.d/rc.func
+`, platform.ShadowsocksConfig)
+
+	if err := os.MkdirAll(filepath.Dir(platform.SSRedirInitScript), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(platform.SSRedirInitScript, []byte(script), 0o755)
 }
 
 // ValidateShadowsocksConfig does a basic sanity check on the SS settings.
@@ -243,7 +252,7 @@ func EnsureDirectories() error {
 		platform.DnsmasqDir,
 	}
 	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0755); err != nil {
+		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("create %s: %w", d, err)
 		}
 	}

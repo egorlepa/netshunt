@@ -21,7 +21,7 @@ const (
 	ShadowsocksConfig = OptDir + "/etc/shadowsocks.json"
 
 	// ipset / iptables constants.
-	DefaultIPSetTable = "unblock"
+	DefaultIPSetTable = "bypass"
 	DefaultMark       = "0xd1000"
 	DefaultRouteTable = 1001
 	DefaultPriority   = 1778
@@ -36,6 +36,7 @@ const (
 	// Binary.
 	BinaryPath = BinDir + "/kst"
 
-	// Init script.
-	InitScript = OptDir + "/etc/init.d/S96kst"
+	// Init scripts.
+	InitScript        = OptDir + "/etc/init.d/S96kst"
+	SSRedirInitScript = OptDir + "/etc/init.d/S22shadowsocks"
 )

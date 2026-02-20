@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/dns"
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
@@ -46,6 +45,7 @@ func printServiceStatus(ctx context.Context) {
 		service.Dnsmasq,
 		service.DNSCrypt,
 		service.Shadowsocks,
+		service.Daemon,
 	}
 	for _, svc := range services {
 		status := "not installed"
@@ -94,14 +94,6 @@ func printConfigSummary(cfg *config.Config) {
 	fmt.Println("Config:")
 	fmt.Printf("  Mode:          %s\n", cfg.Mode)
 	fmt.Printf("  SS local port: %d\n", cfg.Shadowsocks.LocalPort)
-	fmt.Printf("  DNS primary:   %s\n", cfg.DNS.Primary)
-	fmt.Printf("  DNS secondary: %s\n", cfg.DNS.Secondary)
-	fmt.Printf("  DNSCrypt:      %v\n", cfg.DNSCrypt.Enabled)
+	fmt.Printf("  DNSCrypt port: %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("  Web UI:        %s\n", cfg.Daemon.WebListen)
-	fmt.Printf("  Re-resolve:    %s\n", cfg.Daemon.ResolveInterval)
-
-	dnscrypt := dns.NewDNSCrypt()
-	if dnscrypt.IsInstalled() {
-		fmt.Printf("  DNSCrypt installed: yes\n")
-	}
 }

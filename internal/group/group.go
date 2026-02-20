@@ -77,5 +77,22 @@ func (g *Group) RemoveEntry(value string) bool {
 }
 
 func normalizeEntry(s string) string {
-	return strings.TrimSpace(strings.ToLower(s))
+	s = strings.TrimSpace(s)
+
+	// Strip URL scheme (http://, https://).
+	if i := strings.Index(s, "://"); i != -1 {
+		s = s[i+3:]
+	}
+
+	// Strip path, query, fragment.
+	if i := strings.IndexByte(s, '/'); i != -1 {
+		s = s[:i]
+	}
+
+	// Strip port (but not from CIDR like 10.0.0.0/8 — already handled above).
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		s = host
+	}
+
+	return strings.ToLower(strings.TrimSpace(s))
 }

@@ -19,7 +19,7 @@ var staticFS embed.FS
 // Reconciler is the interface the web server uses to trigger state reconciliation.
 type Reconciler interface {
 	Reconcile(ctx context.Context) error
-	RefreshIPSet(ctx context.Context) error
+	ApplyMutation(ctx context.Context) error
 }
 
 // Server is the web UI HTTP server.
@@ -74,4 +74,13 @@ func (s *Server) routes() {
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
+}
+
+// triggerMutation applies group changes in the background after a store mutation.
+func (s *Server) triggerMutation() {
+	go func() {
+		if err := s.Reconciler.ApplyMutation(context.Background()); err != nil {
+			s.Logger.Error("apply mutation failed", "error", err)
+		}
+	}()
 }

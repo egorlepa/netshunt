@@ -129,8 +129,8 @@ func newHookIfstateCmd() *cobra.Command {
 				return err
 			}
 
-			// Only react to our configured interface.
-			if id != cfg.Network.CLIInterface && id != cfg.Network.EntwareInterface {
+			// Only react to the configured Entware interface.
+			if id != cfg.Network.EntwareInterface {
 				return nil
 			}
 
