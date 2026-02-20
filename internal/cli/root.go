@@ -12,6 +12,7 @@ func NewRootCmd() *cobra.Command {
 		Use:   "kst",
 		Short: "Keenetic Split Tunnel — selective traffic routing through proxy/VPN",
 	}
+	root.CompletionOptions.DisableDefaultCmd = true
 
 	root.AddCommand(
 		newVersionCmd(),

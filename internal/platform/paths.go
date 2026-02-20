@@ -39,4 +39,8 @@ const (
 	// Init scripts.
 	InitScript        = OptDir + "/etc/init.d/S96kst"
 	SSRedirInitScript = OptDir + "/etc/init.d/S22shadowsocks"
+
+	// Shell completion.
+	BashCompletionDir  = OptDir + "/etc/bash_completion.d"
+	BashCompletionFile = BashCompletionDir + "/kst"
 )

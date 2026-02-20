@@ -183,7 +183,15 @@ func newSetupCmd() *cobra.Command {
 				fmt.Printf("  Installed %s\n", platform.InitScript)
 			}
 
-			// 12. Create default group if needed.
+			// 12. Install bash completion.
+			fmt.Println("Installing bash completion...")
+			if err := installBashCompletion(cmd.Root()); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			} else {
+				fmt.Printf("  Installed %s\n", platform.BashCompletionFile)
+			}
+
+			// 13. Create default group if needed.
 			store := group.NewDefaultStore()
 			if err := store.EnsureDefaultGroup(); err != nil {
 				return err
@@ -302,6 +310,18 @@ func promptInterface(reader *bufio.Reader, ctx context.Context, defaultVal strin
 		}
 		fmt.Printf("  Invalid choice. Enter a number between 1 and %d.\n", len(bridges))
 	}
+}
+
+func installBashCompletion(root *cobra.Command) error {
+	if err := os.MkdirAll(platform.BashCompletionDir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.Create(platform.BashCompletionFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return root.GenBashCompletion(f)
 }
 
 // detectBridgeInterfaces returns bridge interface names (Linux system names, e.g., "br0").
