@@ -347,10 +347,10 @@ type xraySniffing struct {
 }
 
 type xrayOutbound struct {
-	Protocol       string             `json:"protocol"`
-	Settings       xrayVlessSettings  `json:"settings"`
-	StreamSettings xrayStreamSettings `json:"streamSettings"`
-	Tag            string             `json:"tag"`
+	Protocol       string              `json:"protocol"`
+	Settings       *xrayVlessSettings  `json:"settings,omitempty"`
+	StreamSettings *xrayStreamSettings `json:"streamSettings,omitempty"`
+	Tag            string              `json:"tag"`
 }
 
 type xrayVlessSettings struct {
@@ -416,7 +416,7 @@ func WriteXrayConfig(cfg *config.Config) error {
 		Outbounds: []xrayOutbound{
 			{
 				Protocol: "vless",
-				Settings: xrayVlessSettings{
+				Settings: &xrayVlessSettings{
 					Vnext: []xrayVnext{
 						{
 							Address: cfg.Xray.Server,
@@ -431,7 +431,7 @@ func WriteXrayConfig(cfg *config.Config) error {
 						},
 					},
 				},
-				StreamSettings: xrayStreamSettings{
+				StreamSettings: &xrayStreamSettings{
 					Network:  "tcp",
 					Security: "reality",
 					RealitySettings: xrayRealityConfig{

@@ -33,6 +33,15 @@ type Reconciler struct {
 	Logger  *slog.Logger
 }
 
+// allModes returns one instance of every known TrafficMode.
+// Used to clean up stale rules when switching modes.
+func allModes(cfg *config.Config, logger *slog.Logger) []proxy.TrafficMode {
+	return []proxy.TrafficMode{
+		proxy.NewShadowsocks(cfg, logger),
+		proxy.NewXray(cfg, logger),
+	}
+}
+
 // NewReconciler creates a Reconciler from the given configuration.
 // The traffic mode is selected based on cfg.Mode.
 func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Reconciler {
@@ -94,7 +103,13 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			"mode", r.Config.Mode, "error", err)
 	}
 
-	// 6. Setup iptables rules.
+	// 6. Teardown all known mode rules, then set up only the active mode.
+	// This ensures stale rules from a previously active mode don't interfere.
+	for _, m := range allModes(r.Config, r.Logger) {
+		if m.Name() != r.Mode.Name() {
+			_ = m.TeardownRules(ctx)
+		}
+	}
 	if err := r.Mode.SetupRules(ctx); err != nil {
 		return fmt.Errorf("setup iptables rules: %w", err)
 	}
