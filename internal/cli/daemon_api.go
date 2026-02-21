@@ -58,6 +58,18 @@ func daemonRemoveEntry(ctx context.Context, groupName, value string) error {
 	return doRequest(req)
 }
 
+func daemonImportGroups(ctx context.Context, data []byte) error {
+	base, err := daemonBaseURL()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/groups/import", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return doRequest(req)
+}
+
 func doRequest(req *http.Request) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

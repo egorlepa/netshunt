@@ -142,11 +142,20 @@ func newGroupImportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read file: %w", err)
 			}
+
+			// If daemon is running, delegate to it so it applies changes.
+			if err := daemonImportGroups(cmd.Context(), data); err == nil {
+				fmt.Printf("Imported groups from %s\n", args[0])
+				return nil
+			}
+
+			// Daemon not running: write directly.
 			store := group.NewDefaultStore()
 			if err := store.ImportGroups(data); err != nil {
 				return err
 			}
 			fmt.Printf("Imported groups from %s\n", args[0])
+			fmt.Println("Note: daemon is not running — start it to apply changes.")
 			return nil
 		},
 	}

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
@@ -110,6 +111,20 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 
 	s.triggerMutation()
 	s.renderEntryList(w, r, name)
+}
+
+func (s *Server) handleImportGroups(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.Groups.ImportGroups(data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.triggerMutation()
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) renderGroupList(w http.ResponseWriter, r *http.Request) {

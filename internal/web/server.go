@@ -62,6 +62,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /groups/{name}/disable", s.handleDisableGroup)
 	s.mux.HandleFunc("POST /groups/{name}/entries", s.handleAddEntry)
 	s.mux.HandleFunc("DELETE /groups/{name}/entries/{value...}", s.handleDeleteEntry)
+	s.mux.HandleFunc("POST /groups/import", s.handleImportGroups)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
