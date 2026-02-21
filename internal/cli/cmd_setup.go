@@ -133,7 +133,7 @@ func newSetupCmd() *cobra.Command {
 			default:
 				fmt.Println("Transparent proxy configuration:")
 				fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
-				fmt.Println("  KST will redirect matched TCP traffic to the specified port.")
+				fmt.Println("  KST will redirect matched TCP and UDP traffic to the specified port.")
 				cfg.Proxy.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Proxy.LocalPort)
 				fmt.Println()
 			}
