@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/config"
+	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
 	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 )
@@ -108,6 +109,8 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 // setupUDPTproxy sets up TPROXY rules for UDP traffic. Returns an error if
 // TPROXY is not supported (e.g. iptables built without libxt_TPROXY.so).
 func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface string) error {
+	deploy.EnsureTproxyModule(ctx)
+
 	if err := r.ipt.CreateChain(ctx, "mangle", redirectUDPChainName); err != nil {
 		return fmt.Errorf("create udp chain: %w", err)
 	}

@@ -216,9 +216,44 @@ func EnsureDirectories() error {
 	return nil
 }
 
+// EnsureTproxyModule tries to load the xt_TPROXY kernel module.
+// On Keenetic routers modprobe is not available, so we fall back to insmod.
+func EnsureTproxyModule(ctx context.Context) {
+	if platform.RunSilent(ctx, "modprobe", "xt_TPROXY") == nil {
+		return
+	}
+	rel, err := platform.Run(ctx, "uname", "-r")
+	if err != nil {
+		return
+	}
+	_ = platform.RunSilent(ctx, "insmod", "/lib/modules/"+strings.TrimSpace(rel)+"/xt_TPROXY.ko")
+}
+
+// CheckIPTablesTproxy tests whether iptables supports the TPROXY target
+// by loading the kernel module and attempting to add a TPROXY rule.
+func CheckIPTablesTproxy(ctx context.Context) bool {
+	EnsureTproxyModule(ctx)
+
+	const testChain = "__kst_tproxy_test"
+	if err := platform.RunSilent(ctx, "iptables", "-t", "mangle", "-N", testChain); err != nil {
+		return false
+	}
+	ok := platform.RunSilent(ctx, "iptables", "-t", "mangle", "-A", testChain,
+		"-p", "udp", "-j", "TPROXY", "--on-port", "0", "--tproxy-mark", "0x0/0x0") == nil
+	_ = platform.RunSilent(ctx, "iptables", "-t", "mangle", "-F", testChain)
+	_ = platform.RunSilent(ctx, "iptables", "-t", "mangle", "-X", testChain)
+	return ok
+}
+
 // InstallOpkgDeps attempts to install missing packages via opkg.
 func InstallOpkgDeps(ctx context.Context, packages []string) error {
 	args := append([]string{"install"}, packages...)
+	return platform.RunSilent(ctx, "opkg", args...)
+}
+
+// UpgradeOpkgDeps attempts to upgrade packages via opkg.
+func UpgradeOpkgDeps(ctx context.Context, packages []string) error {
+	args := append([]string{"upgrade"}, packages...)
 	return platform.RunSilent(ctx, "opkg", args...)
 }
 

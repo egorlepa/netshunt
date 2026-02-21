@@ -56,6 +56,31 @@ func newSetupCmd() *cobra.Command {
 			}
 			fmt.Println()
 
+			// 1b. Check iptables TPROXY support (needed for UDP proxying).
+			fmt.Println("Checking iptables TPROXY support...")
+			if !deploy.CheckIPTablesTproxy(ctx) {
+				fmt.Println("  TPROXY extension not available.")
+				fmt.Println("  UDP proxying in redirect mode requires TPROXY support.")
+				answer := prompt(reader, "  Upgrade iptables now? [Y/n]", "y")
+				if strings.ToLower(answer) != "n" {
+					fmt.Println("  Running opkg upgrade iptables...")
+					if err := deploy.UpgradeOpkgDeps(ctx, []string{"iptables"}); err != nil {
+						fmt.Printf("  Warning: upgrade failed: %v\n", err)
+						fmt.Println("  Run manually: opkg upgrade iptables")
+					} else if deploy.CheckIPTablesTproxy(ctx) {
+						fmt.Println("  TPROXY support available after upgrade.")
+					} else {
+						fmt.Println("  Warning: TPROXY still not available after upgrade.")
+						fmt.Println("  UDP proxying may not work in redirect mode.")
+					}
+				} else {
+					fmt.Println("  Warning: UDP proxying may not work in redirect mode without TPROXY.")
+				}
+			} else {
+				fmt.Println("  TPROXY support available.")
+			}
+			fmt.Println()
+
 			// 2. Check dns-override (Keenetic must delegate DNS to Entware dnsmasq).
 			fmt.Println("Checking DNS override...")
 			rci := router.NewClient()
