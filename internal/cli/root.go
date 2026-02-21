@@ -25,8 +25,6 @@ func NewRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newDebugCmd(),
 		newSetupCmd(),
-		newSSRCmd(),
-		newXrayCmd(),
 		newDNSCmd(),
 		newHookCmd(),
 		newInstallHooksCmd(),

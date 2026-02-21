@@ -40,7 +40,7 @@ func newDebugCmd() *cobra.Command {
 
 func debugServices(ctx context.Context) {
 	fmt.Println("--- Services ---")
-	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt, service.Shadowsocks} {
+	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt, service.Daemon} {
 		installed := svc.IsInstalled()
 		running := false
 		if installed {
@@ -90,10 +90,13 @@ func debugDnsmasqConfig() {
 
 func debugConfig(cfg *config.Config) {
 	fmt.Println("--- Config ---")
-	fmt.Printf("Mode:              %s\n", cfg.Mode)
-	fmt.Printf("SS server:         %s:%d\n", cfg.Shadowsocks.Server, cfg.Shadowsocks.ServerPort)
-	fmt.Printf("SS local port:     %d\n", cfg.Shadowsocks.LocalPort)
-	fmt.Printf("SS method:         %s\n", cfg.Shadowsocks.Method)
+	fmt.Printf("Proxy type:        %s\n", cfg.Proxy.Type)
+	switch cfg.Proxy.Type {
+	case "tun":
+		fmt.Printf("Proxy interface:   %s\n", cfg.Proxy.Interface)
+	default:
+		fmt.Printf("Proxy port:        %d\n", cfg.Proxy.LocalPort)
+	}
 	fmt.Printf("DNSCrypt port:     %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("Interface:         %s\n", cfg.Network.EntwareInterface)
 	fmt.Printf("Web listen:        %s\n", cfg.Daemon.WebListen)

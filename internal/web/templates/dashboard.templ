@@ -7,11 +7,12 @@ type ServiceStatus struct {
 }
 
 type DashboardData struct {
-	Services   []ServiceStatus
-	IPSetCount int
-	GroupCount int
-	EntryCount int
-	Mode       string
+	Services    []ServiceStatus
+	IPSetCount  int
+	GroupCount  int
+	EntryCount  int
+	ProxyType   string
+	ProxyActive bool
 }
 
 templ Dashboard(data DashboardData) {
@@ -46,7 +47,17 @@ templ Dashboard(data DashboardData) {
 				<h2>Overview</h2>
 				<table>
 					<tbody>
-						<tr><td class="text-muted">Mode</td><td>{ data.Mode }</td></tr>
+						<tr>
+							<td class="text-muted">Proxy</td>
+							<td>
+								{ data.ProxyType }
+								if data.ProxyActive {
+									<span class="badge badge-green">active</span>
+								} else {
+									<span class="badge badge-red">inactive</span>
+								}
+							</td>
+						</tr>
 						<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
 						<tr><td class="text-muted">Groups</td><td>{ itoa(data.GroupCount) }</td></tr>
 						<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>

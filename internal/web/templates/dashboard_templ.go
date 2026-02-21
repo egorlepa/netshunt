@@ -15,11 +15,12 @@ type ServiceStatus struct {
 }
 
 type DashboardData struct {
-	Services   []ServiceStatus
-	IPSetCount int
-	GroupCount int
-	EntryCount int
-	Mode       string
+	Services    []ServiceStatus
+	IPSetCount  int
+	GroupCount  int
+	EntryCount  int
+	ProxyType   string
+	ProxyActive bool
 }
 
 func Dashboard(data DashboardData) templ.Component {
@@ -67,7 +68,7 @@ func Dashboard(data DashboardData) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(svc.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 30, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 31, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -98,59 +99,74 @@ func Dashboard(data DashboardData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</tbody></table></div><div class=\"card\"><h2>Overview</h2><table><tbody><tr><td class=\"text-muted\">Mode</td><td>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</tbody></table></div><div class=\"card\"><h2>Overview</h2><table><tbody><tr><td class=\"text-muted\">Proxy</td><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
-			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.Mode)
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.ProxyType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 49, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 53, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</td></tr><tr><td class=\"text-muted\">IPSet entries</td><td>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if data.ProxyActive {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<span class=\"badge badge-green\">active</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<span class=\"badge badge-red\">inactive</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</td></tr><tr><td class=\"text-muted\">IPSet entries</td><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(data.IPSetCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 50, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 61, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</td></tr><tr><td class=\"text-muted\">Groups</td><td>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</td></tr><tr><td class=\"text-muted\">Groups</td><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(data.GroupCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 51, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 62, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</td></tr><tr><td class=\"text-muted\">Host entries</td><td>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</td></tr><tr><td class=\"text-muted\">Host entries</td><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(data.EntryCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 52, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 63, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</td></tr></tbody></table><div class=\"mt-8 flex gap-8\"><button class=\"btn btn-accent\" hx-post=\"/actions/update\" hx-swap=\"none\">Update <span class=\"htmx-indicator\">...</span></button> <button class=\"btn\" hx-post=\"/actions/restart\" hx-swap=\"none\">Restart Services <span class=\"htmx-indicator\">...</span></button></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</td></tr></tbody></table><div class=\"mt-8 flex gap-8\"><button class=\"btn btn-accent\" hx-post=\"/actions/update\" hx-swap=\"none\">Update <span class=\"htmx-indicator\">...</span></button> <button class=\"btn\" hx-post=\"/actions/restart\" hx-swap=\"none\">Restart Services <span class=\"htmx-indicator\">...</span></button></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

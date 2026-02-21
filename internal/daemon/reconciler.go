@@ -37,27 +37,19 @@ type Reconciler struct {
 // Used to clean up stale rules when switching modes.
 func allModes(cfg *config.Config, logger *slog.Logger) []proxy.TrafficMode {
 	return []proxy.TrafficMode{
-		proxy.NewShadowsocks(cfg, logger),
-		proxy.NewXray(cfg, logger),
+		proxy.NewRedirect(cfg, logger),
+		proxy.NewTun(cfg, logger),
 	}
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
-// The traffic mode is selected based on cfg.Mode.
 func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Reconciler {
-	var mode proxy.TrafficMode
-	switch cfg.Mode {
-	case "xray":
-		mode = proxy.NewXray(cfg, logger)
-	default:
-		mode = proxy.NewShadowsocks(cfg, logger)
-	}
 	return &Reconciler{
 		Config:  cfg,
 		Groups:  groups,
 		IPSet:   netfilter.NewIPSet(cfg.IPSet.TableName),
 		Dnsmasq: dns.NewDnsmasqConfig(cfg.IPSet.TableName),
-		Mode:    mode,
+		Mode:    proxy.NewMode(cfg, logger),
 		Logger:  logger,
 	}
 }
@@ -90,20 +82,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("ensure ipset table: %w", err)
 	}
 
-	// 4. Populate ipset with direct IP/CIDR entries and pre-resolve domains.
+	// 4. Populate ipset with direct IP/CIDR entries.
 	r.populateIPSet(ctx, entries)
 
-	// 5. Ensure the proxy service is running before setting up redirect rules.
-	proxySvc := service.Shadowsocks
-	if r.Config.Mode == "xray" {
-		proxySvc = service.Xray
-	}
-	if err := proxySvc.EnsureRunning(ctx); err != nil {
-		r.Logger.Warn("proxy service is not running, iptables redirect will have no effect",
-			"mode", r.Config.Mode, "error", err)
-	}
-
-	// 6. Teardown all known mode rules, then set up only the active mode.
+	// 5. Teardown all known mode rules, then set up only the active mode.
 	// This ensures stale rules from a previously active mode don't interfere.
 	for _, m := range allModes(r.Config, r.Logger) {
 		if m.Name() != r.Mode.Name() {
@@ -143,7 +125,6 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 	r.populateIPSet(ctx, entries)
 	return nil
 }
-
 
 // populateIPSet adds direct IP/CIDR entries to ipset.
 // Domain entries are handled by dnsmasq via ipset= directives at DNS query time.

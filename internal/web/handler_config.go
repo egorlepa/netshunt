@@ -28,55 +28,15 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mode.
-	if v := r.FormValue("mode"); v == "xray" || v == "shadowsocks" {
-		cfg.Mode = v
+	// Proxy.
+	if v := r.FormValue("proxy_type"); v == "redirect" || v == "tun" {
+		cfg.Proxy.Type = v
 	}
-
-	// Shadowsocks.
-	if v := r.FormValue("ss_server"); v != "" {
-		cfg.Shadowsocks.Server = v
+	if v := r.FormValue("proxy_local_port"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.Proxy.LocalPort)
 	}
-	if v := r.FormValue("ss_server_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Shadowsocks.ServerPort)
-	}
-	if v := r.FormValue("ss_local_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Shadowsocks.LocalPort)
-	}
-	if v := r.FormValue("ss_password"); v != "" {
-		cfg.Shadowsocks.Password = v
-	}
-	if v := r.FormValue("ss_method"); v != "" {
-		cfg.Shadowsocks.Method = v
-	}
-
-	// Xray.
-	if v := r.FormValue("xray_server"); v != "" {
-		cfg.Xray.Server = v
-	}
-	if v := r.FormValue("xray_server_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Xray.ServerPort)
-	}
-	if v := r.FormValue("xray_local_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Xray.LocalPort)
-	}
-	if v := r.FormValue("xray_uuid"); v != "" {
-		cfg.Xray.UUID = v
-	}
-	if v := r.FormValue("xray_public_key"); v != "" {
-		cfg.Xray.PublicKey = v
-	}
-	if v := r.FormValue("xray_short_id"); v != "" {
-		cfg.Xray.ShortID = v
-	}
-	if v := r.FormValue("xray_sni"); v != "" {
-		cfg.Xray.SNI = v
-	}
-	if v := r.FormValue("xray_fingerprint"); v != "" {
-		cfg.Xray.Fingerprint = v
-	}
-	if v := r.FormValue("xray_flow"); v != "" {
-		cfg.Xray.Flow = v
+	if v := r.FormValue("proxy_interface"); v != "" {
+		cfg.Proxy.Interface = v
 	}
 
 	// DNS.
@@ -100,17 +60,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Regenerate proxy config file from updated settings.
-	switch cfg.Mode {
-	case "xray":
-		if err := deploy.WriteXrayConfig(cfg); err != nil {
-			s.Logger.Warn("failed to write xray config", "error", err)
-		}
-	default:
-		if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
-			s.Logger.Warn("failed to write shadowsocks.json", "error", err)
-		}
-	}
+	// Regenerate dnsmasq.conf from updated settings.
 	if err := deploy.WriteDnsmasqConf(cfg); err != nil {
 		s.Logger.Warn("failed to write dnsmasq.conf", "error", err)
 	}
@@ -135,11 +85,7 @@ func (s *Server) handleActionUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleActionRestart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	proxySvc := service.Shadowsocks
-	if s.Config.Mode == "xray" {
-		proxySvc = service.Xray
-	}
-	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt, proxySvc} {
+	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt} {
 		if svc.IsInstalled() {
 			if err := svc.Restart(ctx); err != nil {
 				s.Logger.Warn("failed to restart service", "service", svc.Name, "error", err)

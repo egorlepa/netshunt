@@ -7,7 +7,6 @@ import (
 
 	"github.com/guras256/keenetic-split-tunnel/internal/config"
 	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 )
@@ -20,11 +19,6 @@ func newApplyCmd() *cobra.Command {
 			cfg, err := config.Load()
 			if err != nil {
 				return err
-			}
-
-			// Regenerate shadowsocks.json from current config.
-			if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
-				fmt.Printf("Warning: failed to write shadowsocks.json: %v\n", err)
 			}
 
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)

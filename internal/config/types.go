@@ -1,48 +1,38 @@
 package config
 
-
 // Config is the top-level application configuration.
 type Config struct {
-	Version int    `yaml:"version"`
-	Mode    string `yaml:"mode"` // "shadowsocks" or "xray"
+	Version int `yaml:"version"`
 
-	Network     NetworkConfig     `yaml:"network"`
-	Shadowsocks ShadowsocksConfig `yaml:"shadowsocks"`
-	Xray        XrayConfig        `yaml:"xray"`
-	DNS         DNSConfig         `yaml:"dns"`
-	DNSCrypt    DNSCryptConfig    `yaml:"dnscrypt"`
-	IPSet       IPSetConfig       `yaml:"ipset"`
-	Daemon      DaemonConfig      `yaml:"daemon"`
+	Proxy    ProxyConfig   `yaml:"proxy"`
+	Network  NetworkConfig `yaml:"network"`
+	DNS      DNSConfig     `yaml:"dns"`
+	DNSCrypt DNSCryptConfig `yaml:"dnscrypt"`
+	IPSet    IPSetConfig   `yaml:"ipset"`
+	Daemon   DaemonConfig  `yaml:"daemon"`
 
 	ExcludedNetworks []string `yaml:"excluded_networks"`
 	SetupFinished    bool     `yaml:"setup_finished"`
 }
 
+// ProxyConfig describes how matched traffic is forwarded.
+// KST does not manage the proxy software itself — the user sets up their own.
+type ProxyConfig struct {
+	// Type selects the traffic redirection mechanism:
+	//   "redirect" — NAT REDIRECT to a local transparent proxy port (ss-redir, xray, sing-box, …)
+	//   "tun"      — MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
+	Type string `yaml:"type"`
+
+	// LocalPort is the port the transparent proxy listens on. Used when Type == "redirect".
+	LocalPort int `yaml:"local_port"`
+
+	// Interface is the VPN tunnel interface name (e.g. wg0, tun0). Used when Type == "tun".
+	Interface string `yaml:"interface"`
+}
+
 // NetworkConfig holds network interface settings.
 type NetworkConfig struct {
 	EntwareInterface string `yaml:"entware_interface"`
-}
-
-// ShadowsocksConfig holds Shadowsocks proxy settings.
-type ShadowsocksConfig struct {
-	Server     string `yaml:"server"`
-	ServerPort int    `yaml:"server_port"`
-	LocalPort  int    `yaml:"local_port"`
-	Password   string `yaml:"password"`
-	Method     string `yaml:"method"`
-}
-
-// XrayConfig holds Xray VLESS+Reality proxy settings.
-type XrayConfig struct {
-	Server      string `yaml:"server"`
-	ServerPort  int    `yaml:"server_port"`
-	UUID        string `yaml:"uuid"`
-	Flow        string `yaml:"flow"`        // "xtls-rprx-vision" or ""
-	PublicKey   string `yaml:"public_key"`  // server Reality public key (base64url)
-	ShortID     string `yaml:"short_id"`    // Reality short ID (hex)
-	SNI         string `yaml:"sni"`         // server name for Reality TLS impersonation
-	Fingerprint string `yaml:"fingerprint"` // TLS fingerprint: "chrome", "firefox", etc.
-	LocalPort   int    `yaml:"local_port"`  // local dokodemo-door port
 }
 
 // DNSConfig holds DNS cache settings for dnsmasq.
@@ -71,16 +61,9 @@ type DaemonConfig struct {
 func Defaults() Config {
 	return Config{
 		Version: 1,
-		Mode:    "shadowsocks",
-		Shadowsocks: ShadowsocksConfig{
-			LocalPort: 1181,
-			Method:    "chacha20-ietf-poly1305",
-		},
-		Xray: XrayConfig{
-			Flow:        "xtls-rprx-vision",
-			Fingerprint: "chrome",
-			SNI:         "www.microsoft.com",
-			LocalPort:   1182,
+		Proxy: ProxyConfig{
+			Type:      "redirect",
+			LocalPort: 1080,
 		},
 		DNS: DNSConfig{
 			CacheEnabled: true,

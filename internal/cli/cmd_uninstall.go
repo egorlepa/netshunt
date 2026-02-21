@@ -33,13 +33,7 @@ func newUninstallCmd() *cobra.Command {
 				fmt.Printf("  Warning: %v\n", err)
 			}
 
-			// 2. Stop ss-redir.
-			fmt.Println("Stopping ss-redir...")
-			if err := service.Shadowsocks.Stop(ctx); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
-			}
-
-			// 3. Stop dnscrypt-proxy.
+			// 2. Stop dnscrypt-proxy.
 			fmt.Println("Stopping dnscrypt-proxy...")
 			if err := service.DNSCrypt.Stop(ctx); err != nil {
 				fmt.Printf("  Warning: %v\n", err)
@@ -78,20 +72,15 @@ func newUninstallCmd() *cobra.Command {
 			_ = r.Dnsmasq.RemoveIPSetConfig()
 			_ = os.Remove(platform.DnsmasqConfFile)
 
-			// 8. Remove shadowsocks config.
-			fmt.Println("Removing shadowsocks config...")
-			_ = os.Remove(platform.ShadowsocksConfig)
-
-			// 9. Remove init.d scripts.
+			// 8. Remove init.d scripts.
 			fmt.Println("Removing init.d scripts...")
 			_ = os.Remove(platform.InitScript)
-			_ = os.Remove(platform.SSRedirInitScript)
 
-			// 10. Remove NDM hooks.
+			// 9. Remove NDM hooks.
 			fmt.Println("Removing NDM hooks...")
 			deploy.UninstallNDMHooks()
 
-			// 11. Remove KST config directory.
+			// 10. Remove KST config directory.
 			fmt.Println("Removing configuration...")
 			_ = os.Remove(platform.ConfigFile)
 			_ = os.Remove(platform.GroupsFile)
@@ -100,7 +89,7 @@ func newUninstallCmd() *cobra.Command {
 
 			fmt.Println()
 			fmt.Println("KST removed. Next steps:")
-			fmt.Println("  opkg remove kst shadowsocks-libev-ss-redir dnsmasq-full dnscrypt-proxy2")
+			fmt.Println("  opkg remove kst dnsmasq-full dnscrypt-proxy2")
 			return nil
 		},
 	}

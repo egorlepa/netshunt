@@ -7,77 +7,21 @@ templ SettingsPage(cfg *config.Config) {
 		<h1 class="mb-16">Settings</h1>
 		<form hx-put="/settings" hx-swap="none">
 			<div class="card mb-16">
-				<h2>Proxy Mode</h2>
+				<h2>Proxy</h2>
 				<div class="mb-8">
-					<label class="text-muted text-sm">Active mode</label>
-					<select name="mode">
-						<option value="shadowsocks" if cfg.Mode == "shadowsocks" { selected }>shadowsocks</option>
-						<option value="xray" if cfg.Mode == "xray" { selected }>xray (VLESS+Reality)</option>
+					<label class="text-muted text-sm">Type</label>
+					<select name="proxy_type">
+						<option value="redirect" if cfg.Proxy.Type == "redirect" { selected }>redirect (transparent proxy port)</option>
+						<option value="tun" if cfg.Proxy.Type == "tun" { selected }>tun (VPN interface)</option>
 					</select>
 				</div>
-			</div>
-			<div class="grid-2">
-				<div class="card">
-					<h2>Shadowsocks</h2>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Server</label>
-						<input type="text" name="ss_server" value={ cfg.Shadowsocks.Server }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Server Port</label>
-						<input type="text" name="ss_server_port" value={ itoa(cfg.Shadowsocks.ServerPort) }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Local Port</label>
-						<input type="text" name="ss_local_port" value={ itoa(cfg.Shadowsocks.LocalPort) }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Password</label>
-						<input type="text" name="ss_password" value={ cfg.Shadowsocks.Password }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Method</label>
-						<input type="text" name="ss_method" value={ cfg.Shadowsocks.Method }/>
-					</div>
+				<div class="mb-8">
+					<label class="text-muted text-sm">Local Port <span class="text-muted">(redirect mode)</span></label>
+					<input type="text" name="proxy_local_port" value={ itoa(cfg.Proxy.LocalPort) }/>
 				</div>
-				<div class="card">
-					<h2>Xray VLESS+Reality</h2>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Server</label>
-						<input type="text" name="xray_server" value={ cfg.Xray.Server }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Server Port</label>
-						<input type="text" name="xray_server_port" value={ itoa(cfg.Xray.ServerPort) }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Local Port</label>
-						<input type="text" name="xray_local_port" value={ itoa(cfg.Xray.LocalPort) }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">UUID</label>
-						<input type="text" name="xray_uuid" value={ cfg.Xray.UUID }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Public Key</label>
-						<input type="text" name="xray_public_key" value={ cfg.Xray.PublicKey }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Short ID</label>
-						<input type="text" name="xray_short_id" value={ cfg.Xray.ShortID }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">SNI</label>
-						<input type="text" name="xray_sni" value={ cfg.Xray.SNI }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Fingerprint</label>
-						<input type="text" name="xray_fingerprint" value={ cfg.Xray.Fingerprint }/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Flow</label>
-						<input type="text" name="xray_flow" value={ cfg.Xray.Flow }/>
-					</div>
+				<div class="mb-8">
+					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(tun mode, e.g. wg0)</span></label>
+					<input type="text" name="proxy_interface" value={ cfg.Proxy.Interface }/>
 				</div>
 			</div>
 			<div class="grid-2">
