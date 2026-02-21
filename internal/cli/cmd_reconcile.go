@@ -14,7 +14,7 @@ import (
 func newReconcileCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reconcile",
-		Short: "Force-reconcile current groups and config (ipset, iptables, dnsmasq)",
+		Short: "Reconcile current groups and config (ipset, iptables, dnsmasq)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {

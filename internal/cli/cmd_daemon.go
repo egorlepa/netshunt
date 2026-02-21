@@ -12,7 +12,7 @@ import (
 func newDaemonCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
-		Short: "Start the long-running daemon (web UI + periodic refresh)",
+		Short: "Run the daemon that serves the web UI and reconciles routing state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {

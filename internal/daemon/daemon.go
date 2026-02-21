@@ -16,7 +16,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/web"
 )
 
-// Daemon runs the long-lived process: web UI server.
+// Daemon is the long-lived process that reconciles routing state and serves the web UI.
 type Daemon struct {
 	Config     *config.Config
 	Groups     *group.Store
