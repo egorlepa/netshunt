@@ -12,10 +12,14 @@ import (
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	proxySvc := service.Shadowsocks
+	if s.Config.Mode == "xray" {
+		proxySvc = service.Xray
+	}
 	services := []templates.ServiceStatus{
 		svcStatus(ctx, service.Dnsmasq),
 		svcStatus(ctx, service.DNSCrypt),
-		svcStatus(ctx, service.Shadowsocks),
+		svcStatus(ctx, proxySvc),
 	}
 
 	ipset := netfilter.NewIPSet(s.Config.IPSet.TableName)

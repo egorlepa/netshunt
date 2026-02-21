@@ -6,6 +6,16 @@ templ SettingsPage(cfg *config.Config) {
 	@Layout("Settings", "settings") {
 		<h1 class="mb-16">Settings</h1>
 		<form hx-put="/settings" hx-swap="none">
+			<div class="card mb-16">
+				<h2>Proxy Mode</h2>
+				<div class="mb-8">
+					<label class="text-muted text-sm">Active mode</label>
+					<select name="mode">
+						<option value="shadowsocks" if cfg.Mode == "shadowsocks" { selected }>shadowsocks</option>
+						<option value="xray" if cfg.Mode == "xray" { selected }>xray (VLESS+Reality)</option>
+					</select>
+				</div>
+			</div>
 			<div class="grid-2">
 				<div class="card">
 					<h2>Shadowsocks</h2>
@@ -31,14 +41,53 @@ templ SettingsPage(cfg *config.Config) {
 					</div>
 				</div>
 				<div class="card">
+					<h2>Xray VLESS+Reality</h2>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Server</label>
+						<input type="text" name="xray_server" value={ cfg.Xray.Server }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Server Port</label>
+						<input type="text" name="xray_server_port" value={ itoa(cfg.Xray.ServerPort) }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Local Port</label>
+						<input type="text" name="xray_local_port" value={ itoa(cfg.Xray.LocalPort) }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">UUID</label>
+						<input type="text" name="xray_uuid" value={ cfg.Xray.UUID }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Public Key</label>
+						<input type="text" name="xray_public_key" value={ cfg.Xray.PublicKey }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Short ID</label>
+						<input type="text" name="xray_short_id" value={ cfg.Xray.ShortID }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">SNI</label>
+						<input type="text" name="xray_sni" value={ cfg.Xray.SNI }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Fingerprint</label>
+						<input type="text" name="xray_fingerprint" value={ cfg.Xray.Fingerprint }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Flow</label>
+						<input type="text" name="xray_flow" value={ cfg.Xray.Flow }/>
+					</div>
+				</div>
+			</div>
+			<div class="grid-2">
+				<div class="card">
 					<h2>DNS</h2>
 					<div class="mb-8">
 						<label class="text-muted text-sm">dnscrypt-proxy Port</label>
 						<input type="text" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) }/>
 					</div>
 				</div>
-			</div>
-			<div class="grid-2">
 				<div class="card">
 					<h2>Network</h2>
 					<div class="mb-8">
@@ -46,8 +95,10 @@ templ SettingsPage(cfg *config.Config) {
 						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
 					</div>
 				</div>
-				<div class="card">
-					<h2>Daemon</h2>
+			</div>
+			<div class="card mb-16">
+				<h2>Daemon</h2>
+				<div class="grid-2">
 					<div class="mb-8">
 						<label class="text-muted text-sm">Web Listen Address</label>
 						<input type="text" name="web_listen" value={ cfg.Daemon.WebListen }/>
