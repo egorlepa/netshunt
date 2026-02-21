@@ -10,26 +10,26 @@ templ SettingsPage(cfg *config.Config) {
 				<h2>Routing</h2>
 				<div class="mb-8">
 					<label class="text-muted text-sm">Mode</label>
-					<select name="routing_mode">
+					<select name="routing_mode" id="routing-mode" onchange="toggleRoutingFields()">
 						<option value="redirect" if cfg.Routing.Mode == "redirect" { selected }>redirect (transparent proxy port)</option>
 						<option value="interface" if cfg.Routing.Mode == "interface" { selected }>interface (VPN interface)</option>
 					</select>
 				</div>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Local Port <span class="text-muted">(redirect mode)</span></label>
-					<input type="text" name="routing_local_port" value={ itoa(cfg.Routing.LocalPort) }/>
+				<div class="mb-8" id="field-local-port">
+					<label class="text-muted text-sm">Local Port</label>
+					<input type="number" name="routing_local_port" value={ itoa(cfg.Routing.LocalPort) } min="1" max="65535"/>
 				</div>
-				<div class="mb-8">
-					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(interface mode, e.g. wg0)</span></label>
+				<div class="mb-8" id="field-vpn-iface">
+					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(e.g. wg0)</span></label>
 					<input type="text" name="routing_interface" value={ cfg.Routing.Interface }/>
 				</div>
 			</div>
-			<div class="grid-2">
+			<div class="grid-2 mb-16">
 				<div class="card">
 					<h2>DNS</h2>
 					<div class="mb-8">
 						<label class="text-muted text-sm">dnscrypt-proxy Port</label>
-						<input type="text" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) }/>
+						<input type="number" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) } min="1" max="65535"/>
 					</div>
 				</div>
 				<div class="card">
@@ -60,5 +60,13 @@ templ SettingsPage(cfg *config.Config) {
 			</div>
 			<button class="btn btn-accent" type="submit">Save Settings</button>
 		</form>
+		<script>
+			function toggleRoutingFields() {
+				var mode = document.getElementById('routing-mode').value;
+				document.getElementById('field-local-port').style.display = mode === 'redirect' ? '' : 'none';
+				document.getElementById('field-vpn-iface').style.display = mode === 'interface' ? '' : 'none';
+			}
+			toggleRoutingFields();
+		</script>
 	}
 }

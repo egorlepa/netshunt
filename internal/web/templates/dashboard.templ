@@ -68,7 +68,7 @@ templ Dashboard(data DashboardData) {
 						Reconcile
 						<span class="htmx-indicator">...</span>
 					</button>
-					<button class="btn" hx-post="/actions/restart" hx-swap="none">
+					<button class="btn" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnsmasq and dnscrypt-proxy?">
 						Restart Services
 						<span class="htmx-indicator">...</span>
 					</button>

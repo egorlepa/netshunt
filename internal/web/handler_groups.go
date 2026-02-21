@@ -21,7 +21,7 @@ func (s *Server) handleGroupDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	g, err := s.Groups.Get(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	templates.GroupCard(*g).Render(r.Context(), w)
@@ -33,7 +33,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	desc := r.FormValue("description")
 
 	if name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		errorResponse(w, "name is required", http.StatusBadRequest)
 		return
 	}
 
@@ -43,7 +43,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		Enabled:     true,
 	}
 	if err := s.Groups.Create(g); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
 
@@ -54,18 +54,18 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := s.Groups.Delete(name); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
-	// Return empty response — htmx outerHTML swap removes the card.
+	toastTrigger(w, "Group deleted", "success")
 	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleEnableGroup(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := s.Groups.SetEnabled(name, true); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
@@ -75,7 +75,7 @@ func (s *Server) handleEnableGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDisableGroup(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := s.Groups.SetEnabled(name, false); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
@@ -87,12 +87,12 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	value := r.FormValue("value")
 	if value == "" {
-		http.Error(w, "value is required", http.StatusBadRequest)
+		errorResponse(w, "value is required", http.StatusBadRequest)
 		return
 	}
 
 	if err := s.Groups.AddEntry(name, value); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	value := r.PathValue("value")
 
 	if err := s.Groups.RemoveEntry(name, value); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -116,14 +116,15 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleImportGroups(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		errorResponse(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := s.Groups.ImportGroups(data); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	s.triggerMutation()
+	toastTrigger(w, "Groups imported", "success")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -135,7 +136,7 @@ func (s *Server) renderGroupList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderGroupCard(w http.ResponseWriter, r *http.Request, name string) {
 	g, err := s.Groups.Get(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	templates.GroupCard(*g).Render(r.Context(), w)
@@ -144,7 +145,7 @@ func (s *Server) renderGroupCard(w http.ResponseWriter, r *http.Request, name st
 func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name string) {
 	g, err := s.Groups.Get(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	templates.EntryList(name, g.Entries).Render(r.Context(), w)

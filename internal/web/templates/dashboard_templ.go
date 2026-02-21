@@ -166,7 +166,7 @@ func Dashboard(data DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</td></tr></tbody></table><div class=\"mt-8 flex gap-8\"><button class=\"btn btn-accent\" hx-post=\"/actions/reconcile\" hx-swap=\"none\">Reconcile <span class=\"htmx-indicator\">...</span></button> <button class=\"btn\" hx-post=\"/actions/restart\" hx-swap=\"none\">Restart Services <span class=\"htmx-indicator\">...</span></button></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</td></tr></tbody></table><div class=\"mt-8 flex gap-8\"><button class=\"btn btn-accent\" hx-post=\"/actions/reconcile\" hx-swap=\"none\">Reconcile <span class=\"htmx-indicator\">...</span></button> <button class=\"btn\" hx-post=\"/actions/restart\" hx-swap=\"none\" hx-confirm=\"Restart dnsmasq and dnscrypt-proxy?\">Restart Services <span class=\"htmx-indicator\">...</span></button></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

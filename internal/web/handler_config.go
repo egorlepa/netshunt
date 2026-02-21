@@ -24,7 +24,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := config.Load()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -56,7 +56,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.Save(cfg); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Update the server's config reference.
 	*s.Config = *cfg
 
-	w.Header().Set("HX-Trigger", "settings-saved")
+	toastTrigger(w, "Settings saved", "success")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -76,9 +76,10 @@ func (s *Server) handleActionReconcile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := s.Reconciler.Reconcile(ctx); err != nil {
 		s.Logger.Error("reconcile failed", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorResponse(w, "Reconcile failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	toastTrigger(w, "Reconcile complete", "success")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -93,5 +94,6 @@ func (s *Server) handleActionRestart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	toastTrigger(w, "Services restarted", "success")
 	w.WriteHeader(http.StatusOK)
 }

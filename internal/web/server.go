@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -84,4 +85,23 @@ func (s *Server) triggerMutation() {
 			s.Logger.Error("apply mutation failed", "error", err)
 		}
 	}()
+}
+
+// toastTrigger sets HX-Trigger header to show a toast notification.
+func toastTrigger(w http.ResponseWriter, msg, typ string) {
+	data, _ := json.Marshal(map[string]any{
+		"showToast": map[string]string{"message": msg, "type": typ},
+	})
+	w.Header().Set("HX-Trigger", string(data))
+}
+
+// errorResponse writes an HTMX-friendly error that shows as a toast instead of
+// replacing the target element.
+func errorResponse(w http.ResponseWriter, msg string, code int) {
+	data, _ := json.Marshal(map[string]any{
+		"showToast": map[string]string{"message": msg, "type": "error"},
+	})
+	w.Header().Set("HX-Retarget", "none")
+	w.Header().Set("HX-Trigger", string(data))
+	w.WriteHeader(code)
 }

@@ -43,7 +43,7 @@ func SettingsPage(cfg *config.Config) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"mb-16\">Settings</h1><form hx-put=\"/settings\" hx-swap=\"none\"><div class=\"card mb-16\"><h2>Routing</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Mode</label> <select name=\"routing_mode\"><option value=\"redirect\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"mb-16\">Settings</h1><form hx-put=\"/settings\" hx-swap=\"none\"><div class=\"card mb-16\"><h2>Routing</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Mode</label> <select name=\"routing_mode\" id=\"routing-mode\" onchange=\"toggleRoutingFields()\"><option value=\"redirect\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -63,20 +63,20 @@ func SettingsPage(cfg *config.Config) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, ">interface (VPN interface)</option></select></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">Local Port <span class=\"text-muted\">(redirect mode)</span></label> <input type=\"text\" name=\"routing_local_port\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, ">interface (VPN interface)</option></select></div><div class=\"mb-8\" id=\"field-local-port\"><label class=\"text-muted text-sm\">Local Port</label> <input type=\"number\" name=\"routing_local_port\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.Routing.LocalPort))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 20, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 20, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">VPN Interface <span class=\"text-muted\">(interface mode, e.g. wg0)</span></label> <input type=\"text\" name=\"routing_interface\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" min=\"1\" max=\"65535\"></div><div class=\"mb-8\" id=\"field-vpn-iface\"><label class=\"text-muted text-sm\">VPN Interface <span class=\"text-muted\">(e.g. wg0)</span></label> <input type=\"text\" name=\"routing_interface\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -89,20 +89,20 @@ func SettingsPage(cfg *config.Config) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"></div></div><div class=\"grid-2\"><div class=\"card\"><h2>DNS</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">dnscrypt-proxy Port</label> <input type=\"text\" name=\"dnscrypt_port\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"></div></div><div class=\"grid-2 mb-16\"><div class=\"card\"><h2>DNS</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">dnscrypt-proxy Port</label> <input type=\"number\" name=\"dnscrypt_port\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.DNSCrypt.Port))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 32, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 32, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></div></div><div class=\"card\"><h2>Network</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Entware Interface</label> <input type=\"text\" name=\"net_interface\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" min=\"1\" max=\"65535\"></div></div><div class=\"card\"><h2>Network</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Entware Interface</label> <input type=\"text\" name=\"net_interface\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -168,7 +168,7 @@ func SettingsPage(cfg *config.Config) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, ">error</option></select></div></div></div><button class=\"btn btn-accent\" type=\"submit\">Save Settings</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, ">error</option></select></div></div></div><button class=\"btn btn-accent\" type=\"submit\">Save Settings</button></form><script>\n\t\t\tfunction toggleRoutingFields() {\n\t\t\t\tvar mode = document.getElementById('routing-mode').value;\n\t\t\t\tdocument.getElementById('field-local-port').style.display = mode === 'redirect' ? '' : 'none';\n\t\t\t\tdocument.getElementById('field-vpn-iface').style.display = mode === 'interface' ? '' : 'none';\n\t\t\t}\n\t\t\ttoggleRoutingFields();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
