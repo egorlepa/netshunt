@@ -72,7 +72,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) handleActionUpdate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleActionReconcile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := s.Reconciler.Reconcile(ctx); err != nil {
 		s.Logger.Error("reconcile failed", "error", err)

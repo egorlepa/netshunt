@@ -155,7 +155,7 @@ func newGroupImportCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Imported groups from %s\n", args[0])
-			fmt.Println("Note: daemon is not running — start it to apply changes.")
+			fmt.Println("Note: daemon is not running — start it to reconcile changes.")
 			return nil
 		},
 	}

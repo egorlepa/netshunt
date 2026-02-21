@@ -64,8 +64,8 @@ templ Dashboard(data DashboardData) {
 					</tbody>
 				</table>
 				<div class="mt-8 flex gap-8">
-					<button class="btn btn-accent" hx-post="/actions/update" hx-swap="none">
-						Update
+					<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
+						Reconcile
 						<span class="htmx-indicator">...</span>
 					</button>
 					<button class="btn" hx-post="/actions/restart" hx-swap="none">

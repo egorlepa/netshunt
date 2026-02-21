@@ -11,10 +11,10 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 )
 
-func newApplyCmd() *cobra.Command {
+func newReconcileCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "apply",
-		Short: "Force-apply current groups and config (ipset, iptables, dnsmasq)",
+		Use:   "reconcile",
+		Short: "Force-reconcile current groups and config (ipset, iptables, dnsmasq)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -29,7 +29,7 @@ func newApplyCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Println("Update complete.")
+			fmt.Println("Reconcile complete.")
 			return nil
 		},
 	}

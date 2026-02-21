@@ -236,7 +236,7 @@ func newSetupCmd() *cobra.Command {
 			r := daemon.NewReconciler(cfg, store, logger)
 			if err := r.Reconcile(ctx); err != nil {
 				fmt.Printf("Warning: initial reconcile failed: %v\n", err)
-				fmt.Println("You can retry with: kst apply")
+				fmt.Println("You can retry with: kst reconcile")
 			} else {
 				fmt.Println("Setup complete!")
 			}

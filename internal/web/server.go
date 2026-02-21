@@ -68,7 +68,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
 
 	// Actions.
-	s.mux.HandleFunc("POST /actions/update", s.handleActionUpdate)
+	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
 	s.mux.HandleFunc("POST /actions/restart", s.handleActionRestart)
 }
 

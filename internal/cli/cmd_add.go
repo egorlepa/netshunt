@@ -36,7 +36,7 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Added %q to group %q\n", args[0], groupName)
-			fmt.Println("Note: daemon is not running — start it to apply changes.")
+			fmt.Println("Note: daemon is not running — start it to reconcile changes.")
 			return nil
 		},
 	}
