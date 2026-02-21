@@ -20,6 +20,11 @@ const (
 	// Shadowsocks.
 	ShadowsocksConfig = OptDir + "/etc/shadowsocks.json"
 
+	// Xray.
+	XrayConfigDir  = OptDir + "/etc/xray"
+	XrayConfigFile = XrayConfigDir + "/config.json"
+	XrayInitScript = OptDir + "/etc/init.d/S80xray"
+
 	// ipset / iptables constants.
 	DefaultIPSetTable = "bypass"
 	DefaultMark       = "0xd1000"

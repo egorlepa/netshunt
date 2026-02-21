@@ -40,11 +40,19 @@ func newStatusCmd() *cobra.Command {
 }
 
 func printServiceStatus(ctx context.Context) {
+	cfg, _ := config.Load()
+	var proxySvc service.Service
+	if cfg != nil && cfg.Mode == "xray" {
+		proxySvc = service.Xray
+	} else {
+		proxySvc = service.Shadowsocks
+	}
+
 	fmt.Println("Services:")
 	services := []service.Service{
 		service.Dnsmasq,
 		service.DNSCrypt,
-		service.Shadowsocks,
+		proxySvc,
 		service.Daemon,
 	}
 	for _, svc := range services {
@@ -93,7 +101,14 @@ func printGroupStatus(cfg *config.Config) {
 func printConfigSummary(cfg *config.Config) {
 	fmt.Println("Config:")
 	fmt.Printf("  Mode:          %s\n", cfg.Mode)
-	fmt.Printf("  SS local port: %d\n", cfg.Shadowsocks.LocalPort)
+	switch cfg.Mode {
+	case "xray":
+		fmt.Printf("  Xray server:   %s:%d\n", cfg.Xray.Server, cfg.Xray.ServerPort)
+		fmt.Printf("  Xray port:     %d\n", cfg.Xray.LocalPort)
+	default:
+		fmt.Printf("  SS server:     %s:%d\n", cfg.Shadowsocks.Server, cfg.Shadowsocks.ServerPort)
+		fmt.Printf("  SS local port: %d\n", cfg.Shadowsocks.LocalPort)
+	}
 	fmt.Printf("  DNSCrypt port: %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("  Web UI:        %s\n", cfg.Daemon.WebListen)
 }

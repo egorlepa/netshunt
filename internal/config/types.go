@@ -3,11 +3,12 @@ package config
 
 // Config is the top-level application configuration.
 type Config struct {
-	Version int `yaml:"version"`
-	Mode    string `yaml:"mode"` // "shadowsocks" (future: "openvpn", "wireguard")
+	Version int    `yaml:"version"`
+	Mode    string `yaml:"mode"` // "shadowsocks" or "xray"
 
 	Network     NetworkConfig     `yaml:"network"`
 	Shadowsocks ShadowsocksConfig `yaml:"shadowsocks"`
+	Xray        XrayConfig        `yaml:"xray"`
 	DNS         DNSConfig         `yaml:"dns"`
 	DNSCrypt    DNSCryptConfig    `yaml:"dnscrypt"`
 	IPSet       IPSetConfig       `yaml:"ipset"`
@@ -29,6 +30,19 @@ type ShadowsocksConfig struct {
 	LocalPort  int    `yaml:"local_port"`
 	Password   string `yaml:"password"`
 	Method     string `yaml:"method"`
+}
+
+// XrayConfig holds Xray VLESS+Reality proxy settings.
+type XrayConfig struct {
+	Server      string `yaml:"server"`
+	ServerPort  int    `yaml:"server_port"`
+	UUID        string `yaml:"uuid"`
+	Flow        string `yaml:"flow"`        // "xtls-rprx-vision" or ""
+	PublicKey   string `yaml:"public_key"`  // server Reality public key (base64url)
+	ShortID     string `yaml:"short_id"`    // Reality short ID (hex)
+	SNI         string `yaml:"sni"`         // server name for Reality TLS impersonation
+	Fingerprint string `yaml:"fingerprint"` // TLS fingerprint: "chrome", "firefox", etc.
+	LocalPort   int    `yaml:"local_port"`  // local dokodemo-door port
 }
 
 // DNSConfig holds DNS cache settings for dnsmasq.
@@ -61,6 +75,12 @@ func Defaults() Config {
 		Shadowsocks: ShadowsocksConfig{
 			LocalPort: 1181,
 			Method:    "chacha20-ietf-poly1305",
+		},
+		Xray: XrayConfig{
+			Flow:        "xtls-rprx-vision",
+			Fingerprint: "chrome",
+			SNI:         "www.microsoft.com",
+			LocalPort:   1182,
 		},
 		DNS: DNSConfig{
 			CacheEnabled: true,

@@ -19,13 +19,18 @@ type Dependency struct {
 	Package string // opkg package name
 }
 
-// RequiredDeps lists packages that must be installed for KST to work.
-var RequiredDeps = []Dependency{
+// commonDeps lists packages required in all modes.
+var commonDeps = []Dependency{
 	{Name: "ipset", Binary: "ipset", Package: "ipset"},
 	{Name: "iptables", Binary: "iptables", Package: "iptables"},
 	{Name: "dnsmasq", Binary: "dnsmasq", Package: "dnsmasq-full"},
-	{Name: "ss-redir", Binary: "ss-redir", Package: "shadowsocks-libev-ss-redir"},
 	{Name: "dnscrypt-proxy", Binary: "dnscrypt-proxy", Package: "dnscrypt-proxy2"},
+}
+
+// modeDeps lists mode-specific packages.
+var modeDeps = map[string]Dependency{
+	"shadowsocks": {Name: "ss-redir", Binary: "ss-redir", Package: "shadowsocks-libev-ss-redir"},
+	"xray":        {Name: "xray", Binary: "xray", Package: "xray"},
 }
 
 // CheckResult holds the result of a dependency check.
@@ -34,10 +39,18 @@ type CheckResult struct {
 	Installed bool
 }
 
-// CheckDependencies verifies that required binaries are available.
-func CheckDependencies() []CheckResult {
+// CheckDependencies verifies that required binaries are available for the given mode.
+// mode should be "shadowsocks" or "xray"; defaults to "shadowsocks".
+func CheckDependencies(mode string) []CheckResult {
+	deps := append([]Dependency(nil), commonDeps...)
+	if d, ok := modeDeps[mode]; ok {
+		deps = append(deps, d)
+	} else {
+		deps = append(deps, modeDeps["shadowsocks"])
+	}
+
 	var missing []CheckResult
-	for _, dep := range RequiredDeps {
+	for _, dep := range deps {
 		if !binaryExists(dep.Binary) {
 			missing = append(missing, CheckResult{Dep: dep, Installed: false})
 		}
@@ -263,6 +276,23 @@ PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
 	return os.WriteFile(platform.SSRedirInitScript, []byte(script), 0o755)
 }
 
+// ValidateXrayConfig does a basic sanity check on the Xray settings.
+func ValidateXrayConfig(cfg *config.Config) error {
+	if cfg.Xray.Server == "" {
+		return fmt.Errorf("xray server address is not configured")
+	}
+	if cfg.Xray.ServerPort == 0 {
+		return fmt.Errorf("xray server port is not configured")
+	}
+	if cfg.Xray.UUID == "" {
+		return fmt.Errorf("xray UUID is not configured")
+	}
+	if cfg.Xray.PublicKey == "" {
+		return fmt.Errorf("xray public key is not configured")
+	}
+	return nil
+}
+
 // ValidateShadowsocksConfig does a basic sanity check on the SS settings.
 func ValidateShadowsocksConfig(cfg *config.Config) error {
 	if cfg.Shadowsocks.Server == "" {
@@ -295,6 +325,161 @@ func EnsureDirectories() error {
 func InstallOpkgDeps(ctx context.Context, packages []string) error {
 	args := append([]string{"install"}, packages...)
 	return platform.RunSilent(ctx, "opkg", args...)
+}
+
+// xrayInbound is the dokodemo-door inbound for transparent proxying.
+type xrayInbound struct {
+	Listen   string          `json:"listen"`
+	Port     int             `json:"port"`
+	Protocol string          `json:"protocol"`
+	Settings xrayDokodemo    `json:"settings"`
+	Sniffing xraySniffing    `json:"sniffing"`
+}
+
+type xrayDokodemo struct {
+	Network        string `json:"network"`
+	FollowRedirect bool   `json:"followRedirect"`
+}
+
+type xraySniffing struct {
+	Enabled     bool     `json:"enabled"`
+	DestOverride []string `json:"destOverride"`
+}
+
+type xrayOutbound struct {
+	Protocol       string             `json:"protocol"`
+	Settings       xrayVlessSettings  `json:"settings"`
+	StreamSettings xrayStreamSettings `json:"streamSettings"`
+	Tag            string             `json:"tag"`
+}
+
+type xrayVlessSettings struct {
+	Vnext []xrayVnext `json:"vnext"`
+}
+
+type xrayVnext struct {
+	Address string      `json:"address"`
+	Port    int         `json:"port"`
+	Users   []xrayUser  `json:"users"`
+}
+
+type xrayUser struct {
+	ID         string `json:"id"`
+	Flow       string `json:"flow,omitempty"`
+	Encryption string `json:"encryption"`
+}
+
+type xrayStreamSettings struct {
+	Network         string            `json:"network"`
+	Security        string            `json:"security"`
+	RealitySettings xrayRealityConfig `json:"realitySettings"`
+}
+
+type xrayRealityConfig struct {
+	Show        bool     `json:"show"`
+	ServerName  string   `json:"serverName"`
+	Fingerprint string   `json:"fingerprint"`
+	PublicKey   string   `json:"publicKey"`
+	ShortID     string   `json:"shortId"`
+	SpiderX     string   `json:"spiderX"`
+}
+
+type xrayConfig struct {
+	Log      xrayLog        `json:"log"`
+	Inbounds []xrayInbound  `json:"inbounds"`
+	Outbounds []xrayOutbound `json:"outbounds"`
+}
+
+type xrayLog struct {
+	LogLevel string `json:"loglevel"`
+}
+
+// WriteXrayConfig generates /opt/etc/xray/config.json from KST config.
+func WriteXrayConfig(cfg *config.Config) error {
+	xc := xrayConfig{
+		Log: xrayLog{LogLevel: "warning"},
+		Inbounds: []xrayInbound{
+			{
+				Listen:   "0.0.0.0",
+				Port:     cfg.Xray.LocalPort,
+				Protocol: "dokodemo-door",
+				Settings: xrayDokodemo{
+					Network:        "tcp",
+					FollowRedirect: true,
+				},
+				Sniffing: xraySniffing{
+					Enabled:     true,
+					DestOverride: []string{"http", "tls"},
+				},
+			},
+		},
+		Outbounds: []xrayOutbound{
+			{
+				Protocol: "vless",
+				Settings: xrayVlessSettings{
+					Vnext: []xrayVnext{
+						{
+							Address: cfg.Xray.Server,
+							Port:    cfg.Xray.ServerPort,
+							Users: []xrayUser{
+								{
+									ID:         cfg.Xray.UUID,
+									Flow:       cfg.Xray.Flow,
+									Encryption: "none",
+								},
+							},
+						},
+					},
+				},
+				StreamSettings: xrayStreamSettings{
+					Network:  "tcp",
+					Security: "reality",
+					RealitySettings: xrayRealityConfig{
+						Show:        false,
+						ServerName:  cfg.Xray.SNI,
+						Fingerprint: cfg.Xray.Fingerprint,
+						PublicKey:   cfg.Xray.PublicKey,
+						ShortID:     cfg.Xray.ShortID,
+						SpiderX:     "/",
+					},
+				},
+				Tag: "proxy",
+			},
+			{
+				Protocol: "freedom",
+				Tag:      "direct",
+			},
+		},
+	}
+
+	data, err := json.MarshalIndent(xc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal xray config: %w", err)
+	}
+
+	if err := os.MkdirAll(platform.XrayConfigDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(platform.XrayConfigFile, append(data, '\n'), 0o600)
+}
+
+// InstallXrayInitScript generates an init.d script for xray.
+func InstallXrayInitScript() error {
+	script := fmt.Sprintf(`#!/bin/sh
+ENABLED=yes
+PROCS=xray
+ARGS="-c %s"
+PREARGS=""
+DESC=$PROCS
+PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+. /opt/etc/init.d/rc.func
+`, platform.XrayConfigFile)
+
+	if err := os.MkdirAll(filepath.Dir(platform.XrayInitScript), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(platform.XrayInitScript, []byte(script), 0o755)
 }
 
 // UninstallNDMHooks removes all NDM hook scripts installed by KST.

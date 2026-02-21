@@ -34,13 +34,21 @@ type Reconciler struct {
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
+// The traffic mode is selected based on cfg.Mode.
 func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Reconciler {
+	var mode proxy.TrafficMode
+	switch cfg.Mode {
+	case "xray":
+		mode = proxy.NewXray(cfg, logger)
+	default:
+		mode = proxy.NewShadowsocks(cfg, logger)
+	}
 	return &Reconciler{
 		Config:  cfg,
 		Groups:  groups,
 		IPSet:   netfilter.NewIPSet(cfg.IPSet.TableName),
 		Dnsmasq: dns.NewDnsmasqConfig(cfg.IPSet.TableName),
-		Mode:    proxy.NewShadowsocks(cfg, logger),
+		Mode:    mode,
 		Logger:  logger,
 	}
 }
@@ -76,9 +84,14 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// 4. Populate ipset with direct IP/CIDR entries and pre-resolve domains.
 	r.populateIPSet(ctx, entries)
 
-	// 5. Ensure ss-redir (or other proxy) is running before setting up redirect rules.
-	if err := service.Shadowsocks.EnsureRunning(ctx); err != nil {
-		r.Logger.Warn("shadowsocks is not running, iptables redirect will have no effect", "error", err)
+	// 5. Ensure the proxy service is running before setting up redirect rules.
+	proxySvc := service.Shadowsocks
+	if r.Config.Mode == "xray" {
+		proxySvc = service.Xray
+	}
+	if err := proxySvc.EnsureRunning(ctx); err != nil {
+		r.Logger.Warn("proxy service is not running, iptables redirect will have no effect",
+			"mode", r.Config.Mode, "error", err)
 	}
 
 	// 6. Setup iptables rules.

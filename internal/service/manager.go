@@ -22,6 +22,7 @@ var (
 	Dnsmasq     = Service{Name: "dnsmasq", InitScript: "/opt/etc/init.d/S56dnsmasq", PidFile: platform.DnsmasqPidFile}
 	DNSCrypt    = Service{Name: "dnscrypt-proxy", InitScript: "/opt/etc/init.d/S09dnscrypt-proxy2"}
 	Shadowsocks = Service{Name: "ss-redir", InitScript: platform.SSRedirInitScript}
+	Xray        = Service{Name: "xray", InitScript: platform.XrayInitScript}
 	Daemon      = Service{Name: "kst-daemon", InitScript: platform.InitScript, PidFile: platform.PidFile}
 )
 

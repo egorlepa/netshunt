@@ -19,6 +19,11 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
 )
 
+const (
+	modeSSR  = "shadowsocks"
+	modeXray = "xray"
+)
+
 func newSetupCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "setup",
@@ -30,9 +35,15 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println("=== KST Setup ===")
 			fmt.Println()
 
-			// 1. Check dependencies.
+			// Load existing config early so mode is known for dependency check.
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+
+			// 1. Check dependencies (based on current mode in config).
 			fmt.Println("Checking dependencies...")
-			missing := deploy.CheckDependencies()
+			missing := deploy.CheckDependencies(cfg.Mode)
 			if len(missing) > 0 {
 				fmt.Println("  Missing required packages:")
 				var pkgs []string
@@ -92,23 +103,59 @@ func newSetupCmd() *cobra.Command {
 				return err
 			}
 
-			// 3. Load or create config.
-			cfg, err := config.Load()
-			if err != nil {
-				return err
+			// 4. Mode selection.
+			fmt.Println("Proxy mode:")
+			fmt.Println("  1) shadowsocks  — NAT REDIRECT to ss-redir")
+			fmt.Println("  2) xray         — VLESS+Reality via Xray (recommended, bypasses DPI/RKN)")
+			defaultModeIdx := 1
+			if cfg.Mode == modeXray {
+				defaultModeIdx = 2
 			}
-
-			// 4. Shadowsocks configuration.
-			fmt.Println("Shadowsocks configuration:")
-			cfg.Shadowsocks.Server = prompt(reader, "  Server address", cfg.Shadowsocks.Server)
-			cfg.Shadowsocks.ServerPort = promptInt(reader, "  Server port", cfg.Shadowsocks.ServerPort)
-			cfg.Shadowsocks.LocalPort = promptInt(reader, "  Local port", cfg.Shadowsocks.LocalPort)
-			cfg.Shadowsocks.Password = prompt(reader, "  Password", cfg.Shadowsocks.Password)
-			cfg.Shadowsocks.Method = prompt(reader, "  Encryption method", cfg.Shadowsocks.Method)
+			modeStr := prompt(reader, fmt.Sprintf("  Pick mode [%d]", defaultModeIdx), "")
+			switch modeStr {
+			case "2", modeXray:
+				cfg.Mode = modeXray
+			case "1", modeSSR, "":
+				if modeStr == "" && defaultModeIdx == 2 {
+					cfg.Mode = modeXray
+				} else {
+					cfg.Mode = modeSSR
+				}
+			default:
+				cfg.Mode = modeSSR
+			}
+			fmt.Printf("  Mode: %s\n", cfg.Mode)
 			fmt.Println()
 
-			if err := deploy.ValidateShadowsocksConfig(cfg); err != nil {
-				return fmt.Errorf("invalid config: %w", err)
+			// 5. Proxy configuration.
+			switch cfg.Mode {
+			case modeXray:
+				fmt.Println("Xray VLESS+Reality configuration:")
+				cfg.Xray.Server = prompt(reader, "  Server address", cfg.Xray.Server)
+				cfg.Xray.ServerPort = promptInt(reader, "  Server port", cfg.Xray.ServerPort)
+				cfg.Xray.UUID = prompt(reader, "  UUID", cfg.Xray.UUID)
+				cfg.Xray.PublicKey = prompt(reader, "  Public key (base64url)", cfg.Xray.PublicKey)
+				cfg.Xray.ShortID = prompt(reader, "  Short ID (hex)", cfg.Xray.ShortID)
+				cfg.Xray.SNI = prompt(reader, "  SNI (server name)", cfg.Xray.SNI)
+				cfg.Xray.Fingerprint = prompt(reader, "  TLS fingerprint", cfg.Xray.Fingerprint)
+				cfg.Xray.LocalPort = promptInt(reader, "  Local port", cfg.Xray.LocalPort)
+				fmt.Println()
+
+				if err := deploy.ValidateXrayConfig(cfg); err != nil {
+					return fmt.Errorf("invalid xray config: %w", err)
+				}
+			default:
+				fmt.Println("Shadowsocks configuration:")
+				cfg.Shadowsocks.Server = prompt(reader, "  Server address", cfg.Shadowsocks.Server)
+				cfg.Shadowsocks.ServerPort = promptInt(reader, "  Server port", cfg.Shadowsocks.ServerPort)
+				cfg.Shadowsocks.LocalPort = promptInt(reader, "  Local port", cfg.Shadowsocks.LocalPort)
+				cfg.Shadowsocks.Password = prompt(reader, "  Password", cfg.Shadowsocks.Password)
+				cfg.Shadowsocks.Method = prompt(reader, "  Encryption method", cfg.Shadowsocks.Method)
+				fmt.Println()
+
+				if err := deploy.ValidateShadowsocksConfig(cfg); err != nil {
+					return fmt.Errorf("invalid config: %w", err)
+				}
 			}
 
 			// 5. DNS configuration.
@@ -129,27 +176,52 @@ func newSetupCmd() *cobra.Command {
 			}
 			fmt.Println("Config saved.")
 
-			// 8. Generate shadowsocks.json and start ss-redir.
-			fmt.Println("Generating shadowsocks.json...")
-			if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
-				return fmt.Errorf("write shadowsocks.json: %w", err)
-			}
-			fmt.Printf("  Written to %s\n", platform.ShadowsocksConfig)
+			// 8. Generate proxy config and start proxy service.
+			switch cfg.Mode {
+			case modeXray:
+				fmt.Println("Generating xray config.json...")
+				if err := deploy.WriteXrayConfig(cfg); err != nil {
+					return fmt.Errorf("write xray config: %w", err)
+				}
+				fmt.Printf("  Written to %s\n", platform.XrayConfigFile)
 
-			fmt.Println("Installing ss-redir init script...")
-			if err := deploy.InstallSSRedirInitScript(); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
-			} else {
-				fmt.Printf("  Installed %s\n", platform.SSRedirInitScript)
-			}
+				fmt.Println("Installing xray init script...")
+				if err := deploy.InstallXrayInitScript(); err != nil {
+					fmt.Printf("  Warning: %v\n", err)
+				} else {
+					fmt.Printf("  Installed %s\n", platform.XrayInitScript)
+				}
 
-			fmt.Println("Starting ss-redir...")
-			if err := service.Shadowsocks.EnsureRunning(ctx); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
-				fmt.Println("  ss-redir must be running for tunnel to work.")
-				fmt.Println("  Install: opkg install shadowsocks-libev-ss-redir")
-			} else {
-				fmt.Println("  ss-redir is running.")
+				fmt.Println("Starting xray...")
+				if err := service.Xray.EnsureRunning(ctx); err != nil {
+					fmt.Printf("  Warning: %v\n", err)
+					fmt.Println("  xray must be running for tunnel to work.")
+					fmt.Println("  Install: opkg install xray")
+				} else {
+					fmt.Println("  xray is running.")
+				}
+			default:
+				fmt.Println("Generating shadowsocks.json...")
+				if err := deploy.WriteShadowsocksConfig(cfg); err != nil {
+					return fmt.Errorf("write shadowsocks.json: %w", err)
+				}
+				fmt.Printf("  Written to %s\n", platform.ShadowsocksConfig)
+
+				fmt.Println("Installing ss-redir init script...")
+				if err := deploy.InstallSSRedirInitScript(); err != nil {
+					fmt.Printf("  Warning: %v\n", err)
+				} else {
+					fmt.Printf("  Installed %s\n", platform.SSRedirInitScript)
+				}
+
+				fmt.Println("Starting ss-redir...")
+				if err := service.Shadowsocks.EnsureRunning(ctx); err != nil {
+					fmt.Printf("  Warning: %v\n", err)
+					fmt.Println("  ss-redir must be running for tunnel to work.")
+					fmt.Println("  Install: opkg install shadowsocks-libev-ss-redir")
+				} else {
+					fmt.Println("  ss-redir is running.")
+				}
 			}
 
 			fmt.Println("Starting dnscrypt-proxy2...")
@@ -223,10 +295,18 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println()
 			printServiceStatus(ctx)
 
-			if !service.Shadowsocks.IsRunning(ctx) {
-				fmt.Println()
-				fmt.Println("WARNING: ss-redir is not running. The tunnel will NOT work.")
-				fmt.Println("  Check: opkg install shadowsocks-libev-ss-redir")
+			if cfg.Mode == modeXray {
+				if !service.Xray.IsRunning(ctx) {
+					fmt.Println()
+					fmt.Println("WARNING: xray is not running. The tunnel will NOT work.")
+					fmt.Println("  Install: opkg install xray")
+				}
+			} else {
+				if !service.Shadowsocks.IsRunning(ctx) {
+					fmt.Println()
+					fmt.Println("WARNING: ss-redir is not running. The tunnel will NOT work.")
+					fmt.Println("  Check: opkg install shadowsocks-libev-ss-redir")
+				}
 			}
 
 			fmt.Println()
