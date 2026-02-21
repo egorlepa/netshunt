@@ -23,6 +23,10 @@ templ SettingsPage(cfg *config.Config) {
 					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(e.g. wg0)</span></label>
 					<input type="text" name="routing_interface" value={ cfg.Routing.Interface }/>
 				</div>
+				<div class="mb-8">
+					<label class="text-muted text-sm">Excluded Networks <span class="text-muted">(one CIDR per line, bypasses tunnel)</span></label>
+					<textarea name="excluded_networks" rows="4" style="width:100%">{ joinLines(cfg.ExcludedNetworks) }</textarea>
+				</div>
 			</div>
 			<div class="grid-2 mb-16">
 				<div class="card">
@@ -31,12 +35,29 @@ templ SettingsPage(cfg *config.Config) {
 						<label class="text-muted text-sm">dnscrypt-proxy Port</label>
 						<input type="number" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) } min="1" max="65535"/>
 					</div>
+					<div class="mb-8">
+						<label class="flex gap-8" style="align-items:center">
+							<label class="toggle">
+								<input type="checkbox" name="dns_cache_enabled" if cfg.DNS.CacheEnabled { checked }/>
+								<span class="slider"></span>
+							</label>
+							<span class="text-muted text-sm">DNS Cache</span>
+						</label>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">Cache Size</label>
+						<input type="number" name="dns_cache_size" value={ itoa(cfg.DNS.CacheSize) } min="0" max="100000"/>
+					</div>
 				</div>
 				<div class="card">
 					<h2>Network</h2>
 					<div class="mb-8">
 						<label class="text-muted text-sm">Entware Interface</label>
 						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
+					</div>
+					<div class="mb-8">
+						<label class="text-muted text-sm">IPSet Table Name</label>
+						<input type="text" name="ipset_table" value={ cfg.IPSet.TableName }/>
 					</div>
 				</div>
 			</div>
@@ -58,7 +79,10 @@ templ SettingsPage(cfg *config.Config) {
 					</div>
 				</div>
 			</div>
-			<button class="btn btn-accent" type="submit">Save Settings</button>
+			<button class="btn btn-accent" type="submit">
+				Save &amp; Apply
+				<span class="htmx-indicator">...</span>
+			</button>
 		</form>
 		<script>
 			function toggleRoutingFields() {

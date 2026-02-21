@@ -80,9 +80,6 @@ templ GroupCard(g group.Group) {
 				>Delete</button>
 			</div>
 		</div>
-		if !g.Enabled {
-			<span class="badge badge-yellow mb-8">disabled</span>
-		}
 		<div id={ "entries-" + g.Name }>
 			@EntryList(g.Name, g.Entries)
 		</div>

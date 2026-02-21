@@ -68,16 +68,20 @@ th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--bor
 th { color: var(--fg2); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 
 /* Forms */
-input, select {
+input, select, textarea {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--fg);
   padding: 6px 10px;
   border-radius: var(--radius);
   font-size: 14px;
+  font-family: inherit;
 }
-input:focus, select:focus { outline: none; border-color: var(--accent); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
 input[type="text"], input[type="number"] { width: 100%; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* Buttons */
 .btn {

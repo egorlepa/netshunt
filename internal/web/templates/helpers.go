@@ -1,9 +1,16 @@
 package templates
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+func joinLines(ss []string) string {
+	return strings.Join(ss, "\n")
 }
 
 func faviconDataURI() string {

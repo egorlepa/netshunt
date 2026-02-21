@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/config"
 	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
@@ -21,6 +22,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	ctx := r.Context()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -35,17 +37,38 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("routing_local_port"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
-	if v := r.FormValue("routing_interface"); v != "" {
-		cfg.Routing.Interface = v
-	}
+	cfg.Routing.Interface = r.FormValue("routing_interface")
 
 	// DNS.
 	if v := r.FormValue("dnscrypt_port"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.DNSCrypt.Port)
 	}
+	cfg.DNS.CacheEnabled = r.FormValue("dns_cache_enabled") == "on"
+	if v := r.FormValue("dns_cache_size"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.DNS.CacheSize)
+	}
+
+	// IPSet.
+	if v := r.FormValue("ipset_table"); v != "" {
+		cfg.IPSet.TableName = v
+	}
 
 	// Network.
 	cfg.Network.EntwareInterface = r.FormValue("net_interface")
+
+	// Excluded networks.
+	if v := r.FormValue("excluded_networks"); v != "" {
+		var nets []string
+		for _, line := range strings.Split(v, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				nets = append(nets, line)
+			}
+		}
+		cfg.ExcludedNetworks = nets
+	} else {
+		cfg.ExcludedNetworks = nil
+	}
 
 	// Daemon.
 	if v := r.FormValue("web_listen"); v != "" {
@@ -68,7 +91,21 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Update the server's config reference.
 	*s.Config = *cfg
 
-	toastTrigger(w, "Settings saved", "success")
+	// Apply changes: restart services and reconcile routing rules.
+	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt} {
+		if svc.IsInstalled() {
+			if err := svc.Restart(ctx); err != nil {
+				s.Logger.Warn("failed to restart service", "service", svc.Name, "error", err)
+			}
+		}
+	}
+	if err := s.Reconciler.Reconcile(ctx); err != nil {
+		s.Logger.Error("reconcile after settings update failed", "error", err)
+		errorResponse(w, "Settings saved but reconcile failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	toastTrigger(w, "Settings saved & applied", "success")
 	w.WriteHeader(http.StatusOK)
 }
 

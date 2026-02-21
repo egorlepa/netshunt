@@ -89,86 +89,135 @@ func SettingsPage(cfg *config.Config) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"></div></div><div class=\"grid-2 mb-16\"><div class=\"card\"><h2>DNS</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">dnscrypt-proxy Port</label> <input type=\"number\" name=\"dnscrypt_port\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">Excluded Networks <span class=\"text-muted\">(one CIDR per line, bypasses tunnel)</span></label> <textarea name=\"excluded_networks\" rows=\"4\" style=\"width:100%\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.DNSCrypt.Port))
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(joinLines(cfg.ExcludedNetworks))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 32, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 28, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" min=\"1\" max=\"65535\"></div></div><div class=\"card\"><h2>Network</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Entware Interface</label> <input type=\"text\" name=\"net_interface\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</textarea></div></div><div class=\"grid-2 mb-16\"><div class=\"card\"><h2>DNS</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">dnscrypt-proxy Port</label> <input type=\"number\" name=\"dnscrypt_port\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Network.EntwareInterface)
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.DNSCrypt.Port))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 39, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 36, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"></div></div></div><div class=\"card mb-16\"><h2>Daemon</h2><div class=\"grid-2\"><div class=\"mb-8\"><label class=\"text-muted text-sm\">Web Listen Address</label> <input type=\"text\" name=\"web_listen\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" min=\"1\" max=\"65535\"></div><div class=\"mb-8\"><label class=\"flex gap-8\" style=\"align-items:center\"><label class=\"toggle\"><input type=\"checkbox\" name=\"dns_cache_enabled\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if cfg.DNS.CacheEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "> <span class=\"slider\"></span></label> <span class=\"text-muted text-sm\">DNS Cache</span></label></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">Cache Size</label> <input type=\"number\" name=\"dns_cache_size\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Daemon.WebListen)
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.DNS.CacheSize))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 48, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 49, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">Log Level</label> <select name=\"log_level\"><option value=\"debug\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" min=\"0\" max=\"100000\"></div></div><div class=\"card\"><h2>Network</h2><div class=\"mb-8\"><label class=\"text-muted text-sm\">Entware Interface</label> <input type=\"text\" name=\"net_interface\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Network.EntwareInterface)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 56, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">IPSet Table Name</label> <input type=\"text\" name=\"ipset_table\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.IPSet.TableName)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 60, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"></div></div></div><div class=\"card mb-16\"><h2>Daemon</h2><div class=\"grid-2\"><div class=\"mb-8\"><label class=\"text-muted text-sm\">Web Listen Address</label> <input type=\"text\" name=\"web_listen\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Daemon.WebListen)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 69, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\"></div><div class=\"mb-8\"><label class=\"text-muted text-sm\">Log Level</label> <select name=\"log_level\"><option value=\"debug\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if cfg.Daemon.LogLevel == "debug" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, ">debug</option> <option value=\"info\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ">debug</option> <option value=\"info\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if cfg.Daemon.LogLevel == "info" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, ">info</option> <option value=\"warn\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, ">info</option> <option value=\"warn\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if cfg.Daemon.LogLevel == "warn" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, ">warn</option> <option value=\"error\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, ">warn</option> <option value=\"error\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if cfg.Daemon.LogLevel == "error" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, ">error</option></select></div></div></div><button class=\"btn btn-accent\" type=\"submit\">Save Settings</button></form><script>\n\t\t\tfunction toggleRoutingFields() {\n\t\t\t\tvar mode = document.getElementById('routing-mode').value;\n\t\t\t\tdocument.getElementById('field-local-port').style.display = mode === 'redirect' ? '' : 'none';\n\t\t\t\tdocument.getElementById('field-vpn-iface').style.display = mode === 'interface' ? '' : 'none';\n\t\t\t}\n\t\t\ttoggleRoutingFields();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, ">error</option></select></div></div></div><button class=\"btn btn-accent\" type=\"submit\">Save &amp; Apply <span class=\"htmx-indicator\">...</span></button></form><script>\n\t\t\tfunction toggleRoutingFields() {\n\t\t\t\tvar mode = document.getElementById('routing-mode').value;\n\t\t\t\tdocument.getElementById('field-local-port').style.display = mode === 'redirect' ? '' : 'none';\n\t\t\t\tdocument.getElementById('field-vpn-iface').style.display = mode === 'interface' ? '' : 'none';\n\t\t\t}\n\t\t\ttoggleRoutingFields();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
