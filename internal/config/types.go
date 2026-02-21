@@ -4,29 +4,29 @@ package config
 type Config struct {
 	Version int `yaml:"version"`
 
-	Proxy    ProxyConfig   `yaml:"proxy"`
-	Network  NetworkConfig `yaml:"network"`
-	DNS      DNSConfig     `yaml:"dns"`
+	Routing  RoutingConfig  `yaml:"routing"`
+	Network  NetworkConfig  `yaml:"network"`
+	DNS      DNSConfig      `yaml:"dns"`
 	DNSCrypt DNSCryptConfig `yaml:"dnscrypt"`
-	IPSet    IPSetConfig   `yaml:"ipset"`
-	Daemon   DaemonConfig  `yaml:"daemon"`
+	IPSet    IPSetConfig    `yaml:"ipset"`
+	Daemon   DaemonConfig   `yaml:"daemon"`
 
 	ExcludedNetworks []string `yaml:"excluded_networks"`
 	SetupFinished    bool     `yaml:"setup_finished"`
 }
 
-// ProxyConfig describes how matched traffic is forwarded.
-// KST does not manage the proxy software itself — the user sets up their own.
-type ProxyConfig struct {
-	// Type selects the traffic redirection mechanism:
-	//   "redirect" — NAT REDIRECT to a local transparent proxy port (ss-redir, xray, sing-box, …)
-	//   "tun"      — MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
-	Type string `yaml:"type"`
+// RoutingConfig describes how matched traffic is forwarded.
+// KST does not manage the proxy/VPN software itself — the user sets up their own.
+type RoutingConfig struct {
+	// Mode selects the traffic redirection mechanism:
+	//   "redirect"  — NAT REDIRECT to a local transparent proxy port (ss-redir, xray, sing-box, …)
+	//   "interface" — MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
+	Mode string `yaml:"mode"`
 
-	// LocalPort is the port the transparent proxy listens on. Used when Type == "redirect".
+	// LocalPort is the port the transparent proxy listens on. Used when Mode == "redirect".
 	LocalPort int `yaml:"local_port"`
 
-	// Interface is the VPN tunnel interface name (e.g. wg0, tun0). Used when Type == "tun".
+	// Interface is the VPN tunnel interface name (e.g. wg0, tun0). Used when Mode == "interface".
 	Interface string `yaml:"interface"`
 }
 
@@ -61,8 +61,8 @@ type DaemonConfig struct {
 func Defaults() Config {
 	return Config{
 		Version: 1,
-		Proxy: ProxyConfig{
-			Type:      "redirect",
+		Routing: RoutingConfig{
+			Mode:      "redirect",
 			LocalPort: 1080,
 		},
 		DNS: DNSConfig{

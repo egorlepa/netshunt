@@ -28,15 +28,15 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Proxy.
-	if v := r.FormValue("proxy_type"); v == "redirect" || v == "tun" {
-		cfg.Proxy.Type = v
+	// Routing.
+	if v := r.FormValue("routing_mode"); v == "redirect" || v == "interface" {
+		cfg.Routing.Mode = v
 	}
-	if v := r.FormValue("proxy_local_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Proxy.LocalPort)
+	if v := r.FormValue("routing_local_port"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
-	if v := r.FormValue("proxy_interface"); v != "" {
-		cfg.Proxy.Interface = v
+	if v := r.FormValue("routing_interface"); v != "" {
+		cfg.Routing.Interface = v
 	}
 
 	// DNS.

@@ -123,43 +123,43 @@ func newSetupCmd() *cobra.Command {
 				return err
 			}
 
-			// 4. Proxy type selection.
-			fmt.Println("Proxy type:")
-			fmt.Println("  1) redirect — NAT REDIRECT to a local transparent proxy port")
-			fmt.Println("             (ss-redir, xray dokodemo-door, sing-box, redsocks, …)")
-			fmt.Println("  2) tun      — MARK + policy routing via a VPN interface")
-			fmt.Println("             (WireGuard wg0, OpenVPN tun0, …)")
-			defaultTypeIdx := 1
-			if cfg.Proxy.Type == "tun" {
-				defaultTypeIdx = 2
+			// 4. Routing mode selection.
+			fmt.Println("Routing mode:")
+			fmt.Println("  1) redirect  — TCP REDIRECT + UDP TPROXY to a local transparent proxy port")
+			fmt.Println("               (ss-redir -u, xray dokodemo-door, sing-box, redsocks, …)")
+			fmt.Println("  2) interface — MARK + policy routing via a VPN interface")
+			fmt.Println("               (WireGuard wg0, OpenVPN tun0, …)")
+			defaultModeIdx := 1
+			if cfg.Routing.Mode == "interface" {
+				defaultModeIdx = 2
 			}
-			typeStr := prompt(reader, fmt.Sprintf("  Pick type [%d]", defaultTypeIdx), "")
-			switch typeStr {
-			case "2", "tun":
-				cfg.Proxy.Type = "tun"
+			modeStr := prompt(reader, fmt.Sprintf("  Pick mode [%d]", defaultModeIdx), "")
+			switch modeStr {
+			case "2", "interface":
+				cfg.Routing.Mode = "interface"
 			default:
-				if typeStr == "" && defaultTypeIdx == 2 {
-					cfg.Proxy.Type = "tun"
+				if modeStr == "" && defaultModeIdx == 2 {
+					cfg.Routing.Mode = "interface"
 				} else {
-					cfg.Proxy.Type = "redirect"
+					cfg.Routing.Mode = "redirect"
 				}
 			}
-			fmt.Printf("  Type: %s\n", cfg.Proxy.Type)
+			fmt.Printf("  Mode: %s\n", cfg.Routing.Mode)
 			fmt.Println()
 
-			// 5. Proxy-specific configuration.
-			switch cfg.Proxy.Type {
-			case "tun":
+			// 5. Mode-specific configuration.
+			switch cfg.Routing.Mode {
+			case "interface":
 				fmt.Println("VPN interface configuration:")
 				fmt.Println("  Set up your VPN (WireGuard, OpenVPN, etc.) separately.")
 				fmt.Println("  KST will route matched traffic via the specified interface.")
-				cfg.Proxy.Interface = prompt(reader, "  VPN interface name (e.g. wg0, tun0)", cfg.Proxy.Interface)
+				cfg.Routing.Interface = prompt(reader, "  VPN interface name (e.g. wg0, tun0)", cfg.Routing.Interface)
 				fmt.Println()
 			default:
 				fmt.Println("Transparent proxy configuration:")
 				fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
 				fmt.Println("  KST will redirect matched TCP and UDP traffic to the specified port.")
-				cfg.Proxy.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Proxy.LocalPort)
+				cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
 				fmt.Println()
 			}
 

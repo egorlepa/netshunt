@@ -9,7 +9,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/dns"
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/proxy"
+	"github.com/guras256/keenetic-split-tunnel/internal/routing"
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
 )
 
@@ -29,16 +29,16 @@ type Reconciler struct {
 	Groups  *group.Store
 	IPSet   *netfilter.IPSet
 	Dnsmasq *dns.DnsmasqConfig
-	Mode    proxy.TrafficMode
+	Mode    routing.Mode
 	Logger  *slog.Logger
 }
 
-// allModes returns one instance of every known TrafficMode.
+// allModes returns one instance of every known routing mode.
 // Used to clean up stale rules when switching modes.
-func allModes(cfg *config.Config, logger *slog.Logger) []proxy.TrafficMode {
-	return []proxy.TrafficMode{
-		proxy.NewRedirect(cfg, logger),
-		proxy.NewTun(cfg, logger),
+func allModes(cfg *config.Config, logger *slog.Logger) []routing.Mode {
+	return []routing.Mode{
+		routing.NewRedirect(cfg, logger),
+		routing.NewIface(cfg, logger),
 	}
 }
 
@@ -49,7 +49,7 @@ func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger)
 		Groups:  groups,
 		IPSet:   netfilter.NewIPSet(cfg.IPSet.TableName),
 		Dnsmasq: dns.NewDnsmasqConfig(cfg.IPSet.TableName),
-		Mode:    proxy.NewMode(cfg, logger),
+		Mode:    routing.New(cfg, logger),
 		Logger:  logger,
 	}
 }

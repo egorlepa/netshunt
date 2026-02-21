@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/proxy"
+	"github.com/guras256/keenetic-split-tunnel/internal/routing"
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
 	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
 )
@@ -29,16 +29,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mode := proxy.NewMode(s.Config, s.Logger)
-	proxyActive, _ := mode.IsActive(ctx)
+	mode := routing.New(s.Config, s.Logger)
+	routingActive, _ := mode.IsActive(ctx)
 
 	data := templates.DashboardData{
-		Services:    services,
-		IPSetCount:  ipsetCount,
-		GroupCount:  len(groups),
-		EntryCount:  entryCount,
-		ProxyType:   s.Config.Proxy.Type,
-		ProxyActive: proxyActive,
+		Services:      services,
+		IPSetCount:    ipsetCount,
+		GroupCount:    len(groups),
+		EntryCount:    entryCount,
+		RoutingMode:   s.Config.Routing.Mode,
+		RoutingActive: routingActive,
 	}
 
 	templates.Dashboard(data).Render(ctx, w)

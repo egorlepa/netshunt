@@ -1,4 +1,4 @@
-package proxy
+package routing
 
 import (
 	"context"
@@ -16,7 +16,7 @@ const (
 	redirectUDPChainName = "KSTREDIR_UDP"
 )
 
-// Redirect implements TrafficMode using NAT REDIRECT (TCP) and TPROXY (UDP)
+// Redirect implements Mode using NAT REDIRECT (TCP) and TPROXY (UDP)
 // to a local transparent proxy port.
 //
 // This works with any transparent proxy that listens on a local port:
@@ -24,8 +24,8 @@ const (
 //
 // Traffic flow:
 //  1. DNS query resolved → IP added to ipset by dnsmasq
-//  2. TCP: iptables PREROUTING (nat) redirects to cfg.Proxy.LocalPort
-//  3. UDP: iptables PREROUTING (mangle) TPROXY to cfg.Proxy.LocalPort
+//  2. TCP: iptables PREROUTING (nat) redirects to cfg.Routing.LocalPort
+//  3. UDP: iptables PREROUTING (mangle) TPROXY to cfg.Routing.LocalPort
 //  4. Transparent proxy forwards traffic through the tunnel
 type Redirect struct {
 	cfg    *config.Config
@@ -63,7 +63,7 @@ func (r *Redirect) Name() string { return "redirect" }
 //	ip route replace local 0/0 dev lo table 100
 func (r *Redirect) SetupRules(ctx context.Context) error {
 	ipsetName := r.cfg.IPSet.TableName
-	port := fmt.Sprintf("%d", r.cfg.Proxy.LocalPort)
+	port := fmt.Sprintf("%d", r.cfg.Routing.LocalPort)
 	iface := r.cfg.Network.EntwareInterface
 
 	r.logger.Info("setting up redirect iptables rules",
@@ -126,7 +126,7 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 	if err := r.ipt.AppendRule(ctx, "mangle",
 		redirectUDPChainName, "-p", "udp",
 		"-m", "set", "--match-set", ipsetName, "dst",
-		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", tunFwmark+"/"+tunFwmark,
+		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", ifaceFwmark+"/"+ifaceFwmark,
 	); err != nil {
 		// TPROXY target not available — clean up and bail.
 		_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
@@ -146,10 +146,10 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 	}
 
 	// Policy routing for TPROXY-marked packets.
-	if err := platform.RunSilent(ctx, "ip", "rule", "add", "fwmark", tunFwmark, "table", tunRouteTable); err != nil {
+	if err := platform.RunSilent(ctx, "ip", "rule", "add", "fwmark", ifaceFwmark, "table", ifaceRouteTable); err != nil {
 		r.logger.Warn("ip rule add failed (may already exist)", "error", err)
 	}
-	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", tunRouteTable); err != nil {
+	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", ifaceRouteTable); err != nil {
 		return fmt.Errorf("ip route replace: %w", err)
 	}
 
@@ -169,8 +169,8 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
 
 	// Policy routing for TPROXY.
-	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", tunFwmark, "table", tunRouteTable)
-	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", tunRouteTable)
+	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", ifaceFwmark, "table", ifaceRouteTable)
+	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", ifaceRouteTable)
 
 	// Remove DNS DNAT rules added by the dns-local hook.
 	iface := r.cfg.Network.EntwareInterface
@@ -187,7 +187,7 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 
 // IsActive checks if something is listening on the configured local port.
 func (r *Redirect) IsActive(ctx context.Context) (bool, error) {
-	port := fmt.Sprintf(":%d", r.cfg.Proxy.LocalPort)
+	port := fmt.Sprintf(":%d", r.cfg.Routing.LocalPort)
 	ok, err := netfilter.CheckListeningPort(ctx, port)
 	if err != nil {
 		return false, nil

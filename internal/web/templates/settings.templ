@@ -7,21 +7,21 @@ templ SettingsPage(cfg *config.Config) {
 		<h1 class="mb-16">Settings</h1>
 		<form hx-put="/settings" hx-swap="none">
 			<div class="card mb-16">
-				<h2>Proxy</h2>
+				<h2>Routing</h2>
 				<div class="mb-8">
-					<label class="text-muted text-sm">Type</label>
-					<select name="proxy_type">
-						<option value="redirect" if cfg.Proxy.Type == "redirect" { selected }>redirect (transparent proxy port)</option>
-						<option value="tun" if cfg.Proxy.Type == "tun" { selected }>tun (VPN interface)</option>
+					<label class="text-muted text-sm">Mode</label>
+					<select name="routing_mode">
+						<option value="redirect" if cfg.Routing.Mode == "redirect" { selected }>redirect (transparent proxy port)</option>
+						<option value="interface" if cfg.Routing.Mode == "interface" { selected }>interface (VPN interface)</option>
 					</select>
 				</div>
 				<div class="mb-8">
 					<label class="text-muted text-sm">Local Port <span class="text-muted">(redirect mode)</span></label>
-					<input type="text" name="proxy_local_port" value={ itoa(cfg.Proxy.LocalPort) }/>
+					<input type="text" name="routing_local_port" value={ itoa(cfg.Routing.LocalPort) }/>
 				</div>
 				<div class="mb-8">
-					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(tun mode, e.g. wg0)</span></label>
-					<input type="text" name="proxy_interface" value={ cfg.Proxy.Interface }/>
+					<label class="text-muted text-sm">VPN Interface <span class="text-muted">(interface mode, e.g. wg0)</span></label>
+					<input type="text" name="routing_interface" value={ cfg.Routing.Interface }/>
 				</div>
 			</div>
 			<div class="grid-2">

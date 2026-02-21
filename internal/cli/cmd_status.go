@@ -10,7 +10,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/proxy"
+	"github.com/guras256/keenetic-split-tunnel/internal/routing"
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
 )
 
@@ -30,7 +30,7 @@ func newStatusCmd() *cobra.Command {
 
 			printServiceStatus(ctx)
 			fmt.Println()
-			printProxyStatus(ctx, cfg)
+			printRoutingStatus(ctx, cfg)
 			fmt.Println()
 			printIPSetStatus(ctx, cfg)
 			fmt.Println()
@@ -63,22 +63,22 @@ func printServiceStatus(ctx context.Context) {
 	}
 }
 
-func printProxyStatus(ctx context.Context, cfg *config.Config) {
+func printRoutingStatus(ctx context.Context, cfg *config.Config) {
 	logger := platform.NewLogger("error")
-	mode := proxy.NewMode(cfg, logger)
+	mode := routing.New(cfg, logger)
 	active, _ := mode.IsActive(ctx)
 
-	fmt.Println("Proxy:")
-	fmt.Printf("  Type:   %s\n", cfg.Proxy.Type)
-	switch cfg.Proxy.Type {
-	case "tun":
-		iface := cfg.Proxy.Interface
+	fmt.Println("Routing:")
+	fmt.Printf("  Mode:   %s\n", cfg.Routing.Mode)
+	switch cfg.Routing.Mode {
+	case "interface":
+		iface := cfg.Routing.Interface
 		if iface == "" {
 			iface = "(not set)"
 		}
 		fmt.Printf("  Interface: %s\n", iface)
 	default:
-		fmt.Printf("  Port:   %d\n", cfg.Proxy.LocalPort)
+		fmt.Printf("  Port:   %d\n", cfg.Routing.LocalPort)
 	}
 	if active {
 		fmt.Println("  Status: active")
@@ -119,14 +119,13 @@ func printGroupStatus(_ *config.Config) {
 
 func printConfigSummary(cfg *config.Config) {
 	fmt.Println("Config:")
-	fmt.Printf("  Proxy type:    %s\n", cfg.Proxy.Type)
-	switch cfg.Proxy.Type {
-	case "tun":
-		fmt.Printf("  Interface:     %s\n", cfg.Proxy.Interface)
+	fmt.Printf("  Routing mode:  %s\n", cfg.Routing.Mode)
+	switch cfg.Routing.Mode {
+	case "interface":
+		fmt.Printf("  Interface:     %s\n", cfg.Routing.Interface)
 	default:
-		fmt.Printf("  Local port:    %d\n", cfg.Proxy.LocalPort)
+		fmt.Printf("  Local port:    %d\n", cfg.Routing.LocalPort)
 	}
 	fmt.Printf("  DNSCrypt port: %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("  Web UI:        %s\n", cfg.Daemon.WebListen)
 }
-

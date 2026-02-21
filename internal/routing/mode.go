@@ -1,4 +1,4 @@
-package proxy
+package routing
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/config"
 )
 
-// TrafficMode abstracts the mechanism for redirecting traffic matching the ipset.
+// Mode abstracts the mechanism for redirecting traffic matching the ipset.
 //
 // Two implementations:
 //   - Redirect: NAT REDIRECT to a local transparent proxy port (ss-redir, xray, sing-box, …)
-//   - Tun: MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
-type TrafficMode interface {
-	// Name returns the mode identifier ("redirect" or "tun").
+//   - Iface: MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
+type Mode interface {
+	// Name returns the mode identifier ("redirect" or "interface").
 	Name() string
 
 	// SetupRules creates iptables/ip rules necessary for traffic redirection.
@@ -26,10 +26,10 @@ type TrafficMode interface {
 	IsActive(ctx context.Context) (bool, error)
 }
 
-// NewMode returns a TrafficMode for the configured proxy type.
-func NewMode(cfg *config.Config, logger *slog.Logger) TrafficMode {
-	if cfg.Proxy.Type == "tun" {
-		return NewTun(cfg, logger)
+// New returns a Mode for the configured routing mode.
+func New(cfg *config.Config, logger *slog.Logger) Mode {
+	if cfg.Routing.Mode == "interface" {
+		return NewIface(cfg, logger)
 	}
 	return NewRedirect(cfg, logger)
 }

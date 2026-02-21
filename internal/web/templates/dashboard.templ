@@ -7,12 +7,12 @@ type ServiceStatus struct {
 }
 
 type DashboardData struct {
-	Services    []ServiceStatus
-	IPSetCount  int
-	GroupCount  int
-	EntryCount  int
-	ProxyType   string
-	ProxyActive bool
+	Services      []ServiceStatus
+	IPSetCount    int
+	GroupCount    int
+	EntryCount    int
+	RoutingMode   string
+	RoutingActive bool
 }
 
 templ Dashboard(data DashboardData) {
@@ -48,10 +48,10 @@ templ Dashboard(data DashboardData) {
 				<table>
 					<tbody>
 						<tr>
-							<td class="text-muted">Proxy</td>
+							<td class="text-muted">Routing</td>
 							<td>
-								{ data.ProxyType }
-								if data.ProxyActive {
+								{ data.RoutingMode }
+								if data.RoutingActive {
 									<span class="badge badge-green">active</span>
 								} else {
 									<span class="badge badge-red">inactive</span>
