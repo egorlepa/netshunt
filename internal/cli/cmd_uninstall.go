@@ -80,15 +80,14 @@ func newUninstallCmd() *cobra.Command {
 			fmt.Println("Removing NDM hooks...")
 			deploy.UninstallNDMHooks()
 
-			// 10. Remove KST config directory.
-			fmt.Println("Removing configuration...")
+			// 10. Remove KST config (keep groups for reinstall).
+			fmt.Println("Removing configuration (keeping groups)...")
 			_ = os.Remove(platform.ConfigFile)
-			_ = os.Remove(platform.GroupsFile)
 			_ = os.Remove(platform.PidFile)
-			_ = os.Remove(platform.ConfigDir)
 
 			fmt.Println()
-			fmt.Println("KST removed. Next steps:")
+			fmt.Println("KST removed. Groups preserved in " + platform.GroupsFile)
+			fmt.Println("Next steps:")
 			fmt.Println("  opkg remove kst dnsmasq-full dnscrypt-proxy2")
 			return nil
 		},
