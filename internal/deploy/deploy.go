@@ -113,8 +113,6 @@ var ndmHooks = []ndmHook{
 	{"netfilter.d", "100-proxy-redirect"},
 	{"netfilter.d", "100-dns-local"},
 	{"ifstatechanged.d", "100-unblock"},
-	{"ifcreated.d", "kst-iface-add"},
-	{"ifdestroyed.d", "kst-iface-del"},
 	{"wan.d", "internet-up"},
 }
 
@@ -273,10 +271,6 @@ func hookEvent(h ndmHook) string {
 		return "netfilter"
 	case "ifstatechanged.d":
 		return "ifstate"
-	case "ifcreated.d":
-		return "ifcreated"
-	case "ifdestroyed.d":
-		return "ifdestroyed"
 	case "wan.d":
 		return "wan"
 	default:

@@ -172,8 +172,7 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 		"./opt/", "./opt/bin/", "./opt/etc/", "./opt/etc/kst/",
 		"./opt/etc/kst/ndm/", "./opt/etc/kst/init.d/",
 		"./opt/etc/kst/ndm/fs.d/", "./opt/etc/kst/ndm/netfilter.d/",
-		"./opt/etc/kst/ndm/ifstatechanged.d/", "./opt/etc/kst/ndm/ifcreated.d/",
-		"./opt/etc/kst/ndm/ifdestroyed.d/", "./opt/etc/kst/ndm/wan.d/",
+		"./opt/etc/kst/ndm/ifstatechanged.d/", "./opt/etc/kst/ndm/wan.d/",
 	} {
 		if err := addDir(d); err != nil {
 			return nil, 0, err
@@ -205,8 +204,6 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 		"./opt/etc/kst/ndm/netfilter.d/100-proxy-redirect": "scripts/ndm/netfilter.d/100-proxy-redirect",
 		"./opt/etc/kst/ndm/netfilter.d/100-dns-local":      "scripts/ndm/netfilter.d/100-dns-local",
 		"./opt/etc/kst/ndm/ifstatechanged.d/100-unblock":   "scripts/ndm/ifstatechanged.d/100-unblock",
-		"./opt/etc/kst/ndm/ifcreated.d/kst-iface-add":      "scripts/ndm/ifcreated.d/kst-iface-add",
-		"./opt/etc/kst/ndm/ifdestroyed.d/kst-iface-del":    "scripts/ndm/ifdestroyed.d/kst-iface-del",
 		"./opt/etc/kst/ndm/wan.d/internet-up":              "scripts/ndm/wan.d/internet-up",
 	}
 	for dest, src := range ndmScripts {

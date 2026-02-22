@@ -46,9 +46,9 @@ templ DiagnosticsResults(results []healthcheck.Result) {
 				<tr>
 					<td style="width:24px;text-align:center">
 						if r.Passed {
-							<span style="color:var(--green)">✓</span>
+							<span class="text-green">✓</span>
 						} else {
-							<span style="color:var(--red)">✗</span>
+							<span class="text-red">✗</span>
 						}
 					</td>
 					<td><strong>{ r.Name }</strong></td>
@@ -62,7 +62,7 @@ templ DiagnosticsResults(results []healthcheck.Result) {
 templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
 	<p class="mb-8"><strong>{ probe.Domain }</strong></p>
 	if len(probe.IPs) == 0 {
-		<p><span style="color:var(--red)">✗</span> no IPs resolved</p>
+		<p><span class="text-red">✗</span> no IPs resolved</p>
 	} else {
 		<table>
 			<tbody>
@@ -70,9 +70,9 @@ templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
 					<tr>
 						<td style="width:24px;text-align:center">
 							if probe.InIPSet[ip] {
-								<span style="color:var(--green)">✓</span>
+								<span class="text-green">✓</span>
 							} else {
-								<span style="color:var(--red)">✗</span>
+								<span class="text-red">✗</span>
 							}
 						</td>
 						<td>{ ip }</td>
@@ -92,5 +92,5 @@ templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
 
 templ DiagnosticsProbeError(domain string, errMsg string) {
 	<p class="mb-8"><strong>{ domain }</strong></p>
-	<p><span style="color:var(--red)">✗</span> <span class="text-muted">{ errMsg }</span></p>
+	<p><span class="text-red">✗</span> <span class="text-muted">{ errMsg }</span></p>
 }

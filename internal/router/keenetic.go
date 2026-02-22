@@ -40,7 +40,11 @@ func (c *Client) rciPost(ctx context.Context, body any) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("rci post: status %d: %s", resp.StatusCode, bytes.TrimSpace(b))
+	}
 	return nil
 }
 
@@ -114,21 +118,6 @@ func (c *Client) GetInterfaces(ctx context.Context) ([]Interface, error) {
 	return ifaces, nil
 }
 
-// GetFirmwareVersion returns the router firmware version string.
-func (c *Client) GetFirmwareVersion(ctx context.Context) (string, error) {
-	data, err := c.rciGet(ctx, "show/version")
-	if err != nil {
-		return "", err
-	}
-	if v, ok := data["title"].(string); ok {
-		return v, nil
-	}
-	if v, ok := data["release"].(string); ok {
-		return v, nil
-	}
-	return "", fmt.Errorf("firmware version not found in response")
-}
-
 // IsDNSOverrideEnabled checks if opkg DNS override is active.
 func (c *Client) IsDNSOverrideEnabled(ctx context.Context) (bool, error) {
 	url := rciBaseURL + "/opkg/dns-override"
@@ -184,14 +173,3 @@ func (c *Client) saveConfig(ctx context.Context) error {
 	return nil
 }
 
-// IsInternetConnected checks if the router has internet connectivity.
-func (c *Client) IsInternetConnected(ctx context.Context) (bool, error) {
-	data, err := c.rciGet(ctx, "show/internet/status")
-	if err != nil {
-		return false, err
-	}
-	if v, ok := data["internet"].(string); ok {
-		return v == "connected", nil
-	}
-	return false, nil
-}

@@ -123,7 +123,7 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var added int
+	var added, skipped int
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -131,11 +131,17 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.Groups.AddEntry(name, line); err == nil {
 			added++
+		} else {
+			skipped++
 		}
 	}
 
 	s.triggerMutation()
-	toastTrigger(w, fmt.Sprintf("%d entries added", added), "success")
+	msg := fmt.Sprintf("%d entries added", added)
+	if skipped > 0 {
+		msg += fmt.Sprintf(", %d skipped", skipped)
+	}
+	toastTrigger(w, msg, "success")
 	s.renderGroupCard(w, r, name)
 }
 

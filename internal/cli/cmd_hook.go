@@ -26,8 +26,6 @@ func newHookCmd() *cobra.Command {
 		newHookDNSLocalCmd(),
 		newHookIfstateCmd(),
 		newHookWanCmd(),
-		newHookIfaceCreatedCmd(),
-		newHookIfaceDestroyedCmd(),
 	)
 
 	return cmd
@@ -199,38 +197,3 @@ func newHookWanCmd() *cobra.Command {
 	}
 }
 
-// hook iface-created — new interface appeared.
-func newHookIfaceCreatedCmd() *cobra.Command {
-	var id, systemName string
-	cmd := &cobra.Command{
-		Use:   "iface-created",
-		Short: "Interface created event",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Log for now; can be extended to auto-detect new VPN interfaces.
-			if id != "" {
-				fmt.Fprintf(os.Stderr, "interface created: id=%s system-name=%s\n", id, systemName)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&id, "id", "", "interface id")
-	cmd.Flags().StringVar(&systemName, "system-name", "", "system interface name")
-	return cmd
-}
-
-// hook iface-destroyed — interface removed.
-func newHookIfaceDestroyedCmd() *cobra.Command {
-	var id string
-	cmd := &cobra.Command{
-		Use:   "iface-destroyed",
-		Short: "Interface destroyed event",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if id != "" {
-				fmt.Fprintf(os.Stderr, "interface destroyed: id=%s\n", id)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&id, "id", "", "interface id")
-	return cmd
-}

@@ -1,2 +1,0 @@
-#!/bin/sh
-[ "$1" = "hook" ] && /opt/bin/kst hook iface-destroyed --id="$id"

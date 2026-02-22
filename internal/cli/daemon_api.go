@@ -63,10 +63,12 @@ func daemonImportGroups(ctx context.Context, data []byte) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/groups/import", bytes.NewReader(data))
+	body := strings.NewReader(url.Values{"body": {string(data)}}.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/groups/import", body)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return doRequest(req)
 }
 

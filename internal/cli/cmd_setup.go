@@ -113,19 +113,19 @@ func newSetupCmd() *cobra.Command {
 			cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
 			fmt.Println()
 
-			// 6. DNS configuration (informational).
+			// 5. DNS configuration (informational).
 			fmt.Println("DNS configuration:")
 			fmt.Printf("  DNS queries: dnsmasq -> dnscrypt-proxy (:%d) -> encrypted upstream\n", cfg.DNSCrypt.Port)
 			fmt.Println()
 
-			// 7. Network interface.
+			// 6. Network interface.
 			fmt.Println("Network interface:")
 			cfg.Network.EntwareInterface = promptInterface(reader, ctx, cfg.Network.EntwareInterface)
 			fmt.Println()
 
 			cfg.SetupFinished = true
 
-			// 8. Save KST config.
+			// 7. Save KST config.
 			if err := config.Save(cfg); err != nil {
 				return fmt.Errorf("save config: %w", err)
 			}
@@ -133,14 +133,14 @@ func newSetupCmd() *cobra.Command {
 
 			fmt.Println()
 
-			// 9. Start dnscrypt-proxy.
+			// 8. Start dnscrypt-proxy.
 			if err := service.DNSCrypt.EnsureRunning(ctx); err != nil {
 				printFail(fmt.Sprintf("dnscrypt-proxy: %v", err))
 			} else {
 				printPass("dnscrypt-proxy: running")
 			}
 
-			// 10. Generate dnsmasq.conf and start dnsmasq.
+			// 9. Generate dnsmasq.conf and start dnsmasq.
 			if err := deploy.WriteDnsmasqConf(cfg); err != nil {
 				return fmt.Errorf("write dnsmasq.conf: %w", err)
 			}
@@ -153,7 +153,7 @@ func newSetupCmd() *cobra.Command {
 				printPass("dnsmasq: running")
 			}
 
-			// 11. Install NDM hooks.
+			// 10. Install NDM hooks.
 			n, err := deploy.InstallNDMHooks()
 			if err != nil {
 				printFail(fmt.Sprintf("NDM hooks: %v", err))
@@ -161,20 +161,20 @@ func newSetupCmd() *cobra.Command {
 				printPass(fmt.Sprintf("NDM hooks: %d installed", n))
 			}
 
-			// 12. Install init.d script.
+			// 11. Install init.d script.
 			if err := deploy.InstallInitScript(); err != nil {
 				printFail(fmt.Sprintf("Init script: %v", err))
 			} else {
 				printPass(fmt.Sprintf("Init script: %s", platform.InitScript))
 			}
 
-			// 13. Create default group if needed.
+			// 12. Create default group if needed.
 			store := group.NewDefaultStore()
 			if err := store.EnsureDefaultGroup(); err != nil {
 				return err
 			}
 
-			// 13b. Add ifconfig.me to the default group for IP verification.
+			// 12b. Add ifconfig.me to the default group for IP verification.
 			if err := store.AddEntry(group.DefaultGroupName, "ifconfig.me"); err != nil {
 				// Ignore "already exists" errors.
 				if !strings.Contains(err.Error(), "already exists") {
@@ -182,7 +182,7 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// 14. Run initial reconcile.
+			// 13. Run initial reconcile.
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)
 			r := daemon.NewReconciler(cfg, store, logger)
 			if err := r.Reconcile(ctx); err != nil {
@@ -192,14 +192,14 @@ func newSetupCmd() *cobra.Command {
 				printPass("Reconcile: done")
 			}
 
-			// 15. Health check (run before daemon start so the state from
+			// 14. Health check (run before daemon start so the state from
 			// the reconcile above is still stable and not torn down).
 			fmt.Println()
 			fmt.Println("Health check:")
 			results := healthcheck.RunChecks(ctx, cfg, store)
 			PrintResults(results)
 
-			// 16. Domain probe: verify ifconfig.me resolves through the pipeline.
+			// 15. Domain probe: verify ifconfig.me resolves through the pipeline.
 			fmt.Println()
 			fmt.Println("Domain probe: ifconfig.me")
 			probe, err := healthcheck.ProbeDomain(ctx, cfg, "ifconfig.me")
@@ -217,7 +217,7 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// 17. Start the KST daemon.
+			// 16. Start the KST daemon.
 			if err := service.Daemon.Start(ctx); err != nil {
 				printFail(fmt.Sprintf("KST daemon: %v", err))
 				fmt.Println("      Start manually: /opt/etc/init.d/S96kst start")
