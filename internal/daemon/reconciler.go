@@ -86,11 +86,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.populateIPSet(ctx, entries)
 
 	// 5. Teardown all known mode rules, then set up only the active mode.
-	// This ensures stale rules from a previously active mode don't interfere.
+	// This ensures stale rules (including from the current mode with old config
+	// values, e.g. a changed port) don't interfere.
 	for _, m := range allModes(r.Config, r.Logger) {
-		if m.Name() != r.Mode.Name() {
-			_ = m.TeardownRules(ctx)
-		}
+		_ = m.TeardownRules(ctx)
 	}
 	if err := r.Mode.SetupRules(ctx); err != nil {
 		return fmt.Errorf("setup iptables rules: %w", err)
