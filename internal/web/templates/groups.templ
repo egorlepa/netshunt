@@ -53,16 +53,16 @@ templ GroupsPage(groups []group.Group) {
 		<script>
 			var _expandedGroups = new Set();
 			function _applyGroupState(card) {
-				var name = card.id.replace('group-', '');
+				var slug = card.id.replace('group-', '');
 				var el = card.querySelector('.entries-section');
 				var arrow = card.querySelector('.expand-arrow');
-				var expanded = _expandedGroups.has(name);
+				var expanded = _expandedGroups.has(slug);
 				if (el) el.style.display = expanded ? '' : 'none';
 				if (arrow) arrow.classList.toggle('expanded', expanded);
 			}
-			function toggleGroup(name) {
-				if (_expandedGroups.has(name)) { _expandedGroups.delete(name); } else { _expandedGroups.add(name); }
-				var card = document.getElementById('group-' + name);
+			function toggleGroup(slug) {
+				if (_expandedGroups.has(slug)) { _expandedGroups.delete(slug); } else { _expandedGroups.add(slug); }
+				var card = document.getElementById('group-' + slug);
 				if (card) _applyGroupState(card);
 			}
 			function toggleAllEntries() {
@@ -72,8 +72,8 @@ templ GroupsPage(groups []group.Group) {
 					return !_expandedGroups.has(c.id.replace('group-', ''));
 				});
 				cards.forEach(function(c) {
-					var name = c.id.replace('group-', '');
-					if (anyCollapsed) { _expandedGroups.add(name); } else { _expandedGroups.delete(name); }
+					var slug = c.id.replace('group-', '');
+					if (anyCollapsed) { _expandedGroups.add(slug); } else { _expandedGroups.delete(slug); }
 					_applyGroupState(c);
 				});
 				btn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';
@@ -81,15 +81,15 @@ templ GroupsPage(groups []group.Group) {
 			document.body.addEventListener('htmx:afterSettle', function(e) {
 				var elt = e.detail.elt;
 				if (!elt || !elt.id) return;
-				var name;
+				var slug;
 				if (elt.id.startsWith('group-')) {
-					name = elt.id.replace('group-', '');
+					slug = elt.id.replace('group-', '');
 				} else if (elt.closest && elt.closest('[id^="group-"]')) {
-					name = elt.closest('[id^="group-"]').id.replace('group-', '');
+					slug = elt.closest('[id^="group-"]').id.replace('group-', '');
 				}
-				if (!name) return;
-				_expandedGroups.add(name);
-				var card = document.getElementById('group-' + name);
+				if (!slug) return;
+				_expandedGroups.add(slug);
+				var card = document.getElementById('group-' + slug);
 				if (card) _applyGroupState(card);
 			});
 			function autoResize(el) {
@@ -115,9 +115,9 @@ templ GroupList(groups []group.Group) {
 }
 
 templ GroupCard(g group.Group) {
-	<div class="card" id={ "group-" + g.Name }>
+	<div class="card" id={ "group-" + SlugID(g.Name) }>
 		<div class="flex-between mb-8">
-			<div class="flex gap-8 group-header" style="align-items:center;cursor:pointer;user-select:none" data-group={ g.Name } onclick="toggleGroup(this.dataset.group)">
+			<div class="flex gap-8 group-header" style="align-items:center;cursor:pointer;user-select:none" data-group={ SlugID(g.Name) } onclick="toggleGroup(this.dataset.group)">
 				<span class="expand-arrow">&#9654;</span>
 				<h2 style="margin:0">{ g.Name }</h2>
 				if g.Description != "" {
@@ -132,14 +132,14 @@ templ GroupCard(g group.Group) {
 							type="checkbox"
 							checked
 							hx-put={ "/groups/" + g.Name + "/disable" }
-							hx-target={ "#group-" + g.Name }
+							hx-target={ "#group-" + SlugID(g.Name) }
 							hx-swap="outerHTML"
 						/>
 					} else {
 						<input
 							type="checkbox"
 							hx-put={ "/groups/" + g.Name + "/enable" }
-							hx-target={ "#group-" + g.Name }
+							hx-target={ "#group-" + SlugID(g.Name) }
 							hx-swap="outerHTML"
 						/>
 					}
@@ -148,18 +148,18 @@ templ GroupCard(g group.Group) {
 				<button
 					class="btn btn-sm btn-danger"
 					hx-delete={ "/groups/" + g.Name }
-					hx-target={ "#group-" + g.Name }
+					hx-target={ "#group-" + SlugID(g.Name) }
 					hx-swap="outerHTML"
 					hx-confirm={ "Delete group \"" + g.Name + "\"?" }
 				>Delete</button>
 			</div>
 		</div>
-		<div class="entries-section" id={ "entries-" + g.Name } style="display:none">
-			@EntryList(g.Name, g.Entries)
+		<div class="entries-section" id={ "entries-" + SlugID(g.Name) } style="display:none">
+			@EntryList(SlugID(g.Name), g.Name, g.Entries)
 		</div>
 		<form
 			hx-post={ "/groups/" + g.Name + "/entries/bulk" }
-			hx-target={ "#group-" + g.Name }
+			hx-target={ "#group-" + SlugID(g.Name) }
 			hx-swap="outerHTML"
 			hx-on::after-request="if(event.detail.successful) this.reset()"
 			class="mt-8"
@@ -172,7 +172,7 @@ templ GroupCard(g group.Group) {
 	</div>
 }
 
-templ EntryList(groupName string, entries []group.Entry) {
+templ EntryList(groupSlug string, groupName string, entries []group.Entry) {
 	if len(entries) == 0 {
 		<p class="text-muted text-sm">No entries yet.</p>
 	} else {
@@ -183,7 +183,7 @@ templ EntryList(groupName string, entries []group.Entry) {
 					<button
 						class="btn btn-sm btn-danger"
 						hx-delete={ "/groups/" + groupName + "/entries/" + e.Value }
-						hx-target={ "#entries-" + groupName }
+						hx-target={ "#entries-" + groupSlug }
 						hx-swap="innerHTML"
 					>&times;</button>
 				</li>

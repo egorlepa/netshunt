@@ -75,17 +75,27 @@ func Layout(title string, activePage string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, ">Groups</a> <a href=\"/settings\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, ">Groups</a> <a href=\"/diagnostics\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if activePage == "settings" {
+		if activePage == "diagnostics" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " class=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">Settings</a></div></nav><div class=\"container\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">Diagnostics</a> <a href=\"/settings\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if activePage == "settings" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " class=\"active\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, ">Settings</a></div></nav><div class=\"container\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -93,7 +103,7 @@ func Layout(title string, activePage string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div><div id=\"toast\"></div><script>\n\t\t\tdocument.body.addEventListener(\"showToast\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar d = e.detail;\n\t\t\t\tvar msg = (d && d.message) || \"Done\";\n\t\t\t\tvar type = (d && d.type) || \"success\";\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-\" + type;\n\t\t\t\tel.textContent = msg;\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-error\";\n\t\t\t\tel.textContent = e.detail.xhr.responseText || \"Request failed\";\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div><div id=\"toast\"></div><script>\n\t\t\tdocument.body.addEventListener(\"showToast\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar d = e.detail;\n\t\t\t\tvar msg = (d && d.message) || \"Done\";\n\t\t\t\tvar type = (d && d.type) || \"success\";\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-\" + type;\n\t\t\t\tel.textContent = msg;\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-error\";\n\t\t\t\tel.textContent = e.detail.xhr.responseText || \"Request failed\";\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

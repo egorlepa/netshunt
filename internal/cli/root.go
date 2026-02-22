@@ -22,7 +22,7 @@ func NewRootCmd() *cobra.Command {
 		newGroupCmd(),
 		newReconcileCmd(),
 		newDaemonCmd(),
-		newStatusCmd(),
+		newTestCmd(),
 		newDebugCmd(),
 		newSetupCmd(),
 		newDNSCmd(),

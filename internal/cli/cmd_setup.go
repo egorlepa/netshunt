@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
 	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/guras256/keenetic-split-tunnel/internal/healthcheck"
 	"github.com/guras256/keenetic-split-tunnel/internal/platform"
 	"github.com/guras256/keenetic-split-tunnel/internal/router"
 	"github.com/guras256/keenetic-split-tunnel/internal/service"
@@ -31,91 +33,72 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println()
 
 			// 1. Check dependencies.
-			fmt.Println("Checking dependencies...")
 			missing := deploy.CheckDependencies()
 			if len(missing) > 0 {
-				fmt.Println("  Missing required packages:")
+				printFail("Dependencies: missing packages")
 				var pkgs []string
 				for _, m := range missing {
-					fmt.Printf("    - %s (opkg: %s)\n", m.Dep.Name, m.Dep.Package)
+					fmt.Printf("      - %s (opkg: %s)\n", m.Dep.Name, m.Dep.Package)
 					pkgs = append(pkgs, m.Dep.Package)
 				}
 				fmt.Println()
 				answer := prompt(reader, "Install missing packages now? [y/N]", "n")
 				if strings.ToLower(answer) == "y" {
-					fmt.Println("Running opkg install...")
 					if err := deploy.InstallOpkgDeps(ctx, pkgs); err != nil {
 						return fmt.Errorf("opkg install failed: %w\nInstall manually: opkg install %s", err, strings.Join(pkgs, " "))
 					}
-					fmt.Println("  Packages installed.")
+					printPass("Packages installed")
 				} else {
 					return fmt.Errorf("required packages not installed. Run: opkg install %s", strings.Join(pkgs, " "))
 				}
 			} else {
-				fmt.Println("  All required packages found.")
+				printPass("Dependencies: all packages found")
 			}
-			fmt.Println()
 
 			// 1b. Check iptables TPROXY support (needed for UDP proxying).
-			fmt.Println("Checking iptables TPROXY support...")
 			if !deploy.CheckIPTablesTproxy(ctx) {
-				fmt.Println("  TPROXY extension not available.")
-				fmt.Println("  UDP proxying in redirect mode requires TPROXY support.")
+				printWarn("TPROXY: not available (UDP proxying may not work)")
 				answer := prompt(reader, "  Upgrade iptables now? [Y/n]", "y")
 				if strings.ToLower(answer) != "n" {
-					fmt.Println("  Running opkg upgrade iptables...")
 					if err := deploy.UpgradeOpkgDeps(ctx, []string{"iptables"}); err != nil {
-						fmt.Printf("  Warning: upgrade failed: %v\n", err)
-						fmt.Println("  Run manually: opkg upgrade iptables")
+						printFail(fmt.Sprintf("TPROXY upgrade failed: %v", err))
 					} else if deploy.CheckIPTablesTproxy(ctx) {
-						fmt.Println("  TPROXY support available after upgrade.")
+						printPass("TPROXY: available after upgrade")
 					} else {
-						fmt.Println("  Warning: TPROXY still not available after upgrade.")
-						fmt.Println("  UDP proxying may not work in redirect mode.")
+						printWarn("TPROXY: still not available after upgrade")
 					}
-				} else {
-					fmt.Println("  Warning: UDP proxying may not work in redirect mode without TPROXY.")
 				}
 			} else {
-				fmt.Println("  TPROXY support available.")
+				printPass("TPROXY: available")
 			}
-			fmt.Println()
 
 			// 2. Check dns-override (Keenetic must delegate DNS to Entware dnsmasq).
-			fmt.Println("Checking DNS override...")
 			rci := router.NewClient()
 			dnsOverride, err := rci.IsDNSOverrideEnabled(ctx)
 			if err != nil {
-				fmt.Printf("  Warning: could not check dns-override: %v\n", err)
-				fmt.Println("  Make sure dns-override is enabled in the router CLI:")
-				fmt.Println("    opkg dns-override")
-				fmt.Println("    system configuration save")
+				printWarn(fmt.Sprintf("DNS override: could not check (%v)", err))
+				fmt.Println("      Make sure dns-override is enabled: opkg dns-override && system configuration save")
 			} else if !dnsOverride {
-				fmt.Println("  dns-override is NOT enabled.")
-				fmt.Println("  KST needs to take over DNS (port 53) from the router's built-in DNS.")
-				answer := prompt(reader, "Enable dns-override now? [Y/n]", "y")
+				printFail("DNS override: not enabled")
+				answer := prompt(reader, "  Enable dns-override now? [Y/n]", "y")
 				if strings.ToLower(answer) != "n" {
 					if err := rci.EnableDNSOverride(ctx); err != nil {
-						fmt.Printf("  Warning: failed to enable dns-override: %v\n", err)
-						fmt.Println("  Enable manually in the router CLI:")
-						fmt.Println("    opkg dns-override")
-						fmt.Println("    system configuration save")
+						printFail(fmt.Sprintf("DNS override: failed to enable (%v)", err))
 					} else {
-						fmt.Println("  dns-override enabled and config saved.")
+						printPass("DNS override: enabled")
 					}
 				} else {
-					fmt.Println("  Warning: without dns-override, dnsmasq will conflict with the built-in DNS.")
-					fmt.Println("  Enable it manually later: opkg dns-override && system configuration save")
+					printWarn("DNS override: skipped (enable manually later)")
 				}
 			} else {
-				fmt.Println("  dns-override is enabled.")
+				printPass("DNS override: enabled")
 			}
-			fmt.Println()
 
 			// 3. Create directories.
 			if err := deploy.EnsureDirectories(); err != nil {
 				return err
 			}
+			printPass("Directories: created")
 
 			// Load existing config for defaults.
 			cfg, err := config.Load()
@@ -179,48 +162,43 @@ func newSetupCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return fmt.Errorf("save config: %w", err)
 			}
-			fmt.Println("Config saved.")
+			printPass("Config saved")
+
+			fmt.Println()
 
 			// 9. Start dnscrypt-proxy.
-			fmt.Println("Starting dnscrypt-proxy2...")
 			if err := service.DNSCrypt.EnsureRunning(ctx); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
+				printFail(fmt.Sprintf("dnscrypt-proxy: %v", err))
 			} else {
-				fmt.Println("  dnscrypt-proxy2 is running.")
+				printPass("dnscrypt-proxy: running")
 			}
 
 			// 10. Generate dnsmasq.conf and start dnsmasq.
-			fmt.Println("Generating dnsmasq.conf...")
 			if err := deploy.WriteDnsmasqConf(cfg); err != nil {
 				return fmt.Errorf("write dnsmasq.conf: %w", err)
 			}
-			fmt.Printf("  Written to %s\n", platform.DnsmasqConfFile)
+			printPass(fmt.Sprintf("dnsmasq.conf: written to %s", platform.DnsmasqConfFile))
 
-			fmt.Println("Starting dnsmasq...")
 			if err := service.Dnsmasq.Restart(ctx); err != nil {
-				fmt.Printf("  Warning: failed to start dnsmasq: %v\n", err)
-				fmt.Println("  Port 53 may still be held by Keenetic's built-in DNS.")
-				fmt.Println("  Ensure dns-override is enabled, then start manually:")
-				fmt.Println("    /opt/etc/init.d/S56dnsmasq start")
+				printFail(fmt.Sprintf("dnsmasq: %v", err))
+				fmt.Println("      Ensure dns-override is enabled, then: /opt/etc/init.d/S56dnsmasq start")
 			} else {
-				fmt.Println("  dnsmasq is running.")
+				printPass("dnsmasq: running")
 			}
 
 			// 11. Install NDM hooks.
-			fmt.Println("Installing NDM hooks...")
 			n, err := deploy.InstallNDMHooks()
 			if err != nil {
-				fmt.Printf("  Warning: %v\n", err)
+				printFail(fmt.Sprintf("NDM hooks: %v", err))
 			} else {
-				fmt.Printf("  Installed %d hooks.\n", n)
+				printPass(fmt.Sprintf("NDM hooks: %d installed", n))
 			}
 
 			// 12. Install init.d script.
-			fmt.Println("Installing init.d script...")
 			if err := deploy.InstallInitScript(); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
+				printFail(fmt.Sprintf("Init script: %v", err))
 			} else {
-				fmt.Printf("  Installed %s\n", platform.InitScript)
+				printPass(fmt.Sprintf("Init script: %s", platform.InitScript))
 			}
 
 			// 13. Create default group if needed.
@@ -229,32 +207,63 @@ func newSetupCmd() *cobra.Command {
 				return err
 			}
 
+			// 13b. Add ifconfig.me to the default group for IP verification.
+			if err := store.AddEntry(group.DefaultGroupName, "ifconfig.me"); err != nil {
+				// Ignore "already exists" errors.
+				if !strings.Contains(err.Error(), "already exists") {
+					printFail(fmt.Sprintf("ifconfig.me: %v", err))
+				}
+			}
+
 			// 14. Run initial reconcile.
-			fmt.Println()
-			fmt.Println("Running initial reconcile...")
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)
 			r := daemon.NewReconciler(cfg, store, logger)
 			if err := r.Reconcile(ctx); err != nil {
-				fmt.Printf("Warning: initial reconcile failed: %v\n", err)
-				fmt.Println("You can retry with: kst reconcile")
+				printFail(fmt.Sprintf("Reconcile: %v", err))
+				fmt.Println("      Retry with: kst reconcile")
 			} else {
-				fmt.Println("Setup complete!")
+				printPass("Reconcile: done")
 			}
 
 			// 15. Start the KST daemon.
-			fmt.Println("Starting KST daemon...")
 			if err := service.Daemon.Start(ctx); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
-				fmt.Println("  Start manually: /opt/etc/init.d/S96kst start")
+				printFail(fmt.Sprintf("KST daemon: %v", err))
+				fmt.Println("      Start manually: /opt/etc/init.d/S96kst start")
 			} else {
-				fmt.Println("  KST daemon started.")
+				printPass("KST daemon: started")
 			}
 
 			fmt.Println()
-			printServiceStatus(ctx)
+			fmt.Println("Health check:")
+			results := healthcheck.RunChecks(ctx, cfg, store)
+			PrintResults(results)
+
+			// 16. Domain probe: verify ifconfig.me resolves through the pipeline.
+			fmt.Println()
+			fmt.Println("Domain probe: ifconfig.me")
+			probe, err := healthcheck.ProbeDomain(ctx, cfg, "ifconfig.me")
+			if err != nil {
+				printFail(fmt.Sprintf("ifconfig.me: %v", err))
+			} else if len(probe.IPs) == 0 {
+				printFail("ifconfig.me: no IPs resolved")
+			} else {
+				for _, ip := range probe.IPs {
+					if probe.InIPSet[ip] {
+						printPass(fmt.Sprintf("%s in ipset", ip))
+					} else {
+						printFail(fmt.Sprintf("%s not in ipset", ip))
+					}
+				}
+			}
+
+			fmt.Println()
+			fmt.Println("Verify your setup:")
+			fmt.Println("  Open https://ifconfig.me in your browser.")
+			fmt.Println("  You should see your VPN/proxy IP, not your real IP.")
 			fmt.Println()
 			fmt.Println("Next steps:")
-			fmt.Println("  kst add youtube.com   # add a domain")
+			fmt.Printf("  Web UI: http://%s%s\n", interfaceIP(cfg.Network.EntwareInterface), cfg.Daemon.WebListen)
+			fmt.Println("  CLI:    kst add <domain>")
 
 			return nil
 		},
@@ -372,4 +381,23 @@ func detectBridgeInterfaces(ctx context.Context) []string {
 	}
 	sort.Strings(bridges)
 	return bridges
+}
+
+// interfaceIP returns the first IPv4 address of the named network interface,
+// or "<router-ip>" if it cannot be determined.
+func interfaceIP(name string) string {
+	iface, err := net.InterfaceByName(name)
+	if err != nil {
+		return "<router-ip>"
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return "<router-ip>"
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+			return ipnet.IP.String()
+		}
+	}
+	return "<router-ip>"
 }

@@ -17,6 +17,7 @@ templ Layout(title string, activePage string) {
 				<span class="brand">KST</span>
 				<a href="/" if activePage == "dashboard" { class="active" }>Dashboard</a>
 				<a href="/groups" if activePage == "groups" { class="active" }>Groups</a>
+				<a href="/diagnostics" if activePage == "diagnostics" { class="active" }>Diagnostics</a>
 				<a href="/settings" if activePage == "settings" { class="active" }>Settings</a>
 			</div>
 		</nav>

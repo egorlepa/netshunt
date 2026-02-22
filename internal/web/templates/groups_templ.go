@@ -51,7 +51,7 @@ func GroupsPage(groups []group.Group) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><script>\n\t\t\tvar _expandedGroups = new Set();\n\t\t\tfunction _applyGroupState(card) {\n\t\t\t\tvar name = card.id.replace('group-', '');\n\t\t\t\tvar el = card.querySelector('.entries-section');\n\t\t\t\tvar arrow = card.querySelector('.expand-arrow');\n\t\t\t\tvar expanded = _expandedGroups.has(name);\n\t\t\t\tif (el) el.style.display = expanded ? '' : 'none';\n\t\t\t\tif (arrow) arrow.classList.toggle('expanded', expanded);\n\t\t\t}\n\t\t\tfunction toggleGroup(name) {\n\t\t\t\tif (_expandedGroups.has(name)) { _expandedGroups.delete(name); } else { _expandedGroups.add(name); }\n\t\t\t\tvar card = document.getElementById('group-' + name);\n\t\t\t\tif (card) _applyGroupState(card);\n\t\t\t}\n\t\t\tfunction toggleAllEntries() {\n\t\t\t\tvar cards = document.querySelectorAll('.card[id^=\"group-\"]');\n\t\t\t\tvar btn = document.getElementById('toggle-all-btn');\n\t\t\t\tvar anyCollapsed = Array.from(cards).some(function(c) {\n\t\t\t\t\treturn !_expandedGroups.has(c.id.replace('group-', ''));\n\t\t\t\t});\n\t\t\t\tcards.forEach(function(c) {\n\t\t\t\t\tvar name = c.id.replace('group-', '');\n\t\t\t\t\tif (anyCollapsed) { _expandedGroups.add(name); } else { _expandedGroups.delete(name); }\n\t\t\t\t\t_applyGroupState(c);\n\t\t\t\t});\n\t\t\t\tbtn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';\n\t\t\t}\n\t\t\tdocument.body.addEventListener('htmx:afterSettle', function(e) {\n\t\t\t\tvar elt = e.detail.elt;\n\t\t\t\tif (!elt || !elt.id) return;\n\t\t\t\tvar name;\n\t\t\t\tif (elt.id.startsWith('group-')) {\n\t\t\t\t\tname = elt.id.replace('group-', '');\n\t\t\t\t} else if (elt.closest && elt.closest('[id^=\"group-\"]')) {\n\t\t\t\t\tname = elt.closest('[id^=\"group-\"]').id.replace('group-', '');\n\t\t\t\t}\n\t\t\t\tif (!name) return;\n\t\t\t\t_expandedGroups.add(name);\n\t\t\t\tvar card = document.getElementById('group-' + name);\n\t\t\t\tif (card) _applyGroupState(card);\n\t\t\t});\n\t\t\tfunction autoResize(el) {\n\t\t\t\tel.style.height = 'auto';\n\t\t\t\tel.style.height = el.scrollHeight + 'px';\n\t\t\t}\n\t\t\tdocument.addEventListener('input', function(e) {\n\t\t\t\tif (e.target.matches('textarea.auto-resize')) autoResize(e.target);\n\t\t\t});\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><script>\n\t\t\tvar _expandedGroups = new Set();\n\t\t\tfunction _applyGroupState(card) {\n\t\t\t\tvar slug = card.id.replace('group-', '');\n\t\t\t\tvar el = card.querySelector('.entries-section');\n\t\t\t\tvar arrow = card.querySelector('.expand-arrow');\n\t\t\t\tvar expanded = _expandedGroups.has(slug);\n\t\t\t\tif (el) el.style.display = expanded ? '' : 'none';\n\t\t\t\tif (arrow) arrow.classList.toggle('expanded', expanded);\n\t\t\t}\n\t\t\tfunction toggleGroup(slug) {\n\t\t\t\tif (_expandedGroups.has(slug)) { _expandedGroups.delete(slug); } else { _expandedGroups.add(slug); }\n\t\t\t\tvar card = document.getElementById('group-' + slug);\n\t\t\t\tif (card) _applyGroupState(card);\n\t\t\t}\n\t\t\tfunction toggleAllEntries() {\n\t\t\t\tvar cards = document.querySelectorAll('.card[id^=\"group-\"]');\n\t\t\t\tvar btn = document.getElementById('toggle-all-btn');\n\t\t\t\tvar anyCollapsed = Array.from(cards).some(function(c) {\n\t\t\t\t\treturn !_expandedGroups.has(c.id.replace('group-', ''));\n\t\t\t\t});\n\t\t\t\tcards.forEach(function(c) {\n\t\t\t\t\tvar slug = c.id.replace('group-', '');\n\t\t\t\t\tif (anyCollapsed) { _expandedGroups.add(slug); } else { _expandedGroups.delete(slug); }\n\t\t\t\t\t_applyGroupState(c);\n\t\t\t\t});\n\t\t\t\tbtn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';\n\t\t\t}\n\t\t\tdocument.body.addEventListener('htmx:afterSettle', function(e) {\n\t\t\t\tvar elt = e.detail.elt;\n\t\t\t\tif (!elt || !elt.id) return;\n\t\t\t\tvar slug;\n\t\t\t\tif (elt.id.startsWith('group-')) {\n\t\t\t\t\tslug = elt.id.replace('group-', '');\n\t\t\t\t} else if (elt.closest && elt.closest('[id^=\"group-\"]')) {\n\t\t\t\t\tslug = elt.closest('[id^=\"group-\"]').id.replace('group-', '');\n\t\t\t\t}\n\t\t\t\tif (!slug) return;\n\t\t\t\t_expandedGroups.add(slug);\n\t\t\t\tvar card = document.getElementById('group-' + slug);\n\t\t\t\tif (card) _applyGroupState(card);\n\t\t\t});\n\t\t\tfunction autoResize(el) {\n\t\t\t\tel.style.height = 'auto';\n\t\t\t\tel.style.height = el.scrollHeight + 'px';\n\t\t\t}\n\t\t\tdocument.addEventListener('input', function(e) {\n\t\t\t\tif (e.target.matches('textarea.auto-resize')) autoResize(e.target);\n\t\t\t});\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -128,9 +128,9 @@ func GroupCard(g group.Group) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("group-" + g.Name)
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("group-" + SlugID(g.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 118, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 118, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -141,9 +141,9 @@ func GroupCard(g group.Group) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(g.Name)
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(SlugID(g.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 120, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 120, Col: 126}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -221,9 +221,9 @@ func GroupCard(g group.Group) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + g.Name)
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + SlugID(g.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 135, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 135, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -252,9 +252,9 @@ func GroupCard(g group.Group) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + g.Name)
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + SlugID(g.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 142, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 142, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -283,9 +283,9 @@ func GroupCard(g group.Group) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + g.Name)
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + SlugID(g.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 151, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 151, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -309,9 +309,9 @@ func GroupCard(g group.Group) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("entries-" + g.Name)
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("entries-" + SlugID(g.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 157, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 157, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -321,7 +321,7 @@ func GroupCard(g group.Group) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = EntryList(g.Name, g.Entries).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = EntryList(SlugID(g.Name), g.Name, g.Entries).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -343,9 +343,9 @@ func GroupCard(g group.Group) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
-		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + g.Name)
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs("#group-" + SlugID(g.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 162, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 162, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -359,7 +359,7 @@ func GroupCard(g group.Group) templ.Component {
 	})
 }
 
-func EntryList(groupName string, entries []group.Entry) templ.Component {
+func EntryList(groupSlug string, groupName string, entries []group.Entry) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -422,7 +422,7 @@ func EntryList(groupName string, entries []group.Entry) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var23 string
-				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs("#entries-" + groupName)
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs("#entries-" + groupSlug)
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/groups.templ`, Line: 186, Col: 41}
 				}

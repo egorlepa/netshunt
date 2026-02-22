@@ -186,5 +186,5 @@ func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.EntryList(name, g.Entries).Render(r.Context(), w)
+	templates.EntryList(templates.SlugID(name), name, g.Entries).Render(r.Context(), w)
 }

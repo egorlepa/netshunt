@@ -1,0 +1,94 @@
+package templates
+
+import "github.com/guras256/keenetic-split-tunnel/internal/healthcheck"
+
+templ DiagnosticsPage() {
+	@Layout("Diagnostics", "diagnostics") {
+		<h1 class="mb-16">Diagnostics</h1>
+		<div class="card mb-16">
+			<div class="flex-between mb-8">
+				<h2>Health Checks</h2>
+				<button class="btn btn-sm btn-accent" hx-get="/diagnostics/run" hx-target="#check-results" hx-swap="innerHTML">
+					Run Checks
+					<span class="htmx-indicator">...</span>
+				</button>
+			</div>
+			<div id="check-results" hx-get="/diagnostics/run" hx-trigger="load" hx-swap="innerHTML">
+				<p class="text-muted text-sm">Running checks...</p>
+			</div>
+		</div>
+		<div class="card">
+			<h2 class="mb-8">Domain Probe</h2>
+			<p class="text-muted text-sm mb-8">Test if a domain resolves and its IPs are in the ipset.</p>
+			<form
+				hx-post="/diagnostics/probe"
+				hx-target="#probe-results"
+				hx-swap="innerHTML"
+				class="flex gap-8"
+			>
+				<input type="text" name="domain" value="ifconfig.me" placeholder="example.com" required/>
+				<button class="btn btn-accent" type="submit">
+					Test
+					<span class="htmx-indicator">...</span>
+				</button>
+			</form>
+			<div id="probe-results" class="mt-8"></div>
+		</div>
+	}
+}
+
+templ DiagnosticsResults(results []healthcheck.Result) {
+	<table style="width:100%">
+		<tbody>
+			for _, r := range results {
+				<tr>
+					<td style="width:24px;text-align:center">
+						if r.Passed {
+							<span style="color:var(--green)">✓</span>
+						} else {
+							<span style="color:var(--red)">✗</span>
+						}
+					</td>
+					<td><strong>{ r.Name }</strong></td>
+					<td class="text-muted">{ r.Detail }</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
+	<p class="mb-8"><strong>{ probe.Domain }</strong></p>
+	if len(probe.IPs) == 0 {
+		<p><span style="color:var(--red)">✗</span> no IPs resolved</p>
+	} else {
+		<table>
+			<tbody>
+				for _, ip := range probe.IPs {
+					<tr>
+						<td style="width:24px;text-align:center">
+							if probe.InIPSet[ip] {
+								<span style="color:var(--green)">✓</span>
+							} else {
+								<span style="color:var(--red)">✗</span>
+							}
+						</td>
+						<td>{ ip }</td>
+						<td class="text-muted">
+							if probe.InIPSet[ip] {
+								in ipset
+							} else {
+								not in ipset
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ DiagnosticsProbeError(domain string, errMsg string) {
+	<p class="mb-8"><strong>{ domain }</strong></p>
+	<p><span style="color:var(--red)">✗</span> <span class="text-muted">{ errMsg }</span></p>
+}

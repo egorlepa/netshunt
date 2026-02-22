@@ -58,6 +58,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /groups", s.handleGroupsPage)
 	s.mux.HandleFunc("GET /groups/{name}", s.handleGroupDetail)
 	s.mux.HandleFunc("GET /settings", s.handleSettingsPage)
+	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
+	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
+	s.mux.HandleFunc("POST /diagnostics/probe", s.handleDiagnosticsProbe)
 
 	// Group mutations (htmx).
 	s.mux.HandleFunc("POST /groups", s.handleCreateGroup)
