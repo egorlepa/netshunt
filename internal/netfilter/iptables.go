@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 // IPTables manages iptables rules for traffic redirection.

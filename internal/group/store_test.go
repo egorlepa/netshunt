@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/egorlepa/netshunt/internal/group"
 )
 
 func tempStore(t *testing.T) *group.Store {

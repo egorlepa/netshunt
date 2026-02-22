@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/egorlepa/netshunt/internal/group"
 )
 
 func newListCmd() *cobra.Command {

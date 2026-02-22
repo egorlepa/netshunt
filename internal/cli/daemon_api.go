@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 // daemonBaseURL returns the daemon's HTTP base URL from config, or an error if

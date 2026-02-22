@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/routing"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
-	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
+	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/routing"
+	"github.com/egorlepa/netshunt/internal/service"
+	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {

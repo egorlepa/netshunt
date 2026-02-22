@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
-	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/deploy"
+	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 const (
-	redirectChainName    = "KSTREDIR"
-	redirectUDPChainName = "KSTREDIR_UDP"
+	redirectChainName    = "NSHUNT"
+	redirectUDPChainName = "NSHUNT_UDP"
 	fwmark               = "0x1"
 	routeTable           = "100"
 )
@@ -50,17 +50,17 @@ func (r *Redirect) Name() string { return "redirect" }
 //
 // TCP (nat table):
 //
-//	iptables -t nat -N KSTREDIR
-//	iptables -t nat -A KSTREDIR -d <excluded_net> -j RETURN
-//	iptables -t nat -A KSTREDIR -p tcp -m set --match-set <ipset> dst -j REDIRECT --to-port <port>
-//	iptables -t nat -A PREROUTING [-i <iface>] -j KSTREDIR
+//	iptables -t nat -N NSHUNT
+//	iptables -t nat -A NSHUNT -d <excluded_net> -j RETURN
+//	iptables -t nat -A NSHUNT -p tcp -m set --match-set <ipset> dst -j REDIRECT --to-port <port>
+//	iptables -t nat -A PREROUTING [-i <iface>] -j NSHUNT
 //
 // UDP (mangle table):
 //
-//	iptables -t mangle -N KSTREDIR_UDP
-//	iptables -t mangle -A KSTREDIR_UDP -d <excluded_net> -j RETURN
-//	iptables -t mangle -A KSTREDIR_UDP -p udp -m set --match-set <ipset> dst -j TPROXY --on-port <port> --tproxy-mark 0x1/0x1
-//	iptables -t mangle -A PREROUTING [-i <iface>] -j KSTREDIR_UDP
+//	iptables -t mangle -N NSHUNT_UDP
+//	iptables -t mangle -A NSHUNT_UDP -d <excluded_net> -j RETURN
+//	iptables -t mangle -A NSHUNT_UDP -p udp -m set --match-set <ipset> dst -j TPROXY --on-port <port> --tproxy-mark 0x1/0x1
+//	iptables -t mangle -A PREROUTING [-i <iface>] -j NSHUNT_UDP
 //	ip rule add fwmark 0x1 table 100
 //	ip route replace local 0/0 dev lo table 100
 func (r *Redirect) SetupRules(ctx context.Context) error {

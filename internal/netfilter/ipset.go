@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 // entryTimeout is the TTL for ipset entries in seconds.

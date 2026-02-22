@@ -3,7 +3,7 @@ package platform
 const (
 	// Base directories.
 	OptDir    = "/opt"
-	ConfigDir = OptDir + "/etc/kst"
+	ConfigDir = OptDir + "/etc/netshunt"
 	BinDir    = OptDir + "/bin"
 
 	// Config files.
@@ -12,21 +12,21 @@ const (
 
 	// dnsmasq integration.
 	DnsmasqDir       = OptDir + "/etc/dnsmasq.d"
-	DnsmasqIPSetFile = DnsmasqDir + "/kst.dnsmasq"
+	DnsmasqIPSetFile = DnsmasqDir + "/netshunt.dnsmasq"
 	DnsmasqConfFile  = OptDir + "/etc/dnsmasq.conf"
 	DnsmasqPidFile   = "/var/run/opt-dnsmasq.pid"
 	DnscryptConfFile = OptDir + "/etc/dnscrypt-proxy.toml"
 
 	// Daemon.
-	PidFile       = "/var/run/kst.pid"
+	PidFile       = "/var/run/netshunt.pid"
 	DefaultListen = ":8080"
 
 	// NDM directories.
 	NDMDir = OptDir + "/etc/ndm"
 
 	// Binary.
-	BinaryPath = BinDir + "/kst"
+	BinaryPath = BinDir + "/netshunt"
 
 	// Init scripts.
-	InitScript = OptDir + "/etc/init.d/S96kst"
+	InitScript = OptDir + "/etc/init.d/S96netshunt"
 )

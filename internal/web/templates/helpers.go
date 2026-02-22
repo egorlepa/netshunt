@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/egorlepa/netshunt/internal/group"
 )
 
 // SlugID converts a string to a unique, CSS-safe HTML ID fragment via hex encoding.
@@ -37,5 +37,5 @@ func sortedEntries(entries []group.Entry) []group.Entry {
 }
 
 func faviconDataURI() string {
-	return "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23e94560'/><text x='50' y='68' font-size='48' font-weight='bold' font-family='sans-serif' fill='white' text-anchor='middle'>KST</text></svg>"
+	return ""
 }

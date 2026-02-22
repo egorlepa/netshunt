@@ -42,60 +42,47 @@ func Layout(title string, activePage string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " — KST</title><link rel=\"icon\" type=\"image/svg+xml\" href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var3 templ.SafeURL
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(faviconDataURI()))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/layout.templ`, Line: 10, Col: 78}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"stylesheet\" href=\"/static/style.css\"><script src=\"/static/htmx.min.js\"></script></head><body><nav><div class=\"container\"><span class=\"brand\">KST</span> <a href=\"/\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " — netshunt</title><link rel=\"stylesheet\" href=\"/static/style.css\"><script src=\"/static/htmx.min.js\"></script></head><body><nav><div class=\"container\"><span class=\"brand\">netshunt</span> <a href=\"/\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if activePage == "dashboard" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " class=\"active\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " class=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, ">Dashboard</a> <a href=\"/groups\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, ">Dashboard</a> <a href=\"/groups\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if activePage == "groups" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " class=\"active\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " class=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, ">Groups</a> <a href=\"/diagnostics\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, ">Groups</a> <a href=\"/diagnostics\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if activePage == "diagnostics" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " class=\"active\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " class=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">Diagnostics</a> <a href=\"/settings\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, ">Diagnostics</a> <a href=\"/settings\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if activePage == "settings" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " class=\"active\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " class=\"active\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, ">Settings</a></div></nav><div class=\"container\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, ">Settings</a></div></nav><div class=\"container\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -103,7 +90,7 @@ func Layout(title string, activePage string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div><div id=\"toast\"></div><script>\n\t\t\tdocument.body.addEventListener(\"showToast\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar d = e.detail;\n\t\t\t\tvar msg = (d && d.message) || \"Done\";\n\t\t\t\tvar type = (d && d.type) || \"success\";\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-\" + type;\n\t\t\t\tel.textContent = msg;\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-error\";\n\t\t\t\tel.textContent = e.detail.xhr.responseText || \"Request failed\";\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div id=\"toast\"></div><script>\n\t\t\tdocument.body.addEventListener(\"showToast\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar d = e.detail;\n\t\t\t\tvar msg = (d && d.message) || \"Done\";\n\t\t\t\tvar type = (d && d.type) || \"success\";\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-\" + type;\n\t\t\t\tel.textContent = msg;\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t\tdocument.body.addEventListener(\"htmx:responseError\", function(e) {\n\t\t\t\tvar toast = document.getElementById(\"toast\");\n\t\t\t\tvar el = document.createElement(\"div\");\n\t\t\t\tel.className = \"toast-msg toast-error\";\n\t\t\t\tel.textContent = e.detail.xhr.responseText || \"Request failed\";\n\t\t\t\ttoast.appendChild(el);\n\t\t\t\tsetTimeout(function() { el.classList.add(\"toast-hide\"); }, 2500);\n\t\t\t\tsetTimeout(function() { el.remove(); }, 3000);\n\t\t\t});\n\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

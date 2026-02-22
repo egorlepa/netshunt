@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 // CheckListeningPort returns true if something is listening on the given port string (e.g., ":1181").

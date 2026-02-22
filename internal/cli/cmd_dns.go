@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	intdns "github.com/guras256/keenetic-split-tunnel/internal/dns"
+	intdns "github.com/egorlepa/netshunt/internal/dns"
 )
 
 func newDNSCmd() *cobra.Command {

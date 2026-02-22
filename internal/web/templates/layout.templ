@@ -6,15 +6,14 @@ templ Layout(title string, activePage string) {
 	<head>
 		<meta charset="utf-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
-		<title>{ title } — KST</title>
-		<link rel="icon" type="image/svg+xml" href={ templ.SafeURL(faviconDataURI()) }/>
+		<title>{ title } — netshunt</title>
 		<link rel="stylesheet" href="/static/style.css"/>
 		<script src="/static/htmx.min.js"></script>
 	</head>
 	<body>
 		<nav>
 			<div class="container">
-				<span class="brand">KST</span>
+				<span class="brand">netshunt</span>
 				<a href="/" if activePage == "dashboard" { class="active" }>Dashboard</a>
 				<a href="/groups" if activePage == "groups" { class="active" }>Groups</a>
 				<a href="/diagnostics" if activePage == "diagnostics" { class="active" }>Diagnostics</a>

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 // DnsmasqConfig generates and manages dnsmasq ipset configuration.

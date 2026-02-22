@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/healthcheck"
-	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 func (s *Server) handleDiagnosticsPage(w http.ResponseWriter, r *http.Request) {

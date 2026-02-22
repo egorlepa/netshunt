@@ -1,6 +1,6 @@
 #!/bin/sh
 
 # Stop daemon if running.
-if [ -f /opt/etc/init.d/S96kst ]; then
-    /opt/etc/init.d/S96kst stop 2>/dev/null || true
+if [ -f /opt/etc/init.d/S96netshunt ]; then
+    /opt/etc/init.d/S96netshunt stop 2>/dev/null || true
 fi

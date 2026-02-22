@@ -1,2 +1,2 @@
 #!/bin/sh
-[ "$1" = "hook" ] && /opt/bin/kst hook ifstate --id="$id" --connected="$connected" --link="$link" --up="$up"
+[ "$1" = "hook" ] && /opt/bin/netshunt hook ifstate --id="$id" --connected="$connected" --link="$link" --up="$up"

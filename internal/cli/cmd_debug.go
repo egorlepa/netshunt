@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 func newDebugCmd() *cobra.Command {
@@ -24,7 +24,7 @@ func newDebugCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Println("=== KST Debug ===")
+			fmt.Println("=== netshunt debug ===")
 			fmt.Printf("Version: %s\n\n", version)
 
 			debugServices(ctx)

@@ -3,7 +3,7 @@ package dns
 import (
 	"context"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 // DNSCrypt manages dnscrypt-proxy2 service.

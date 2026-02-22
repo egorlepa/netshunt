@@ -6,19 +6,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/router"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/daemon"
+	"github.com/egorlepa/netshunt/internal/deploy"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/router"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 func newUninstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove all KST rules, configs, and scripts",
+		Short: "Remove all netshunt rules, configs, and scripts",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
@@ -27,8 +27,8 @@ func newUninstallCmd() *cobra.Command {
 				return err
 			}
 
-			// 1. Stop KST daemon.
-			fmt.Println("Stopping KST daemon...")
+			// 1. Stop netshunt daemon.
+			fmt.Println("Stopping netshunt daemon...")
 			if err := service.Daemon.Stop(ctx); err != nil {
 				fmt.Printf("  Warning: %v\n", err)
 			}
@@ -80,15 +80,15 @@ func newUninstallCmd() *cobra.Command {
 			fmt.Println("Removing NDM hooks...")
 			deploy.UninstallNDMHooks()
 
-			// 10. Remove KST config (keep groups for reinstall).
+			// 10. Remove netshunt config (keep groups for reinstall).
 			fmt.Println("Removing configuration (keeping groups)...")
 			_ = os.Remove(platform.ConfigFile)
 			_ = os.Remove(platform.PidFile)
 
 			fmt.Println()
-			fmt.Println("KST removed. Groups preserved in " + platform.GroupsFile)
+			fmt.Println("netshunt removed. Groups preserved in " + platform.GroupsFile)
 			fmt.Println("Next steps:")
-			fmt.Println("  opkg remove kst dnsmasq-full dnscrypt-proxy2")
+			fmt.Println("  opkg remove netshunt dnsmasq-full dnscrypt-proxy2")
 			return nil
 		},
 	}

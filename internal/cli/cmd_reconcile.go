@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/daemon"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 func newReconcileCmd() *cobra.Command {

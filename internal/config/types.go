@@ -16,7 +16,7 @@ type Config struct {
 }
 
 // RoutingConfig describes how matched traffic is forwarded.
-// KST does not manage the proxy software itself — the user sets up their own.
+// netshunt does not manage the proxy software itself — the user sets up their own.
 type RoutingConfig struct {
 	// LocalPort is the port the transparent proxy listens on.
 	LocalPort int `yaml:"local_port"`

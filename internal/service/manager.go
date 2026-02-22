@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 // Service represents an init.d managed service.
@@ -21,7 +21,7 @@ type Service struct {
 var (
 	Dnsmasq  = Service{Name: "dnsmasq", InitScript: "/opt/etc/init.d/S56dnsmasq", PidFile: platform.DnsmasqPidFile}
 	DNSCrypt = Service{Name: "dnscrypt-proxy", InitScript: "/opt/etc/init.d/S09dnscrypt-proxy2"}
-	Daemon   = Service{Name: "kst-daemon", InitScript: platform.InitScript, PidFile: platform.PidFile}
+	Daemon   = Service{Name: "netshunt-daemon", InitScript: platform.InitScript, PidFile: platform.PidFile}
 )
 
 const initDir = "/opt/etc/init.d"

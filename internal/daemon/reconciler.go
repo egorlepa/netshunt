@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/dns"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/routing"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/routing"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 // DNS resolution is intentionally absent from the reconciler.

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
+	"github.com/egorlepa/netshunt/internal/deploy"
+	"github.com/egorlepa/netshunt/internal/platform"
 )
 
 func newInstallHooksCmd() *cobra.Command {

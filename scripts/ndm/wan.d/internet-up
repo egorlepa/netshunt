@@ -1,2 +1,2 @@
 #!/bin/sh
-/opt/bin/kst hook wan "$1"
+/opt/bin/netshunt hook wan "$1"

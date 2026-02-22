@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/dns"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
+	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/group"
 )
 
 func TestGenerateIPSetConfig(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "dnsmasq.d", "kst.dnsmasq")
+	outFile := filepath.Join(dir, "dnsmasq.d", "netshunt.dnsmasq")
 
 	d := &dns.DnsmasqConfig{
 		IPSetTable: "unblock",
@@ -56,7 +56,7 @@ func TestGenerateIPSetConfig(t *testing.T) {
 
 func TestGenerateIPSetConfigEmpty(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "dnsmasq.d", "kst.dnsmasq")
+	outFile := filepath.Join(dir, "dnsmasq.d", "netshunt.dnsmasq")
 
 	d := &dns.DnsmasqConfig{
 		IPSetTable: "unblock",

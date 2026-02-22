@@ -11,14 +11,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/daemon"
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/healthcheck"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/router"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/daemon"
+	"github.com/egorlepa/netshunt/internal/deploy"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/router"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -29,7 +29,7 @@ func newSetupCmd() *cobra.Command {
 			reader := bufio.NewReader(os.Stdin)
 			ctx := cmd.Context()
 
-			fmt.Println("=== KST Setup ===")
+			fmt.Println("=== netshunt setup ===")
 			fmt.Println()
 
 			// 1. Check dependencies.
@@ -109,7 +109,7 @@ func newSetupCmd() *cobra.Command {
 			// 4. Transparent proxy configuration.
 			fmt.Println("Transparent proxy configuration:")
 			fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
-			fmt.Println("  KST will redirect matched TCP and UDP traffic to the specified port.")
+			fmt.Println("  netshunt will redirect matched TCP and UDP traffic to the specified port.")
 			cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
 			fmt.Println()
 
@@ -125,7 +125,7 @@ func newSetupCmd() *cobra.Command {
 
 			cfg.SetupFinished = true
 
-			// 7. Save KST config.
+			// 7. Save config.
 			if err := config.Save(cfg); err != nil {
 				return fmt.Errorf("save config: %w", err)
 			}
@@ -187,7 +187,7 @@ func newSetupCmd() *cobra.Command {
 			r := daemon.NewReconciler(cfg, store, logger)
 			if err := r.Reconcile(ctx); err != nil {
 				printFail(fmt.Sprintf("Reconcile: %v", err))
-				fmt.Println("      Retry with: kst reconcile")
+				fmt.Println("      Retry with: netshunt reconcile")
 			} else {
 				printPass("Reconcile: done")
 			}
@@ -217,12 +217,12 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// 16. Start the KST daemon.
+			// 16. Start the netshunt daemon.
 			if err := service.Daemon.Start(ctx); err != nil {
-				printFail(fmt.Sprintf("KST daemon: %v", err))
-				fmt.Println("      Start manually: /opt/etc/init.d/S96kst start")
+				printFail(fmt.Sprintf("netshunt daemon: %v", err))
+				fmt.Println("      Start manually: /opt/etc/init.d/S96netshunt start")
 			} else {
-				printPass("KST daemon: started")
+				printPass("netshunt daemon: started")
 			}
 
 			fmt.Println()
@@ -232,7 +232,7 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Printf("  Web UI: http://%s%s\n", interfaceIP(cfg.Network.EntwareInterface), cfg.Daemon.WebListen)
-			fmt.Println("  CLI:    kst add <domain>")
+			fmt.Println("  CLI:    netshunt add <domain>")
 
 			return nil
 		},

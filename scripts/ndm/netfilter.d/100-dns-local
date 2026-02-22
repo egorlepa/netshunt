@@ -1,2 +1,2 @@
 #!/bin/sh
-[ "$type" = "iptables" ] && [ "$table" = "nat" ] && /opt/bin/kst hook dns-local "$type" "$table"
+[ "$type" = "iptables" ] && [ "$table" = "nat" ] && /opt/bin/netshunt hook dns-local "$type" "$table"

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 func (s *Server) handleGroupsPage(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +152,7 @@ func (s *Server) handleExportGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-yaml")
-	w.Header().Set("Content-Disposition", "attachment; filename=kst-groups.yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=netshunt-groups.yaml")
 	w.Write(data)
 }
 

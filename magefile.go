@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	version    = "0.11.0"
-	binaryName = "kst"
+	version    = "0.0.1"
+	binaryName = "netshunt"
 	ldflags    = fmt.Sprintf("-s -w -X main.version=%s", version)
 )
 
@@ -90,7 +90,7 @@ func goBuild(goos, goarch, suffix string) error {
 		"-ldflags", ldflags,
 		"-trimpath",
 		"-o", output,
-		"./cmd/kst",
+		"./cmd/netshunt",
 	)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
@@ -99,7 +99,7 @@ func goBuild(goos, goarch, suffix string) error {
 }
 
 func buildIPK() error {
-	binary := filepath.Join("dist", "kst_aarch64")
+	binary := filepath.Join("dist", binaryName+"_aarch64")
 	info, err := os.Stat(binary)
 	if err != nil {
 		return fmt.Errorf("binary not found: %w", err)
@@ -120,7 +120,7 @@ func buildIPK() error {
 	}
 
 	// Assemble the IPK (outer tar.gz with debian-binary + control.tar.gz + data.tar.gz).
-	ipkPath := filepath.Join("dist", fmt.Sprintf("kst_%s_aarch64.ipk", version))
+	ipkPath := filepath.Join("dist", fmt.Sprintf("netshunt_%s_aarch64.ipk", version))
 	if err := assembleIPK(ipkPath, controlBuf, dataBuf, now); err != nil {
 		return fmt.Errorf("assemble IPK: %w", err)
 	}
@@ -169,10 +169,10 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 
 	// Directories.
 	for _, d := range []string{
-		"./opt/", "./opt/bin/", "./opt/etc/", "./opt/etc/kst/",
-		"./opt/etc/kst/ndm/", "./opt/etc/kst/init.d/",
-		"./opt/etc/kst/ndm/fs.d/", "./opt/etc/kst/ndm/netfilter.d/",
-		"./opt/etc/kst/ndm/ifstatechanged.d/", "./opt/etc/kst/ndm/wan.d/",
+		"./opt/", "./opt/bin/", "./opt/etc/", "./opt/etc/netshunt/",
+		"./opt/etc/netshunt/ndm/", "./opt/etc/netshunt/init.d/",
+		"./opt/etc/netshunt/ndm/fs.d/", "./opt/etc/netshunt/ndm/netfilter.d/",
+		"./opt/etc/netshunt/ndm/ifstatechanged.d/", "./opt/etc/netshunt/ndm/wan.d/",
 	} {
 		if err := addDir(d); err != nil {
 			return nil, 0, err
@@ -186,7 +186,7 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 	}
 	installedSize += int64(len(binData))
 	if err := tw.WriteHeader(&tar.Header{
-		Name:     "./opt/bin/kst",
+		Name:     "./opt/bin/netshunt",
 		Size:     int64(len(binData)),
 		Mode:     0755,
 		ModTime:  now,
@@ -200,11 +200,11 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 
 	// NDM scripts.
 	ndmScripts := map[string]string{
-		"./opt/etc/kst/ndm/fs.d/100-ipset":                 "scripts/ndm/fs.d/100-ipset",
-		"./opt/etc/kst/ndm/netfilter.d/100-proxy-redirect": "scripts/ndm/netfilter.d/100-proxy-redirect",
-		"./opt/etc/kst/ndm/netfilter.d/100-dns-local":      "scripts/ndm/netfilter.d/100-dns-local",
-		"./opt/etc/kst/ndm/ifstatechanged.d/100-unblock":   "scripts/ndm/ifstatechanged.d/100-unblock",
-		"./opt/etc/kst/ndm/wan.d/internet-up":              "scripts/ndm/wan.d/internet-up",
+		"./opt/etc/netshunt/ndm/fs.d/100-ipset":                 "scripts/ndm/fs.d/100-ipset",
+		"./opt/etc/netshunt/ndm/netfilter.d/100-proxy-redirect": "scripts/ndm/netfilter.d/100-proxy-redirect",
+		"./opt/etc/netshunt/ndm/netfilter.d/100-dns-local":      "scripts/ndm/netfilter.d/100-dns-local",
+		"./opt/etc/netshunt/ndm/ifstatechanged.d/100-unblock":   "scripts/ndm/ifstatechanged.d/100-unblock",
+		"./opt/etc/netshunt/ndm/wan.d/internet-up":              "scripts/ndm/wan.d/internet-up",
 	}
 	for dest, src := range ndmScripts {
 		if err := addFile(dest, src, 0755); err != nil {
@@ -213,7 +213,7 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 	}
 
 	// Init.d script.
-	if err := addFile("./opt/etc/kst/init.d/S96kst", "scripts/init.d/S96kst", 0755); err != nil {
+	if err := addFile("./opt/etc/netshunt/init.d/S96netshunt", "scripts/init.d/S96netshunt", 0755); err != nil {
 		return nil, 0, err
 	}
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
+	"github.com/egorlepa/netshunt/internal/config"
 )
 
 // Mode abstracts the mechanism for redirecting traffic matching the ipset.

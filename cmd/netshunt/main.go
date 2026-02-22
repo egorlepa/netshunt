@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/cli"
+	"github.com/egorlepa/netshunt/internal/cli"
 )
 
 var version = "dev"

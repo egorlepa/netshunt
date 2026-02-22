@@ -1,16 +1,16 @@
 #!/bin/sh
 
-PIDFILE=/var/run/kst.pid
-DAEMON=/opt/bin/kst
+PIDFILE=/var/run/netshunt.pid
+DAEMON=/opt/bin/netshunt
 
 case "$1" in
   start)
-    echo "Starting kst daemon..."
+    echo "Starting netshunt daemon..."
     $DAEMON update
     start-stop-daemon -S -b -m -p $PIDFILE -x $DAEMON -- daemon
     ;;
   stop)
-    echo "Stopping kst daemon..."
+    echo "Stopping netshunt daemon..."
     start-stop-daemon -K -p $PIDFILE 2>/dev/null
     rm -f $PIDFILE
     ;;
@@ -21,9 +21,9 @@ case "$1" in
     ;;
   status)
     if [ -f $PIDFILE ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
-      echo "kst daemon is running (PID $(cat $PIDFILE))"
+      echo "netshunt daemon is running (PID $(cat $PIDFILE))"
     else
-      echo "kst daemon is not running"
+      echo "netshunt daemon is not running"
     fi
     ;;
   *)

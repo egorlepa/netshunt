@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/web"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/web"
 )
 
 // Daemon is the long-lived process that reconciles routing state and serves the web UI.

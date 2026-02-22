@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/deploy"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
-	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/deploy"
+	"github.com/egorlepa/netshunt/internal/service"
+	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {

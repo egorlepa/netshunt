@@ -9,13 +9,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/guras256/keenetic-split-tunnel/internal/config"
-	"github.com/guras256/keenetic-split-tunnel/internal/dns"
-	"github.com/guras256/keenetic-split-tunnel/internal/group"
-	"github.com/guras256/keenetic-split-tunnel/internal/netfilter"
-	"github.com/guras256/keenetic-split-tunnel/internal/platform"
-	"github.com/guras256/keenetic-split-tunnel/internal/routing"
-	"github.com/guras256/keenetic-split-tunnel/internal/service"
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/routing"
+	"github.com/egorlepa/netshunt/internal/service"
 )
 
 // Result represents a single health check outcome.
@@ -161,7 +161,7 @@ func checkIPTables(ctx context.Context, cfg *config.Config) Result {
 	r := Result{Name: "iptables"}
 	ipt := netfilter.NewIPTables()
 
-	chain, table := "KSTREDIR", "nat"
+	chain, table := "NSHUNT", "nat"
 	exists, _ := ipt.ChainExists(ctx, table, chain)
 	if exists {
 		r.Passed = true

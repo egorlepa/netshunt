@@ -1,4 +1,4 @@
-module github.com/guras256/keenetic-split-tunnel
+module github.com/egorlepa/netshunt
 
 go 1.25.6
 

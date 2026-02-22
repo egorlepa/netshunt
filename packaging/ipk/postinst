@@ -1,15 +1,15 @@
 #!/bin/sh
 
-chmod +x /opt/bin/kst
+chmod +x /opt/bin/netshunt
 
 # Create config directory.
-mkdir -p /opt/etc/kst
+mkdir -p /opt/etc/netshunt
 
 # Install NDM hooks if directory exists.
 if [ -d /opt/etc/ndm ]; then
     for dir in fs.d netfilter.d ifstatechanged.d ifcreated.d ifdestroyed.d wan.d; do
         if [ -d "/opt/etc/ndm/$dir" ]; then
-            for f in /opt/etc/kst/ndm/"$dir"/*; do
+            for f in /opt/etc/netshunt/ndm/"$dir"/*; do
                 [ -f "$f" ] && cp "$f" "/opt/etc/ndm/$dir/"
             done
         fi
@@ -18,10 +18,10 @@ fi
 
 # Install init.d script.
 if [ -d /opt/etc/init.d ]; then
-    cp /opt/etc/kst/init.d/S96kst /opt/etc/init.d/S96kst
-    chmod +x /opt/etc/init.d/S96kst
+    cp /opt/etc/netshunt/init.d/S96netshunt /opt/etc/init.d/S96netshunt
+    chmod +x /opt/etc/init.d/S96netshunt
 fi
 
 echo ""
-echo "KST installed successfully."
-echo "Run 'kst setup' to configure."
+echo "netshunt installed successfully."
+echo "Run 'netshunt setup' to configure."
