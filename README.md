@@ -35,7 +35,7 @@ flowchart LR
 
 ```sh
 # Download the latest IPK from GitHub Releases
-opkg install netshunt_0.0.6_aarch64.ipk
+opkg install netshunt_x.x.x_aarch64.ipk
 
 # Run the interactive setup wizard
 netshunt setup
