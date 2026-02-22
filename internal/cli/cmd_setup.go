@@ -5,14 +5,15 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/daemon"
 	"github.com/egorlepa/netshunt/internal/deploy"
 	"github.com/egorlepa/netshunt/internal/group"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
@@ -182,24 +183,23 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// 13. Run initial reconcile.
-			logger := platform.NewLogger(cfg.Daemon.LogLevel)
-			r := daemon.NewReconciler(cfg, store, logger)
-			if err := r.Reconcile(ctx); err != nil {
-				printFail(fmt.Sprintf("Reconcile: %v", err))
-				fmt.Println("      Retry with: netshunt reconcile")
+			// 13. Start the netshunt daemon (reconciles + starts web UI).
+			if err := service.Daemon.Start(ctx); err != nil {
+				printFail(fmt.Sprintf("netshunt daemon: %v", err))
+				fmt.Println("      Start manually: /opt/etc/init.d/S96netshunt start")
+			} else if err := waitForDaemon(cfg); err != nil {
+				printFail(fmt.Sprintf("netshunt daemon: started but not ready (%v)", err))
 			} else {
-				printPass("Reconcile: done")
+				printPass("netshunt daemon: ready")
 			}
 
-			// 14. Health check (run before daemon start so the state from
-			// the reconcile above is still stable and not torn down).
+			// 14. Health check.
 			fmt.Println()
 			fmt.Println("Health check:")
 			results := healthcheck.RunChecks(ctx, cfg, store)
 			PrintResults(results)
 
-			// 15. Domain probe: verify ifconfig.me resolves through the pipeline.
+			// 16. Domain probe: verify ifconfig.me resolves through the pipeline.
 			fmt.Println()
 			fmt.Println("Domain probe: ifconfig.me")
 			probe, err := healthcheck.ProbeDomain(ctx, cfg, "ifconfig.me")
@@ -215,14 +215,6 @@ func newSetupCmd() *cobra.Command {
 						printFail(fmt.Sprintf("%s not in ipset", ip))
 					}
 				}
-			}
-
-			// 16. Start the netshunt daemon.
-			if err := service.Daemon.Start(ctx); err != nil {
-				printFail(fmt.Sprintf("netshunt daemon: %v", err))
-				fmt.Println("      Start manually: /opt/etc/init.d/S96netshunt start")
-			} else {
-				printPass("netshunt daemon: started")
 			}
 
 			fmt.Println()
@@ -350,6 +342,28 @@ func detectBridgeInterfaces(ctx context.Context) []string {
 	}
 	sort.Strings(bridges)
 	return bridges
+}
+
+// waitForDaemon polls the daemon's /ready endpoint until it returns 200 or times out.
+func waitForDaemon(cfg *config.Config) error {
+	listen := cfg.Daemon.WebListen
+	if strings.HasPrefix(listen, ":") {
+		listen = "127.0.0.1" + listen
+	}
+	url := "http://" + listen + "/ready"
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	for range 20 {
+		time.Sleep(250 * time.Millisecond)
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+	}
+	return fmt.Errorf("timeout waiting for daemon")
 }
 
 // interfaceIP returns the first IPv4 address of the named network interface,

@@ -31,6 +31,12 @@ type Server struct {
 	Logger     *slog.Logger
 	Version    string
 	mux        *http.ServeMux
+	ready      bool
+}
+
+// MarkReady signals that the daemon has finished initial setup.
+func (s *Server) MarkReady() {
+	s.ready = true
 }
 
 // NewServer creates a web server with all routes registered.
@@ -79,6 +85,15 @@ func (s *Server) routes() {
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
 	s.mux.HandleFunc("POST /actions/restart", s.handleActionRestart)
+
+	// Readiness probe.
+	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		if !s.ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 }
 
 // ServeHTTP implements http.Handler.

@@ -42,7 +42,10 @@ func RunChecks(ctx context.Context, cfg *config.Config, groups *group.Store) []R
 	// 2. dnscrypt-proxy
 	results = append(results, checkService(ctx, service.DNSCrypt))
 
-	// 3. Routing active
+	// 3. Daemon
+	results = append(results, checkService(ctx, service.Daemon))
+
+	// 4. Routing active
 	results = append(results, checkRouting(ctx, cfg))
 
 	// 4. IPSet table

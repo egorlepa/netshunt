@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version    = "0.0.1"
+	version    = "0.0.5"
 	binaryName = "netshunt"
 	ldflags    = fmt.Sprintf("-s -w -X main.version=%s", version)
 )

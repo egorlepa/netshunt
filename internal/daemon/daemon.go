@@ -44,11 +44,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	defer os.Remove(platform.PidFile)
 
-	// Initial reconcile.
-	if err := d.Reconciler.Reconcile(ctx); err != nil {
-		d.Logger.Error("initial reconcile failed", "error", err)
-	}
-
 	// Setup signal handling.
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -66,6 +61,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.Logger.Error("web server error", "error", err)
 		}
 	}()
+
+	// Initial reconcile.
+	if err := d.Reconciler.Reconcile(ctx); err != nil {
+		d.Logger.Error("initial reconcile failed", "error", err)
+	}
+	webServer.MarkReady()
 
 	d.Logger.Info("daemon started")
 
