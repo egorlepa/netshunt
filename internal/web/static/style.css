@@ -1,3 +1,4 @@
+html { overflow-y: scroll; }
 :root {
   --bg: #1a1a2e;
   --bg2: #16213e;
@@ -80,6 +81,9 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
 input[type="text"], input[type="number"] { width: 100%; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+textarea.auto-resize { flex: 1; overflow: hidden; resize: none; min-height: 34px; line-height: 1.4; }
+.expand-arrow { display: inline-block; transition: transform .15s; font-size: 12px; }
+.expand-arrow.expanded { transform: rotate(90deg); }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 

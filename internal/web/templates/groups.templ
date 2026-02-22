@@ -7,6 +7,7 @@ templ GroupsPage(groups []group.Group) {
 		<div class="flex-between mb-16">
 			<h1>Groups</h1>
 			<div class="flex gap-8">
+				<button id="toggle-all-btn" class="btn btn-sm" onclick="toggleAllEntries()">Expand All</button>
 				<a href="/groups/export" class="btn btn-sm">Export</a>
 				<button class="btn btn-sm" onclick="document.getElementById('import-form').style.display=document.getElementById('import-form').style.display==='none'?'block':'none'">
 					Import
@@ -49,6 +50,56 @@ templ GroupsPage(groups []group.Group) {
 		<div id="group-list">
 			@GroupList(groups)
 		</div>
+		<script>
+			var _expandedGroups = new Set();
+			function _applyGroupState(card) {
+				var name = card.id.replace('group-', '');
+				var el = card.querySelector('.entries-section');
+				var arrow = card.querySelector('.expand-arrow');
+				var expanded = _expandedGroups.has(name);
+				if (el) el.style.display = expanded ? '' : 'none';
+				if (arrow) arrow.classList.toggle('expanded', expanded);
+			}
+			function toggleGroup(name) {
+				if (_expandedGroups.has(name)) { _expandedGroups.delete(name); } else { _expandedGroups.add(name); }
+				var card = document.getElementById('group-' + name);
+				if (card) _applyGroupState(card);
+			}
+			function toggleAllEntries() {
+				var cards = document.querySelectorAll('.card[id^="group-"]');
+				var btn = document.getElementById('toggle-all-btn');
+				var anyCollapsed = Array.from(cards).some(function(c) {
+					return !_expandedGroups.has(c.id.replace('group-', ''));
+				});
+				cards.forEach(function(c) {
+					var name = c.id.replace('group-', '');
+					if (anyCollapsed) { _expandedGroups.add(name); } else { _expandedGroups.delete(name); }
+					_applyGroupState(c);
+				});
+				btn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';
+			}
+			document.body.addEventListener('htmx:afterSettle', function(e) {
+				var elt = e.detail.elt;
+				if (!elt || !elt.id) return;
+				var name;
+				if (elt.id.startsWith('group-')) {
+					name = elt.id.replace('group-', '');
+				} else if (elt.closest && elt.closest('[id^="group-"]')) {
+					name = elt.closest('[id^="group-"]').id.replace('group-', '');
+				}
+				if (!name) return;
+				_expandedGroups.add(name);
+				var card = document.getElementById('group-' + name);
+				if (card) _applyGroupState(card);
+			});
+			function autoResize(el) {
+				el.style.height = 'auto';
+				el.style.height = el.scrollHeight + 'px';
+			}
+			document.addEventListener('input', function(e) {
+				if (e.target.matches('textarea.auto-resize')) autoResize(e.target);
+			});
+		</script>
 	}
 }
 
@@ -66,20 +117,13 @@ templ GroupList(groups []group.Group) {
 templ GroupCard(g group.Group) {
 	<div class="card" id={ "group-" + g.Name }>
 		<div class="flex-between mb-8">
-			<div class="flex gap-8" style="align-items:center">
+			<div class="flex gap-8 group-header" style="align-items:center;cursor:pointer;user-select:none" data-group={ g.Name } onclick="toggleGroup(this.dataset.group)">
+				<span class="expand-arrow">&#9654;</span>
 				<h2 style="margin:0">{ g.Name }</h2>
 				if g.Description != "" {
 					<span class="text-muted text-sm">{ g.Description }</span>
 				}
-				if len(g.Entries) > 0 {
-					<span
-						class="text-muted text-sm"
-						style="cursor:pointer"
-						onclick={ toggleEntries(g.Name) }
-					>({ itoa(len(g.Entries)) } entries)</span>
-				} else {
-					<span class="text-muted text-sm">(0 entries)</span>
-				}
+				<span class="text-muted text-sm">({ itoa(len(g.Entries)) } entries)</span>
 			</div>
 			<div class="flex gap-8" style="align-items:center">
 				<label class="toggle">
@@ -110,50 +154,22 @@ templ GroupCard(g group.Group) {
 				>Delete</button>
 			</div>
 		</div>
-		<div id={ "entries-" + g.Name } if len(g.Entries) > 5 { style="display:none" }>
+		<div class="entries-section" id={ "entries-" + g.Name } style="display:none">
 			@EntryList(g.Name, g.Entries)
 		</div>
-		<div class="flex gap-8 mt-8">
-			<form
-				hx-post={ "/groups/" + g.Name + "/entries" }
-				hx-target={ "#group-" + g.Name }
-				hx-swap="outerHTML"
-				hx-on::after-request="if(event.detail.successful) this.reset()"
-				class="flex gap-8"
-				style="flex:1"
-			>
-				<input type="text" name="value" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8" required/>
+		<form
+			hx-post={ "/groups/" + g.Name + "/entries/bulk" }
+			hx-target={ "#group-" + g.Name }
+			hx-swap="outerHTML"
+			hx-on::after-request="if(event.detail.successful) this.reset()"
+			class="mt-8"
+		>
+			<div class="flex gap-8">
+				<textarea name="values" class="auto-resize" rows="1" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8 (one per line)" required></textarea>
 				<button class="btn btn-sm btn-accent" type="submit">Add</button>
-			</form>
-			<button
-				class="btn btn-sm"
-				onclick={ toggleBulkAdd(g.Name) }
-			>Bulk</button>
-		</div>
-		<div id={ "bulk-" + g.Name } style="display:none" class="mt-8">
-			<form
-				hx-post={ "/groups/" + g.Name + "/entries/bulk" }
-				hx-target={ "#group-" + g.Name }
-				hx-swap="outerHTML"
-				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('[id^=bulk-]').style.display='none'}"
-			>
-				<textarea name="values" rows="4" style="width:100%" placeholder="One entry per line..."></textarea>
-				<div class="mt-8">
-					<button class="btn btn-sm btn-accent" type="submit">Add All</button>
-				</div>
-			</form>
-		</div>
+			</div>
+		</form>
 	</div>
-}
-
-script toggleEntries(name string) {
-	var el = document.getElementById("entries-" + name);
-	el.style.display = el.style.display === "none" ? "" : "none";
-}
-
-script toggleBulkAdd(name string) {
-	var el = document.getElementById("bulk-" + name);
-	el.style.display = el.style.display === "none" ? "" : "none";
 }
 
 templ EntryList(groupName string, entries []group.Entry) {

@@ -20,7 +20,7 @@ templ Dashboard(data DashboardData) {
 	@Layout("Dashboard", "dashboard") {
 		<div class="flex-between mb-16">
 			<h1>Dashboard</h1>
-			<span class="text-muted text-sm">{ data.Version }</span>
+			<span class="text-muted text-sm">v{ data.Version }</span>
 		</div>
 		<div id="dashboard-content" hx-get="/dashboard-content" hx-trigger="every 10s" hx-swap="innerHTML">
 			@DashboardContent(data)
