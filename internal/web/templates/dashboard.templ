@@ -13,67 +13,77 @@ type DashboardData struct {
 	EntryCount    int
 	RoutingMode   string
 	RoutingActive bool
+	Version       string
 }
 
 templ Dashboard(data DashboardData) {
 	@Layout("Dashboard", "dashboard") {
-		<h1 class="mb-16">Dashboard</h1>
-		<div class="grid-2">
-			<div class="card">
-				<h2>Services</h2>
-				<table>
-					<thead>
-						<tr><th>Service</th><th>Status</th></tr>
-					</thead>
-					<tbody>
-						for _, svc := range data.Services {
-							<tr>
-								<td>{ svc.Name }</td>
-								<td>
-									if !svc.Installed {
-										<span class="badge badge-yellow">not installed</span>
-									} else if svc.Running {
-										<span class="badge badge-green">running</span>
-									} else {
-										<span class="badge badge-red">stopped</span>
-									}
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
-			<div class="card">
-				<h2>Overview</h2>
-				<table>
-					<tbody>
+		<div class="flex-between mb-16">
+			<h1>Dashboard</h1>
+			<span class="text-muted text-sm">{ data.Version }</span>
+		</div>
+		<div id="dashboard-content" hx-get="/dashboard-content" hx-trigger="every 10s" hx-swap="innerHTML">
+			@DashboardContent(data)
+		</div>
+	}
+}
+
+templ DashboardContent(data DashboardData) {
+	<div class="grid-2">
+		<div class="card">
+			<h2>Services</h2>
+			<table>
+				<thead>
+					<tr><th>Service</th><th>Status</th></tr>
+				</thead>
+				<tbody>
+					for _, svc := range data.Services {
 						<tr>
-							<td class="text-muted">Routing</td>
+							<td>{ svc.Name }</td>
 							<td>
-								{ data.RoutingMode }
-								if data.RoutingActive {
-									<span class="badge badge-green">active</span>
+								if !svc.Installed {
+									<span class="badge badge-yellow">not installed</span>
+								} else if svc.Running {
+									<span class="badge badge-green">running</span>
 								} else {
-									<span class="badge badge-red">inactive</span>
+									<span class="badge badge-red">stopped</span>
 								}
 							</td>
 						</tr>
-						<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
-						<tr><td class="text-muted">Groups</td><td>{ itoa(data.GroupCount) }</td></tr>
-						<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
-					</tbody>
-				</table>
-				<div class="mt-8 flex gap-8">
-					<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
-						Reconcile
-						<span class="htmx-indicator">...</span>
-					</button>
-					<button class="btn" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnsmasq and dnscrypt-proxy?">
-						Restart Services
-						<span class="htmx-indicator">...</span>
-					</button>
-				</div>
+					}
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<h2>Overview</h2>
+			<table>
+				<tbody>
+					<tr>
+						<td class="text-muted">Routing</td>
+						<td>
+							{ data.RoutingMode }
+							if data.RoutingActive {
+								<span class="badge badge-green">active</span>
+							} else {
+								<span class="badge badge-red">inactive</span>
+							}
+						</td>
+					</tr>
+					<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
+					<tr><td class="text-muted">Groups</td><td>{ itoa(data.GroupCount) }</td></tr>
+					<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
+				</tbody>
+			</table>
+			<div class="mt-8 flex gap-8">
+				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
+					Reconcile
+					<span class="htmx-indicator">...</span>
+				</button>
+				<button class="btn" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnsmasq and dnscrypt-proxy?">
+					Restart Services
+					<span class="htmx-indicator">...</span>
+				</button>
 			</div>
 		</div>
-	}
+	</div>
 }

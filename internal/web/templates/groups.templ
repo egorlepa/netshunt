@@ -6,9 +6,31 @@ templ GroupsPage(groups []group.Group) {
 	@Layout("Groups", "groups") {
 		<div class="flex-between mb-16">
 			<h1>Groups</h1>
-			<button class="btn btn-accent" onclick="document.getElementById('create-form').style.display='block'">
-				New Group
-			</button>
+			<div class="flex gap-8">
+				<a href="/groups/export" class="btn btn-sm">Export</a>
+				<button class="btn btn-sm" onclick="document.getElementById('import-form').style.display=document.getElementById('import-form').style.display==='none'?'block':'none'">
+					Import
+				</button>
+				<button class="btn btn-accent" onclick="document.getElementById('create-form').style.display='block'">
+					New Group
+				</button>
+			</div>
+		</div>
+		<div id="import-form" class="card mb-16" style="display:none">
+			<h2>Import Groups</h2>
+			<form
+				hx-post="/groups/import"
+				hx-target="#group-list"
+				hx-swap="innerHTML"
+				hx-encoding="multipart/form-data"
+				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
+				class="mt-8"
+			>
+				<textarea name="body" rows="6" style="width:100%" placeholder="Paste groups YAML here..." required></textarea>
+				<div class="mt-8">
+					<button class="btn btn-accent" type="submit">Import</button>
+				</div>
+			</form>
 		</div>
 		<div id="create-form" class="card mb-16" style="display:none">
 			<h2>Create Group</h2>
@@ -49,7 +71,15 @@ templ GroupCard(g group.Group) {
 				if g.Description != "" {
 					<span class="text-muted text-sm">{ g.Description }</span>
 				}
-				<span class="text-muted text-sm">({ itoa(len(g.Entries)) } entries)</span>
+				if len(g.Entries) > 0 {
+					<span
+						class="text-muted text-sm"
+						style="cursor:pointer"
+						onclick={ toggleEntries(g.Name) }
+					>({ itoa(len(g.Entries)) } entries)</span>
+				} else {
+					<span class="text-muted text-sm">(0 entries)</span>
+				}
 			</div>
 			<div class="flex gap-8" style="align-items:center">
 				<label class="toggle">
@@ -80,20 +110,50 @@ templ GroupCard(g group.Group) {
 				>Delete</button>
 			</div>
 		</div>
-		<div id={ "entries-" + g.Name }>
+		<div id={ "entries-" + g.Name } if len(g.Entries) > 5 { style="display:none" }>
 			@EntryList(g.Name, g.Entries)
 		</div>
-		<form
-			hx-post={ "/groups/" + g.Name + "/entries" }
-			hx-target={ "#entries-" + g.Name }
-			hx-swap="innerHTML"
-			hx-on::after-request="if(event.detail.successful) this.reset()"
-			class="flex gap-8 mt-8"
-		>
-			<input type="text" name="value" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8" required/>
-			<button class="btn btn-sm btn-accent" type="submit">Add</button>
-		</form>
+		<div class="flex gap-8 mt-8">
+			<form
+				hx-post={ "/groups/" + g.Name + "/entries" }
+				hx-target={ "#group-" + g.Name }
+				hx-swap="outerHTML"
+				hx-on::after-request="if(event.detail.successful) this.reset()"
+				class="flex gap-8"
+				style="flex:1"
+			>
+				<input type="text" name="value" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8" required/>
+				<button class="btn btn-sm btn-accent" type="submit">Add</button>
+			</form>
+			<button
+				class="btn btn-sm"
+				onclick={ toggleBulkAdd(g.Name) }
+			>Bulk</button>
+		</div>
+		<div id={ "bulk-" + g.Name } style="display:none" class="mt-8">
+			<form
+				hx-post={ "/groups/" + g.Name + "/entries/bulk" }
+				hx-target={ "#group-" + g.Name }
+				hx-swap="outerHTML"
+				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('[id^=bulk-]').style.display='none'}"
+			>
+				<textarea name="values" rows="4" style="width:100%" placeholder="One entry per line..."></textarea>
+				<div class="mt-8">
+					<button class="btn btn-sm btn-accent" type="submit">Add All</button>
+				</div>
+			</form>
+		</div>
 	</div>
+}
+
+script toggleEntries(name string) {
+	var el = document.getElementById("entries-" + name);
+	el.style.display = el.style.display === "none" ? "" : "none";
+}
+
+script toggleBulkAdd(name string) {
+	var el = document.getElementById("bulk-" + name);
+	el.style.display = el.style.display === "none" ? "" : "none";
 }
 
 templ EntryList(groupName string, entries []group.Entry) {
@@ -101,7 +161,7 @@ templ EntryList(groupName string, entries []group.Entry) {
 		<p class="text-muted text-sm">No entries yet.</p>
 	} else {
 		<ul class="entry-list">
-			for _, e := range entries {
+			for _, e := range sortedEntries(entries) {
 				<li class="entry-item">
 					<span>{ e.Value }</span>
 					<button

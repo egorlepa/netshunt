@@ -22,15 +22,17 @@ type Daemon struct {
 	Groups     *group.Store
 	Reconciler *Reconciler
 	Logger     *slog.Logger
+	Version    string
 }
 
 // New creates a new Daemon.
-func New(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Daemon {
+func New(cfg *config.Config, groups *group.Store, logger *slog.Logger, version string) *Daemon {
 	return &Daemon{
 		Config:     cfg,
 		Groups:     groups,
 		Reconciler: NewReconciler(cfg, groups, logger),
 		Logger:     logger,
+		Version:    version,
 	}
 }
 
@@ -52,7 +54,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer cancel()
 
 	// Start web server.
-	webServer := web.NewServer(d.Config, d.Groups, d.Reconciler, d.Logger)
+	webServer := web.NewServer(d.Config, d.Groups, d.Reconciler, d.Logger, d.Version)
 	httpServer := &http.Server{
 		Addr:    d.Config.Daemon.WebListen,
 		Handler: webServer,

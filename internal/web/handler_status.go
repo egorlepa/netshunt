@@ -10,9 +10,7 @@ import (
 	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
 )
 
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
+func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	services := []templates.ServiceStatus{
 		svcStatus(ctx, service.Dnsmasq),
 		svcStatus(ctx, service.DNSCrypt),
@@ -32,16 +30,27 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	mode := routing.New(s.Config, s.Logger)
 	routingActive, _ := mode.IsActive(ctx)
 
-	data := templates.DashboardData{
+	return templates.DashboardData{
 		Services:      services,
 		IPSetCount:    ipsetCount,
 		GroupCount:    len(groups),
 		EntryCount:    entryCount,
 		RoutingMode:   s.Config.Routing.Mode,
 		RoutingActive: routingActive,
+		Version:       s.Version,
 	}
+}
 
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := s.dashboardData(ctx)
 	templates.Dashboard(data).Render(ctx, w)
+}
+
+func (s *Server) handleDashboardContent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := s.dashboardData(ctx)
+	templates.DashboardContent(data).Render(ctx, w)
 }
 
 func svcStatus(ctx context.Context, svc service.Service) templates.ServiceStatus {

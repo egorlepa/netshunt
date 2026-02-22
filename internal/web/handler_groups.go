@@ -1,8 +1,9 @@
 package web
 
 import (
-	"io"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/guras256/keenetic-split-tunnel/internal/group"
 	"github.com/guras256/keenetic-split-tunnel/internal/web/templates"
@@ -97,7 +98,7 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.triggerMutation()
-	s.renderEntryList(w, r, name)
+	s.renderGroupCard(w, r, name)
 }
 
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
@@ -113,19 +114,56 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	s.renderEntryList(w, r, name)
 }
 
-func (s *Server) handleImportGroups(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		errorResponse(w, "read body: "+err.Error(), http.StatusBadRequest)
+func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	r.ParseForm()
+	raw := r.FormValue("values")
+	if raw == "" {
+		errorResponse(w, "values is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.Groups.ImportGroups(data); err != nil {
+
+	var added int
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if err := s.Groups.AddEntry(name, line); err == nil {
+			added++
+		}
+	}
+
+	s.triggerMutation()
+	toastTrigger(w, fmt.Sprintf("%d entries added", added), "success")
+	s.renderGroupCard(w, r, name)
+}
+
+func (s *Server) handleExportGroups(w http.ResponseWriter, r *http.Request) {
+	data, err := s.Groups.ExportAll()
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=kst-groups.yaml")
+	w.Write(data)
+}
+
+func (s *Server) handleImportGroups(w http.ResponseWriter, r *http.Request) {
+	r.ParseMultipartForm(1 << 20) // 1 MB limit
+	raw := r.FormValue("body")
+	if raw == "" {
+		errorResponse(w, "empty import data", http.StatusBadRequest)
+		return
+	}
+	if err := s.Groups.ImportGroups([]byte(raw)); err != nil {
 		errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	s.triggerMutation()
 	toastTrigger(w, "Groups imported", "success")
-	w.WriteHeader(http.StatusOK)
+	s.renderGroupList(w, r)
 }
 
 func (s *Server) renderGroupList(w http.ResponseWriter, r *http.Request) {

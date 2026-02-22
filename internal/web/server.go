@@ -29,16 +29,18 @@ type Server struct {
 	Groups     *group.Store
 	Reconciler Reconciler
 	Logger     *slog.Logger
+	Version    string
 	mux        *http.ServeMux
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Config, groups *group.Store, reconciler Reconciler, logger *slog.Logger) *Server {
+func NewServer(cfg *config.Config, groups *group.Store, reconciler Reconciler, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
 		Groups:     groups,
 		Reconciler: reconciler,
 		Logger:     logger,
+		Version:    version,
 		mux:        http.NewServeMux(),
 	}
 	s.routes()
@@ -52,6 +54,7 @@ func (s *Server) routes() {
 
 	// Pages.
 	s.mux.HandleFunc("GET /{$}", s.handleDashboard)
+	s.mux.HandleFunc("GET /dashboard-content", s.handleDashboardContent)
 	s.mux.HandleFunc("GET /groups", s.handleGroupsPage)
 	s.mux.HandleFunc("GET /groups/{name}", s.handleGroupDetail)
 	s.mux.HandleFunc("GET /settings", s.handleSettingsPage)
@@ -63,7 +66,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /groups/{name}/disable", s.handleDisableGroup)
 	s.mux.HandleFunc("POST /groups/{name}/entries", s.handleAddEntry)
 	s.mux.HandleFunc("DELETE /groups/{name}/entries/{value...}", s.handleDeleteEntry)
+	s.mux.HandleFunc("POST /groups/{name}/entries/bulk", s.handleBulkAddEntries)
 	s.mux.HandleFunc("POST /groups/import", s.handleImportGroups)
+	s.mux.HandleFunc("GET /groups/export", s.handleExportGroups)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)

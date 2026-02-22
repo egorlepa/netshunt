@@ -21,7 +21,7 @@ func newDaemonCmd() *cobra.Command {
 
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)
 			groups := group.NewDefaultStore()
-			d := daemon.New(cfg, groups, logger)
+			d := daemon.New(cfg, groups, logger, version)
 			return d.Run(cmd.Context())
 		},
 	}

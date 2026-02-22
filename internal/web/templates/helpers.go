@@ -1,8 +1,11 @@
 package templates
 
 import (
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/guras256/keenetic-split-tunnel/internal/group"
 )
 
 func itoa(n int) string {
@@ -11,6 +14,20 @@ func itoa(n int) string {
 
 func joinLines(ss []string) string {
 	return strings.Join(ss, "\n")
+}
+
+// sortedEntries returns entries sorted by type: domains, IPs, CIDRs.
+func sortedEntries(entries []group.Entry) []group.Entry {
+	sorted := make([]group.Entry, len(entries))
+	copy(sorted, entries)
+	sort.Slice(sorted, func(i, j int) bool {
+		ti, tj := sorted[i].Type(), sorted[j].Type()
+		if ti != tj {
+			return ti < tj
+		}
+		return sorted[i].Value < sorted[j].Value
+	})
+	return sorted
 }
 
 func faviconDataURI() string {
