@@ -32,7 +32,9 @@ templ DiagnosticsPage() {
 					<span class="htmx-indicator">...</span>
 				</button>
 			</form>
-			<div id="probe-results" class="mt-8"></div>
+			<div id="probe-results" class="mt-8" hx-post="/diagnostics/probe" hx-trigger="load" hx-swap="innerHTML" hx-vals='{"domain":"ifconfig.me"}'>
+				<p class="text-muted text-sm">Running probe...</p>
+			</div>
 		</div>
 	}
 }

@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version    = "0.8.13"
+	version    = "0.11.0"
 	binaryName = "kst"
 	ldflags    = fmt.Sprintf("-s -w -X main.version=%s", version)
 )

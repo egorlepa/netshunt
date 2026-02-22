@@ -43,7 +43,7 @@ func DiagnosticsPage() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"mb-16\">Diagnostics</h1><div class=\"card mb-16\"><div class=\"flex-between mb-8\"><h2>Health Checks</h2><button class=\"btn btn-sm btn-accent\" hx-get=\"/diagnostics/run\" hx-target=\"#check-results\" hx-swap=\"innerHTML\">Run Checks <span class=\"htmx-indicator\">...</span></button></div><div id=\"check-results\" hx-get=\"/diagnostics/run\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><p class=\"text-muted text-sm\">Running checks...</p></div></div><div class=\"card\"><h2 class=\"mb-8\">Domain Probe</h2><p class=\"text-muted text-sm mb-8\">Test if a domain resolves and its IPs are in the ipset.</p><form hx-post=\"/diagnostics/probe\" hx-target=\"#probe-results\" hx-swap=\"innerHTML\" class=\"flex gap-8\"><input type=\"text\" name=\"domain\" value=\"ifconfig.me\" placeholder=\"example.com\" required> <button class=\"btn btn-accent\" type=\"submit\">Test <span class=\"htmx-indicator\">...</span></button></form><div id=\"probe-results\" class=\"mt-8\"></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"mb-16\">Diagnostics</h1><div class=\"card mb-16\"><div class=\"flex-between mb-8\"><h2>Health Checks</h2><button class=\"btn btn-sm btn-accent\" hx-get=\"/diagnostics/run\" hx-target=\"#check-results\" hx-swap=\"innerHTML\">Run Checks <span class=\"htmx-indicator\">...</span></button></div><div id=\"check-results\" hx-get=\"/diagnostics/run\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><p class=\"text-muted text-sm\">Running checks...</p></div></div><div class=\"card\"><h2 class=\"mb-8\">Domain Probe</h2><p class=\"text-muted text-sm mb-8\">Test if a domain resolves and its IPs are in the ipset.</p><form hx-post=\"/diagnostics/probe\" hx-target=\"#probe-results\" hx-swap=\"innerHTML\" class=\"flex gap-8\"><input type=\"text\" name=\"domain\" value=\"ifconfig.me\" placeholder=\"example.com\" required> <button class=\"btn btn-accent\" type=\"submit\">Test <span class=\"htmx-indicator\">...</span></button></form><div id=\"probe-results\" class=\"mt-8\" hx-post=\"/diagnostics/probe\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-vals='{\"domain\":\"ifconfig.me\"}'><p class=\"text-muted text-sm\">Running probe...</p></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -105,7 +105,7 @@ func DiagnosticsResults(results []healthcheck.Result) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(r.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 52, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 54, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -118,7 +118,7 @@ func DiagnosticsResults(results []healthcheck.Result) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(r.Detail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 53, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 55, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -165,7 +165,7 @@ func DiagnosticsProbeResult(probe healthcheck.ProbeResult) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(probe.Domain)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 61, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 63, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -208,7 +208,7 @@ func DiagnosticsProbeResult(probe healthcheck.ProbeResult) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(ip)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 76, Col: 14}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 78, Col: 14}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -271,7 +271,7 @@ func DiagnosticsProbeError(domain string, errMsg string) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(domain)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 92, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 94, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -284,7 +284,7 @@ func DiagnosticsProbeError(domain string, errMsg string) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(errMsg)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 93, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/diagnostics.templ`, Line: 95, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {

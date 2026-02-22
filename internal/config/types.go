@@ -16,18 +16,10 @@ type Config struct {
 }
 
 // RoutingConfig describes how matched traffic is forwarded.
-// KST does not manage the proxy/VPN software itself — the user sets up their own.
+// KST does not manage the proxy software itself — the user sets up their own.
 type RoutingConfig struct {
-	// Mode selects the traffic redirection mechanism:
-	//   "redirect"  — NAT REDIRECT to a local transparent proxy port (ss-redir, xray, sing-box, …)
-	//   "interface" — MARK + policy routing via a VPN interface (WireGuard, OpenVPN, …)
-	Mode string `yaml:"mode"`
-
-	// LocalPort is the port the transparent proxy listens on. Used when Mode == "redirect".
+	// LocalPort is the port the transparent proxy listens on.
 	LocalPort int `yaml:"local_port"`
-
-	// Interface is the VPN tunnel interface name (e.g. wg0, tun0). Used when Mode == "interface".
-	Interface string `yaml:"interface"`
 }
 
 // NetworkConfig holds network interface settings.
@@ -62,7 +54,6 @@ func Defaults() Config {
 	return Config{
 		Version: 1,
 		Routing: RoutingConfig{
-			Mode:      "redirect",
 			LocalPort: 1080,
 		},
 		DNS: DNSConfig{

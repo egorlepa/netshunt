@@ -35,7 +35,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 		IPSetCount:    ipsetCount,
 		GroupCount:    len(groups),
 		EntryCount:    entryCount,
-		RoutingMode:   s.Config.Routing.Mode,
+		RoutingMode:   "redirect",
 		RoutingActive: routingActive,
 		Version:       s.Version,
 	}

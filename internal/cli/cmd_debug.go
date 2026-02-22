@@ -90,13 +90,7 @@ func debugDnsmasqConfig() {
 
 func debugConfig(cfg *config.Config) {
 	fmt.Println("--- Config ---")
-	fmt.Printf("Routing mode:      %s\n", cfg.Routing.Mode)
-	switch cfg.Routing.Mode {
-	case "interface":
-		fmt.Printf("Routing interface: %s\n", cfg.Routing.Interface)
-	default:
-		fmt.Printf("Routing port:      %d\n", cfg.Routing.LocalPort)
-	}
+	fmt.Printf("Routing port:      %d\n", cfg.Routing.LocalPort)
 	fmt.Printf("DNSCrypt port:     %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("Interface:         %s\n", cfg.Network.EntwareInterface)
 	fmt.Printf("Web listen:        %s\n", cfg.Daemon.WebListen)

@@ -33,14 +33,6 @@ type Reconciler struct {
 	Logger  *slog.Logger
 }
 
-// allModes returns one instance of every known routing mode.
-// Used to clean up stale rules when switching modes.
-func allModes(cfg *config.Config, logger *slog.Logger) []routing.Mode {
-	return []routing.Mode{
-		routing.NewRedirect(cfg, logger),
-		routing.NewIface(cfg, logger),
-	}
-}
 
 // NewReconciler creates a Reconciler from the given configuration.
 func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Reconciler {
@@ -85,12 +77,9 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// 4. Populate ipset with direct IP/CIDR entries.
 	r.populateIPSet(ctx, entries)
 
-	// 5. Teardown all known mode rules, then set up only the active mode.
-	// This ensures stale rules (including from the current mode with old config
-	// values, e.g. a changed port) don't interfere.
-	for _, m := range allModes(r.Config, r.Logger) {
-		_ = m.TeardownRules(ctx)
-	}
+	// 5. Teardown then re-setup iptables rules. Teardown first ensures stale
+	// rules (e.g. from a changed port) don't interfere.
+	_ = r.Mode.TeardownRules(ctx)
 	if err := r.Mode.SetupRules(ctx); err != nil {
 		return fmt.Errorf("setup iptables rules: %w", err)
 	}

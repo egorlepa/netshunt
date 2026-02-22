@@ -14,6 +14,8 @@ import (
 const (
 	redirectChainName    = "KSTREDIR"
 	redirectUDPChainName = "KSTREDIR_UDP"
+	fwmark               = "0x1"
+	routeTable           = "100"
 )
 
 // Redirect implements Mode using NAT REDIRECT (TCP) and TPROXY (UDP)
@@ -126,7 +128,7 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 	if err := r.ipt.AppendRule(ctx, "mangle",
 		redirectUDPChainName, "-p", "udp",
 		"-m", "set", "--match-set", ipsetName, "dst",
-		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", ifaceFwmark+"/"+ifaceFwmark,
+		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", fwmark+"/"+fwmark,
 	); err != nil {
 		// TPROXY target not available — clean up and bail.
 		_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
@@ -146,10 +148,10 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 	}
 
 	// Policy routing for TPROXY-marked packets.
-	if err := platform.RunSilent(ctx, "ip", "rule", "add", "fwmark", ifaceFwmark, "table", ifaceRouteTable); err != nil {
+	if err := platform.RunSilent(ctx, "ip", "rule", "add", "fwmark", fwmark, "table", routeTable); err != nil {
 		r.logger.Warn("ip rule add failed (may already exist)", "error", err)
 	}
-	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", ifaceRouteTable); err != nil {
+	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", routeTable); err != nil {
 		return fmt.Errorf("ip route replace: %w", err)
 	}
 
@@ -169,8 +171,8 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
 
 	// Policy routing for TPROXY.
-	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", ifaceFwmark, "table", ifaceRouteTable)
-	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", ifaceRouteTable)
+	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", fwmark, "table", routeTable)
+	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
 
 	// Remove DNS DNAT rules added by the dns-local hook.
 	iface := r.cfg.Network.EntwareInterface

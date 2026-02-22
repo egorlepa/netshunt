@@ -133,13 +133,7 @@ func checkRouting(ctx context.Context, cfg *config.Config) Result {
 	mode := routing.New(cfg, logger)
 	active, _ := mode.IsActive(ctx)
 
-	detail := cfg.Routing.Mode
-	switch cfg.Routing.Mode {
-	case "interface":
-		detail += " (" + cfg.Routing.Interface + ")"
-	default:
-		detail += fmt.Sprintf(" (port %d)", cfg.Routing.LocalPort)
-	}
+	detail := fmt.Sprintf("redirect (port %d)", cfg.Routing.LocalPort)
 
 	if active {
 		r.Passed = true
@@ -167,17 +161,7 @@ func checkIPTables(ctx context.Context, cfg *config.Config) Result {
 	r := Result{Name: "iptables"}
 	ipt := netfilter.NewIPTables()
 
-	// Check for KST chains based on routing mode.
-	var chain, table string
-	switch cfg.Routing.Mode {
-	case "interface":
-		chain = "KSTMARK"
-		table = "mangle"
-	default:
-		chain = "KSTREDIR"
-		table = "nat"
-	}
-
+	chain, table := "KSTREDIR", "nat"
 	exists, _ := ipt.ChainExists(ctx, table, chain)
 	if exists {
 		r.Passed = true

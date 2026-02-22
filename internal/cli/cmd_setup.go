@@ -106,45 +106,12 @@ func newSetupCmd() *cobra.Command {
 				return err
 			}
 
-			// 4. Routing mode selection.
-			fmt.Println("Routing mode:")
-			fmt.Println("  1) redirect  — TCP REDIRECT + UDP TPROXY to a local transparent proxy port")
-			fmt.Println("               (ss-redir -u, xray dokodemo-door, sing-box, redsocks, …)")
-			fmt.Println("  2) interface — MARK + policy routing via a VPN interface")
-			fmt.Println("               (WireGuard wg0, OpenVPN tun0, …)")
-			defaultModeIdx := 1
-			if cfg.Routing.Mode == "interface" {
-				defaultModeIdx = 2
-			}
-			modeStr := prompt(reader, fmt.Sprintf("  Pick mode [%d]", defaultModeIdx), "")
-			switch modeStr {
-			case "2", "interface":
-				cfg.Routing.Mode = "interface"
-			default:
-				if modeStr == "" && defaultModeIdx == 2 {
-					cfg.Routing.Mode = "interface"
-				} else {
-					cfg.Routing.Mode = "redirect"
-				}
-			}
-			fmt.Printf("  Mode: %s\n", cfg.Routing.Mode)
+			// 4. Transparent proxy configuration.
+			fmt.Println("Transparent proxy configuration:")
+			fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
+			fmt.Println("  KST will redirect matched TCP and UDP traffic to the specified port.")
+			cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
 			fmt.Println()
-
-			// 5. Mode-specific configuration.
-			switch cfg.Routing.Mode {
-			case "interface":
-				fmt.Println("VPN interface configuration:")
-				fmt.Println("  Set up your VPN (WireGuard, OpenVPN, etc.) separately.")
-				fmt.Println("  KST will route matched traffic via the specified interface.")
-				cfg.Routing.Interface = prompt(reader, "  VPN interface name (e.g. wg0, tun0)", cfg.Routing.Interface)
-				fmt.Println()
-			default:
-				fmt.Println("Transparent proxy configuration:")
-				fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
-				fmt.Println("  KST will redirect matched TCP and UDP traffic to the specified port.")
-				cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
-				fmt.Println()
-			}
 
 			// 6. DNS configuration (informational).
 			fmt.Println("DNS configuration:")
@@ -225,14 +192,8 @@ func newSetupCmd() *cobra.Command {
 				printPass("Reconcile: done")
 			}
 
-			// 15. Start the KST daemon.
-			if err := service.Daemon.Start(ctx); err != nil {
-				printFail(fmt.Sprintf("KST daemon: %v", err))
-				fmt.Println("      Start manually: /opt/etc/init.d/S96kst start")
-			} else {
-				printPass("KST daemon: started")
-			}
-
+			// 15. Health check (run before daemon start so the state from
+			// the reconcile above is still stable and not torn down).
 			fmt.Println()
 			fmt.Println("Health check:")
 			results := healthcheck.RunChecks(ctx, cfg, store)
@@ -254,6 +215,14 @@ func newSetupCmd() *cobra.Command {
 						printFail(fmt.Sprintf("%s not in ipset", ip))
 					}
 				}
+			}
+
+			// 17. Start the KST daemon.
+			if err := service.Daemon.Start(ctx); err != nil {
+				printFail(fmt.Sprintf("KST daemon: %v", err))
+				fmt.Println("      Start manually: /opt/etc/init.d/S96kst start")
+			} else {
+				printPass("KST daemon: started")
 			}
 
 			fmt.Println()

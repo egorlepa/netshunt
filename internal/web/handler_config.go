@@ -31,13 +31,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Routing.
-	if v := r.FormValue("routing_mode"); v == "redirect" || v == "interface" {
-		cfg.Routing.Mode = v
-	}
 	if v := r.FormValue("routing_local_port"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
-	cfg.Routing.Interface = r.FormValue("routing_interface")
 
 	// DNS.
 	if v := r.FormValue("dnscrypt_port"); v != "" {
