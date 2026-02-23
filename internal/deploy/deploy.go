@@ -93,6 +93,7 @@ func WriteDnsmasqConf(cfg *config.Config) error {
 	b.WriteString("domain-needed\n")
 	b.WriteString("log-async\n")
 	b.WriteString("rebind-localhost-ok\n")
+	b.WriteString("filter-AAAA\n")
 	b.WriteString(fmt.Sprintf("server=%s\n", upstream))
 	b.WriteString(fmt.Sprintf("conf-dir=%s/,*.dnsmasq\n", platform.DnsmasqDir))
 
