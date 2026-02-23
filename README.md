@@ -56,7 +56,7 @@ System dependencies (`ipset`, `iptables`, `ip-full`, `dnsmasq-full`, `dnscrypt-p
 
 ## Building from Source
 
-Requires Go 1.24+ and [Mage](https://magefile.org/).
+Requires Go 1.25+ and [Mage](https://magefile.org/).
 
 ```sh
 # Build for host platform
