@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 // SlugID converts a string to a unique, CSS-safe HTML ID fragment via hex encoding.
@@ -23,8 +23,8 @@ func joinLines(ss []string) string {
 }
 
 // sortedEntries returns entries sorted by type: domains, IPs, CIDRs.
-func sortedEntries(entries []group.Entry) []group.Entry {
-	sorted := make([]group.Entry, len(entries))
+func sortedEntries(entries []shunt.Entry) []shunt.Entry {
+	sorted := make([]shunt.Entry, len(entries))
 	copy(sorted, entries)
 	sort.Slice(sorted, func(i, j int) bool {
 		ti, tj := sorted[i].Type(), sorted[j].Type()

@@ -9,7 +9,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/daemon"
 	"github.com/egorlepa/netshunt/internal/deploy"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/router"
 	"github.com/egorlepa/netshunt/internal/service"
@@ -42,8 +42,8 @@ func newUninstallCmd() *cobra.Command {
 			// 3. Remove iptables rules.
 			fmt.Println("Removing iptables rules...")
 			logger := platform.NewLogger("error")
-			groups := group.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, groups, logger)
+			shunts := shunt.NewDefaultStore()
+			r := daemon.NewReconciler(cfg, shunts, logger)
 			if err := r.Mode.TeardownRules(ctx); err != nil {
 				fmt.Printf("  Warning: %v\n", err)
 			}
@@ -80,13 +80,13 @@ func newUninstallCmd() *cobra.Command {
 			fmt.Println("Removing NDM hooks...")
 			deploy.UninstallNDMHooks()
 
-			// 10. Remove netshunt config (keep groups for reinstall).
-			fmt.Println("Removing configuration (keeping groups)...")
+			// 10. Remove netshunt config (keep shunts for reinstall).
+			fmt.Println("Removing configuration (keeping shunts)...")
 			_ = os.Remove(platform.ConfigFile)
 			_ = os.Remove(platform.PidFile)
 
 			fmt.Println()
-			fmt.Println("netshunt removed. Groups preserved in " + platform.GroupsFile)
+			fmt.Println("netshunt removed. Shunts preserved in " + platform.ShuntsFile)
 			fmt.Println("Next steps:")
 			fmt.Println("  opkg remove netshunt dnsmasq-full dnscrypt-proxy2")
 			return nil

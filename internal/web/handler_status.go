@@ -19,11 +19,11 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	ipset := netfilter.NewIPSet(s.Config.IPSet.TableName)
 	ipsetCount, _ := ipset.Count(ctx)
 
-	groups, _ := s.Groups.List()
+	shunts, _ := s.Shunts.List()
 	entryCount := 0
-	for _, g := range groups {
-		if g.Enabled {
-			entryCount += len(g.Entries)
+	for _, sh := range shunts {
+		if sh.Enabled {
+			entryCount += len(sh.Entries)
 		}
 	}
 
@@ -33,7 +33,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	return templates.DashboardData{
 		Services:      services,
 		IPSetCount:    ipsetCount,
-		GroupCount:    len(groups),
+		ShuntCount:    len(shunts),
 		EntryCount:    entryCount,
 		RoutingMode:   "redirect",
 		RoutingActive: routingActive,

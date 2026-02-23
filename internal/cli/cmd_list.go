@@ -6,75 +6,75 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newListCmd() *cobra.Command {
-	var groupName string
+	var shuntName string
 
 	cmd := &cobra.Command{
 		Use:   "list [filter]",
-		Short: "List entries in a group or all groups",
+		Short: "List entries in a shunt or all shunts",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 
 			var filter string
 			if len(args) > 0 {
 				filter = strings.ToLower(args[0])
 			}
 
-			if groupName != "" {
-				return listGroup(store, groupName, filter)
+			if shuntName != "" {
+				return listShunt(store, shuntName, filter)
 			}
 			return listAll(store, filter)
 		},
 	}
 
-	cmd.Flags().StringVarP(&groupName, "group", "g", "", "show only this group")
+	cmd.Flags().StringVarP(&shuntName, "shunt", "s", "", "show only this shunt")
 	return cmd
 }
 
-func listGroup(store *group.Store, name, filter string) error {
-	g, err := store.Get(name)
+func listShunt(store *shunt.Store, name, filter string) error {
+	sh, err := store.Get(name)
 	if err != nil {
 		return err
 	}
-	printGroup(g, filter)
+	printShunt(sh, filter)
 	return nil
 }
 
-func listAll(store *group.Store, filter string) error {
-	groups, err := store.List()
+func listAll(store *shunt.Store, filter string) error {
+	shunts, err := store.List()
 	if err != nil {
 		return err
 	}
-	if len(groups) == 0 {
-		fmt.Println("No groups configured.")
+	if len(shunts) == 0 {
+		fmt.Println("No shunts configured.")
 		return nil
 	}
-	for i := range groups {
+	for i := range shunts {
 		if i > 0 {
 			fmt.Println()
 		}
-		printGroup(&groups[i], filter)
+		printShunt(&shunts[i], filter)
 	}
 	return nil
 }
 
-func printGroup(g *group.Group, filter string) {
+func printShunt(sh *shunt.Shunt, filter string) {
 	status := "enabled"
-	if !g.Enabled {
+	if !sh.Enabled {
 		status = "disabled"
 	}
-	fmt.Printf("[%s] (%s)", g.Name, status)
-	if g.Description != "" {
-		fmt.Printf(" — %s", g.Description)
+	fmt.Printf("[%s] (%s)", sh.Name, status)
+	if sh.Description != "" {
+		fmt.Printf(" — %s", sh.Description)
 	}
 	fmt.Println()
 
 	count := 0
-	for _, e := range g.Entries {
+	for _, e := range sh.Entries {
 		if filter != "" && !strings.Contains(strings.ToLower(e.Value), filter) {
 			continue
 		}

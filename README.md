@@ -6,8 +6,8 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 
 ## Features
 
-- **Group-based routing** — organize domains, IPs, and CIDRs into named groups, enable/disable entire groups at once
-- **Web dashboard** — manage groups, view status, adjust settings, run diagnostics
+- **Shunt-based routing** — organize domains, IPs, and CIDRs into named shunts, enable/disable entire shunts at once
+- **Web dashboard** — manage shunts, view status, adjust settings, run diagnostics
 - **CLI** — full command-line interface for scripting and automation
 - **Encrypted DNS** — dnsmasq → dnscrypt-proxy for DoH/DoT upstream resolution
 - **Automatic IP tracking** — dnsmasq populates ipset in real-time at DNS query time
@@ -80,7 +80,7 @@ Full documentation is available in the [Wiki](https://github.com/egorlepa/netshu
 - [Installation](https://github.com/egorlepa/netshunt/wiki/Installation) — IPK install, manual install
 - [Setup](https://github.com/egorlepa/netshunt/wiki/Setup) — interactive setup wizard walkthrough
 - [CLI Reference](https://github.com/egorlepa/netshunt/wiki/CLI-Reference) — all commands, flags, examples
-- [Configuration](https://github.com/egorlepa/netshunt/wiki/Configuration) — config.yaml and groups.yaml schema
+- [Configuration](https://github.com/egorlepa/netshunt/wiki/Configuration) — config.yaml and shunts.yaml schema
 - [Architecture](https://github.com/egorlepa/netshunt/wiki/Architecture) — system design and internals
 - [Troubleshooting](https://github.com/egorlepa/netshunt/wiki/Troubleshooting) — common issues and diagnostics
 

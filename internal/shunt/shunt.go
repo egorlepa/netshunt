@@ -1,4 +1,4 @@
-package group
+package shunt
 
 import (
 	"net"
@@ -35,18 +35,18 @@ func (e Entry) IsDomain() bool {
 	return e.Type() == EntryDomain
 }
 
-// Group is a named collection of host entries.
-type Group struct {
+// Shunt is a named collection of host entries.
+type Shunt struct {
 	Name        string  `yaml:"name"`
 	Description string  `yaml:"description,omitempty"`
 	Enabled     bool    `yaml:"enabled"`
 	Entries     []Entry `yaml:"entries"`
 }
 
-// HasEntry returns true if the group contains the given value.
-func (g *Group) HasEntry(value string) bool {
+// HasEntry returns true if the shunt contains the given value.
+func (s *Shunt) HasEntry(value string) bool {
 	value = normalizeEntry(value)
-	for _, e := range g.Entries {
+	for _, e := range s.Entries {
 		if normalizeEntry(e.Value) == value {
 			return true
 		}
@@ -55,21 +55,21 @@ func (g *Group) HasEntry(value string) bool {
 }
 
 // AddEntry adds an entry if it doesn't already exist. Returns true if added.
-func (g *Group) AddEntry(value string) bool {
+func (s *Shunt) AddEntry(value string) bool {
 	value = normalizeEntry(value)
-	if g.HasEntry(value) {
+	if s.HasEntry(value) {
 		return false
 	}
-	g.Entries = append(g.Entries, Entry{Value: value})
+	s.Entries = append(s.Entries, Entry{Value: value})
 	return true
 }
 
 // RemoveEntry removes an entry by value. Returns true if removed.
-func (g *Group) RemoveEntry(value string) bool {
+func (s *Shunt) RemoveEntry(value string) bool {
 	value = normalizeEntry(value)
-	for i, e := range g.Entries {
+	for i, e := range s.Entries {
 		if normalizeEntry(e.Value) == value {
-			g.Entries = append(g.Entries[:i], g.Entries[i+1:]...)
+			s.Entries = append(s.Entries[:i], s.Entries[i+1:]...)
 			return true
 		}
 	}

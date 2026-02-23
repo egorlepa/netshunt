@@ -9,7 +9,7 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/daemon"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 )
 
@@ -67,8 +67,8 @@ func newHookNetfilterCmd() *cobra.Command {
 				return err
 			}
 			logger := hookLogger()
-			groups := group.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, groups, logger)
+			shunts := shunt.NewDefaultStore()
+			r := daemon.NewReconciler(cfg, shunts, logger)
 			return r.Mode.SetupRules(cmd.Context())
 		},
 	}
@@ -143,8 +143,8 @@ func newHookIfstateCmd() *cobra.Command {
 			}
 
 			logger := hookLogger()
-			groups := group.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, groups, logger)
+			shunts := shunt.NewDefaultStore()
+			r := daemon.NewReconciler(cfg, shunts, logger)
 
 			if connected == "yes" && link == "up" {
 				logger.Info("interface up, setting up rules", "system-name", name)
@@ -190,8 +190,8 @@ func newHookWanCmd() *cobra.Command {
 				return err
 			}
 			logger := hookLogger()
-			groups := group.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, groups, logger)
+			shunts := shunt.NewDefaultStore()
+			r := daemon.NewReconciler(cfg, shunts, logger)
 			return r.Reconcile(cmd.Context())
 		},
 	}

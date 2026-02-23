@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/platform"
 )
 
@@ -34,7 +34,7 @@ func NewDnsmasqConfig(ipsetTable string) *DnsmasqConfig {
 //
 // This makes dnsmasq automatically add resolved IPs to the ipset table
 // when any client queries the domain (including all subdomains).
-func (d *DnsmasqConfig) GenerateIPSetConfig(entries []group.Entry) (bool, error) {
+func (d *DnsmasqConfig) GenerateIPSetConfig(entries []shunt.Entry) (bool, error) {
 	var lines []string
 	for _, e := range entries {
 		if !e.IsDomain() {

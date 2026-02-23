@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 //go:generate templ generate
@@ -26,7 +26,7 @@ type Reconciler interface {
 // Server is the web UI HTTP server.
 type Server struct {
 	Config     *config.Config
-	Groups     *group.Store
+	Shunts     *shunt.Store
 	Reconciler Reconciler
 	Logger     *slog.Logger
 	Version    string
@@ -40,10 +40,10 @@ func (s *Server) MarkReady() {
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Config, groups *group.Store, reconciler Reconciler, logger *slog.Logger, version string) *Server {
+func NewServer(cfg *config.Config, shunts *shunt.Store, reconciler Reconciler, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
-		Groups:     groups,
+		Shunts:     shunts,
 		Reconciler: reconciler,
 		Logger:     logger,
 		Version:    version,
@@ -61,23 +61,23 @@ func (s *Server) routes() {
 	// Pages.
 	s.mux.HandleFunc("GET /{$}", s.handleDashboard)
 	s.mux.HandleFunc("GET /dashboard-content", s.handleDashboardContent)
-	s.mux.HandleFunc("GET /groups", s.handleGroupsPage)
-	s.mux.HandleFunc("GET /groups/{name}", s.handleGroupDetail)
+	s.mux.HandleFunc("GET /shunts", s.handleShuntsPage)
+	s.mux.HandleFunc("GET /shunts/{name}", s.handleShuntDetail)
 	s.mux.HandleFunc("GET /settings", s.handleSettingsPage)
 	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
 	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
 	s.mux.HandleFunc("POST /diagnostics/probe", s.handleDiagnosticsProbe)
 
-	// Group mutations (htmx).
-	s.mux.HandleFunc("POST /groups", s.handleCreateGroup)
-	s.mux.HandleFunc("DELETE /groups/{name}", s.handleDeleteGroup)
-	s.mux.HandleFunc("PUT /groups/{name}/enable", s.handleEnableGroup)
-	s.mux.HandleFunc("PUT /groups/{name}/disable", s.handleDisableGroup)
-	s.mux.HandleFunc("POST /groups/{name}/entries", s.handleAddEntry)
-	s.mux.HandleFunc("DELETE /groups/{name}/entries/{value...}", s.handleDeleteEntry)
-	s.mux.HandleFunc("POST /groups/{name}/entries/bulk", s.handleBulkAddEntries)
-	s.mux.HandleFunc("POST /groups/import", s.handleImportGroups)
-	s.mux.HandleFunc("GET /groups/export", s.handleExportGroups)
+	// Shunt mutations (htmx).
+	s.mux.HandleFunc("POST /shunts", s.handleCreateShunt)
+	s.mux.HandleFunc("DELETE /shunts/{name}", s.handleDeleteShunt)
+	s.mux.HandleFunc("PUT /shunts/{name}/enable", s.handleEnableShunt)
+	s.mux.HandleFunc("PUT /shunts/{name}/disable", s.handleDisableShunt)
+	s.mux.HandleFunc("POST /shunts/{name}/entries", s.handleAddEntry)
+	s.mux.HandleFunc("DELETE /shunts/{name}/entries/{value...}", s.handleDeleteEntry)
+	s.mux.HandleFunc("POST /shunts/{name}/entries/bulk", s.handleBulkAddEntries)
+	s.mux.HandleFunc("POST /shunts/import", s.handleImportShunts)
+	s.mux.HandleFunc("GET /shunts/export", s.handleExportShunts)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
@@ -101,7 +101,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// triggerMutation applies group changes in the background after a store mutation.
+// triggerMutation applies shunt changes in the background after a store mutation.
 func (s *Server) triggerMutation() {
 	go func() {
 		if err := s.Reconciler.ApplyMutation(context.Background()); err != nil {

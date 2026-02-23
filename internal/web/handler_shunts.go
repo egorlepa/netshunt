@@ -5,30 +5,30 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
-func (s *Server) handleGroupsPage(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.Groups.List()
+func (s *Server) handleShuntsPage(w http.ResponseWriter, r *http.Request) {
+	shunts, err := s.Shunts.List()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	templates.GroupsPage(groups).Render(r.Context(), w)
+	templates.ShuntsPage(shunts).Render(r.Context(), w)
 }
 
-func (s *Server) handleGroupDetail(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	g, err := s.Groups.Get(name)
+	sh, err := s.Shunts.Get(name)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.GroupCard(*g).Render(r.Context(), w)
+	templates.ShuntCard(*sh).Render(r.Context(), w)
 }
 
-func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateShunt(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	name := r.FormValue("name")
 	desc := r.FormValue("description")
@@ -38,49 +38,49 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g := group.Group{
+	sh := shunt.Shunt{
 		Name:        name,
 		Description: desc,
 		Enabled:     true,
 	}
-	if err := s.Groups.Create(g); err != nil {
+	if err := s.Shunts.Create(sh); err != nil {
 		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
 
 	s.triggerMutation()
-	s.renderGroupList(w, r)
+	s.renderShuntList(w, r)
 }
 
-func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteShunt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := s.Groups.Delete(name); err != nil {
+	if err := s.Shunts.Delete(name); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
-	toastTrigger(w, "Group deleted", "success")
+	toastTrigger(w, "Shunt deleted", "success")
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) handleEnableGroup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEnableShunt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := s.Groups.SetEnabled(name, true); err != nil {
+	if err := s.Shunts.SetEnabled(name, true); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
-	s.renderGroupCard(w, r, name)
+	s.renderShuntCard(w, r, name)
 }
 
-func (s *Server) handleDisableGroup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDisableShunt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := s.Groups.SetEnabled(name, false); err != nil {
+	if err := s.Shunts.SetEnabled(name, false); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.triggerMutation()
-	s.renderGroupCard(w, r, name)
+	s.renderShuntCard(w, r, name)
 }
 
 func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
@@ -92,20 +92,20 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Groups.AddEntry(name, value); err != nil {
+	if err := s.Shunts.AddEntry(name, value); err != nil {
 		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
 
 	s.triggerMutation()
-	s.renderGroupCard(w, r, name)
+	s.renderShuntCard(w, r, name)
 }
 
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	value := r.PathValue("value")
 
-	if err := s.Groups.RemoveEntry(name, value); err != nil {
+	if err := s.Shunts.RemoveEntry(name, value); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -129,7 +129,7 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		if line == "" {
 			continue
 		}
-		if err := s.Groups.AddEntry(name, line); err == nil {
+		if err := s.Shunts.AddEntry(name, line); err == nil {
 			added++
 		} else {
 			skipped++
@@ -142,55 +142,55 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		msg += fmt.Sprintf(", %d skipped", skipped)
 	}
 	toastTrigger(w, msg, "success")
-	s.renderGroupCard(w, r, name)
+	s.renderShuntCard(w, r, name)
 }
 
-func (s *Server) handleExportGroups(w http.ResponseWriter, r *http.Request) {
-	data, err := s.Groups.ExportAll()
+func (s *Server) handleExportShunts(w http.ResponseWriter, r *http.Request) {
+	data, err := s.Shunts.ExportAll()
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-yaml")
-	w.Header().Set("Content-Disposition", "attachment; filename=netshunt-groups.yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=netshunt-shunts.yaml")
 	w.Write(data)
 }
 
-func (s *Server) handleImportGroups(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleImportShunts(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(1 << 20) // 1 MB limit
 	raw := r.FormValue("body")
 	if raw == "" {
 		errorResponse(w, "empty import data", http.StatusBadRequest)
 		return
 	}
-	if err := s.Groups.ImportGroups([]byte(raw)); err != nil {
+	if err := s.Shunts.ImportShunts([]byte(raw)); err != nil {
 		errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	s.triggerMutation()
-	toastTrigger(w, "Groups imported", "success")
-	s.renderGroupList(w, r)
+	toastTrigger(w, "Shunts imported", "success")
+	s.renderShuntList(w, r)
 }
 
-func (s *Server) renderGroupList(w http.ResponseWriter, r *http.Request) {
-	groups, _ := s.Groups.List()
-	templates.GroupList(groups).Render(r.Context(), w)
+func (s *Server) renderShuntList(w http.ResponseWriter, r *http.Request) {
+	shunts, _ := s.Shunts.List()
+	templates.ShuntList(shunts).Render(r.Context(), w)
 }
 
-func (s *Server) renderGroupCard(w http.ResponseWriter, r *http.Request, name string) {
-	g, err := s.Groups.Get(name)
+func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name string) {
+	sh, err := s.Shunts.Get(name)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.GroupCard(*g).Render(r.Context(), w)
+	templates.ShuntCard(*sh).Render(r.Context(), w)
 }
 
 func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name string) {
-	g, err := s.Groups.Get(name)
+	sh, err := s.Shunts.Get(name)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.EntryList(templates.SlugID(name), name, g.Entries).Render(r.Context(), w)
+	templates.EntryList(templates.SlugID(name), name, sh.Entries).Render(r.Context(), w)
 }

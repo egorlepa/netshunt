@@ -6,136 +6,136 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
-func newGroupCmd() *cobra.Command {
+func newShuntCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "group",
-		Short: "Manage host groups",
+		Use:   "shunt",
+		Short: "Manage shunts",
 	}
 
 	cmd.AddCommand(
-		newGroupListCmd(),
-		newGroupCreateCmd(),
-		newGroupDeleteCmd(),
-		newGroupEnableCmd(),
-		newGroupDisableCmd(),
-		newGroupImportCmd(),
-		newGroupExportCmd(),
+		newShuntListCmd(),
+		newShuntCreateCmd(),
+		newShuntDeleteCmd(),
+		newShuntEnableCmd(),
+		newShuntDisableCmd(),
+		newShuntImportCmd(),
+		newShuntExportCmd(),
 	)
 
 	return cmd
 }
 
-func newGroupListCmd() *cobra.Command {
+func newShuntListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List all groups",
+		Short: "List all shunts",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
-			groups, err := store.List()
+			store := shunt.NewDefaultStore()
+			shunts, err := store.List()
 			if err != nil {
 				return err
 			}
-			if len(groups) == 0 {
-				fmt.Println("No groups configured.")
+			if len(shunts) == 0 {
+				fmt.Println("No shunts configured.")
 				return nil
 			}
-			for _, g := range groups {
+			for _, sh := range shunts {
 				status := "enabled"
-				if !g.Enabled {
+				if !sh.Enabled {
 					status = "disabled"
 				}
 				desc := ""
-				if g.Description != "" {
-					desc = " — " + g.Description
+				if sh.Description != "" {
+					desc = " — " + sh.Description
 				}
-				fmt.Printf("  %-20s [%s] %d entries%s\n", g.Name, status, len(g.Entries), desc)
+				fmt.Printf("  %-20s [%s] %d entries%s\n", sh.Name, status, len(sh.Entries), desc)
 			}
 			return nil
 		},
 	}
 }
 
-func newGroupCreateCmd() *cobra.Command {
+func newShuntCreateCmd() *cobra.Command {
 	var description string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create a new empty group",
+		Short: "Create a new empty shunt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
-			g := group.Group{
+			store := shunt.NewDefaultStore()
+			sh := shunt.Shunt{
 				Name:        args[0],
 				Description: description,
 				Enabled:     true,
 			}
-			if err := store.Create(g); err != nil {
+			if err := store.Create(sh); err != nil {
 				return err
 			}
-			fmt.Printf("Created group %q\n", args[0])
+			fmt.Printf("Created shunt %q\n", args[0])
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&description, "description", "d", "", "group description")
+	cmd.Flags().StringVarP(&description, "description", "d", "", "shunt description")
 	return cmd
 }
 
-func newGroupDeleteCmd() *cobra.Command {
+func newShuntDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <name>",
-		Short: "Delete a group",
+		Short: "Delete a shunt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 			if err := store.Delete(args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("Deleted group %q\n", args[0])
+			fmt.Printf("Deleted shunt %q\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newGroupEnableCmd() *cobra.Command {
+func newShuntEnableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "enable <name>",
-		Short: "Enable a group",
+		Short: "Enable a shunt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 			if err := store.SetEnabled(args[0], true); err != nil {
 				return err
 			}
-			fmt.Printf("Enabled group %q\n", args[0])
+			fmt.Printf("Enabled shunt %q\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newGroupDisableCmd() *cobra.Command {
+func newShuntDisableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "disable <name>",
-		Short: "Disable a group",
+		Short: "Disable a shunt",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 			if err := store.SetEnabled(args[0], false); err != nil {
 				return err
 			}
-			fmt.Printf("Disabled group %q\n", args[0])
+			fmt.Printf("Disabled shunt %q\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newGroupImportCmd() *cobra.Command {
+func newShuntImportCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import <file>",
-		Short: "Import groups from a YAML file",
+		Short: "Import shunts from a YAML file",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data, err := os.ReadFile(args[0])
@@ -144,37 +144,37 @@ func newGroupImportCmd() *cobra.Command {
 			}
 
 			// If daemon is running, delegate to it so it applies changes.
-			if err := daemonImportGroups(cmd.Context(), data); err == nil {
-				fmt.Printf("Imported groups from %s\n", args[0])
+			if err := daemonImportShunts(cmd.Context(), data); err == nil {
+				fmt.Printf("Imported shunts from %s\n", args[0])
 				return nil
 			}
 
 			// Daemon not running: write directly.
-			store := group.NewDefaultStore()
-			if err := store.ImportGroups(data); err != nil {
+			store := shunt.NewDefaultStore()
+			if err := store.ImportShunts(data); err != nil {
 				return err
 			}
-			fmt.Printf("Imported groups from %s\n", args[0])
+			fmt.Printf("Imported shunts from %s\n", args[0])
 			fmt.Println("Note: daemon is not running — start it to reconcile changes.")
 			return nil
 		},
 	}
 }
 
-func newGroupExportCmd() *cobra.Command {
+func newShuntExportCmd() *cobra.Command {
 	var output string
 
 	cmd := &cobra.Command{
 		Use:   "export [name]",
-		Short: "Export groups to YAML",
+		Short: "Export shunts to YAML",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 
 			var data []byte
 			var err error
 			if len(args) > 0 {
-				data, err = store.ExportGroup(args[0])
+				data, err = store.ExportShunt(args[0])
 			} else {
 				data, err = store.ExportAll()
 			}

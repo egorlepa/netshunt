@@ -1,80 +1,80 @@
 package templates
 
-import "github.com/egorlepa/netshunt/internal/group"
+import "github.com/egorlepa/netshunt/internal/shunt"
 
-templ GroupsPage(groups []group.Group) {
-	@Layout("Groups", "groups") {
+templ ShuntsPage(shunts []shunt.Shunt) {
+	@Layout("Shunts", "shunts") {
 		<div class="flex-between mb-16">
-			<h1>Groups</h1>
+			<h1>Shunts</h1>
 			<div class="flex gap-8">
 				<button id="toggle-all-btn" class="btn btn-sm" onclick="toggleAllEntries()">Expand All</button>
-				<a href="/groups/export" class="btn btn-sm">Export</a>
+				<a href="/shunts/export" class="btn btn-sm">Export</a>
 				<button class="btn btn-sm" onclick="document.getElementById('import-form').style.display=document.getElementById('import-form').style.display==='none'?'block':'none'">
 					Import
 				</button>
 				<button class="btn btn-accent" onclick="document.getElementById('create-form').style.display='block'">
-					New Group
+					New Shunt
 				</button>
 			</div>
 		</div>
 		<div id="import-form" class="card mb-16" style="display:none">
-			<h2>Import Groups</h2>
+			<h2>Import Shunts</h2>
 			<form
-				hx-post="/groups/import"
-				hx-target="#group-list"
+				hx-post="/shunts/import"
+				hx-target="#shunt-list"
 				hx-swap="innerHTML"
 				hx-encoding="multipart/form-data"
 				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
 				class="mt-8"
 			>
-				<textarea name="body" rows="6" style="width:100%" placeholder="Paste groups YAML here..." required></textarea>
+				<textarea name="body" rows="6" style="width:100%" placeholder="Paste shunts YAML here..." required></textarea>
 				<div class="mt-8">
 					<button class="btn btn-accent" type="submit">Import</button>
 				</div>
 			</form>
 		</div>
 		<div id="create-form" class="card mb-16" style="display:none">
-			<h2>Create Group</h2>
+			<h2>Create Shunt</h2>
 			<form
-				hx-post="/groups"
-				hx-target="#group-list"
+				hx-post="/shunts"
+				hx-target="#shunt-list"
 				hx-swap="innerHTML"
 				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
 				class="flex gap-8 mt-8"
 			>
-				<input type="text" name="name" placeholder="Group name" required/>
+				<input type="text" name="name" placeholder="Shunt name" required/>
 				<input type="text" name="description" placeholder="Description (optional)"/>
 				<button class="btn btn-accent" type="submit">Create</button>
 			</form>
 		</div>
-		<div id="group-list">
-			@GroupList(groups)
+		<div id="shunt-list">
+			@ShuntList(shunts)
 		</div>
 		<script>
-			var _expandedGroups = new Set();
-			function _applyGroupState(card) {
-				var slug = card.id.replace('group-', '');
+			var _expandedShunts = new Set();
+			function _applyShuntState(card) {
+				var slug = card.id.replace('shunt-', '');
 				var el = card.querySelector('.entries-section');
 				var arrow = card.querySelector('.expand-arrow');
-				var expanded = _expandedGroups.has(slug);
+				var expanded = _expandedShunts.has(slug);
 				if (el) el.style.display = expanded ? '' : 'none';
 				if (arrow) arrow.classList.toggle('expanded', expanded);
 			}
-			function toggleGroup(slug) {
-				if (_expandedGroups.has(slug)) { _expandedGroups.delete(slug); } else { _expandedGroups.add(slug); }
-				var card = document.getElementById('group-' + slug);
-				if (card) _applyGroupState(card);
+			function toggleShunt(slug) {
+				if (_expandedShunts.has(slug)) { _expandedShunts.delete(slug); } else { _expandedShunts.add(slug); }
+				var card = document.getElementById('shunt-' + slug);
+				if (card) _applyShuntState(card);
 			}
 			function toggleAllEntries() {
-				var cards = document.querySelectorAll('.card[id^="group-"]');
+				var cards = document.querySelectorAll('.card[id^="shunt-"]');
 				var btn = document.getElementById('toggle-all-btn');
 				var anyCollapsed = Array.from(cards).some(function(c) {
-					return !_expandedGroups.has(c.id.replace('group-', ''));
+					return !_expandedShunts.has(c.id.replace('shunt-', ''));
 				});
 				cards.forEach(function(c) {
-					var slug = c.id.replace('group-', '');
-					if (anyCollapsed) { _expandedGroups.add(slug); } else { _expandedGroups.delete(slug); }
-					_applyGroupState(c);
+					var slug = c.id.replace('shunt-', '');
+					if (anyCollapsed) { _expandedShunts.add(slug); } else { _expandedShunts.delete(slug); }
+					_applyShuntState(c);
 				});
 				btn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';
 			}
@@ -82,15 +82,15 @@ templ GroupsPage(groups []group.Group) {
 				var elt = e.detail.elt;
 				if (!elt || !elt.id) return;
 				var slug;
-				if (elt.id.startsWith('group-')) {
-					slug = elt.id.replace('group-', '');
-				} else if (elt.closest && elt.closest('[id^="group-"]')) {
-					slug = elt.closest('[id^="group-"]').id.replace('group-', '');
+				if (elt.id.startsWith('shunt-')) {
+					slug = elt.id.replace('shunt-', '');
+				} else if (elt.closest && elt.closest('[id^="shunt-"]')) {
+					slug = elt.closest('[id^="shunt-"]').id.replace('shunt-', '');
 				}
 				if (!slug) return;
-				_expandedGroups.add(slug);
-				var card = document.getElementById('group-' + slug);
-				if (card) _applyGroupState(card);
+				_expandedShunts.add(slug);
+				var card = document.getElementById('shunt-' + slug);
+				if (card) _applyShuntState(card);
 			});
 			function autoResize(el) {
 				el.style.height = 'auto';
@@ -103,43 +103,43 @@ templ GroupsPage(groups []group.Group) {
 	}
 }
 
-templ GroupList(groups []group.Group) {
-	if len(groups) == 0 {
+templ ShuntList(shunts []shunt.Shunt) {
+	if len(shunts) == 0 {
 		<div class="card">
-			<p class="text-muted">No groups configured. Create one to get started.</p>
+			<p class="text-muted">No shunts configured. Create one to get started.</p>
 		</div>
 	}
-	for _, g := range groups {
-		@GroupCard(g)
+	for _, s := range shunts {
+		@ShuntCard(s)
 	}
 }
 
-templ GroupCard(g group.Group) {
-	<div class="card" id={ "group-" + SlugID(g.Name) }>
+templ ShuntCard(s shunt.Shunt) {
+	<div class="card" id={ "shunt-" + SlugID(s.Name) }>
 		<div class="flex-between mb-8">
-			<div class="flex gap-8 group-header" style="align-items:center;cursor:pointer;user-select:none" data-group={ SlugID(g.Name) } onclick="toggleGroup(this.dataset.group)">
+			<div class="flex gap-8 shunt-header" style="align-items:center;cursor:pointer;user-select:none" data-shunt={ SlugID(s.Name) } onclick="toggleShunt(this.dataset.shunt)">
 				<span class="expand-arrow">&#9654;</span>
-				<h2 style="margin:0">{ g.Name }</h2>
-				if g.Description != "" {
-					<span class="text-muted text-sm">{ g.Description }</span>
+				<h2 style="margin:0">{ s.Name }</h2>
+				if s.Description != "" {
+					<span class="text-muted text-sm">{ s.Description }</span>
 				}
-				<span class="text-muted text-sm">({ itoa(len(g.Entries)) } entries)</span>
+				<span class="text-muted text-sm">({ itoa(len(s.Entries)) } entries)</span>
 			</div>
 			<div class="flex gap-8" style="align-items:center">
 				<label class="toggle">
-					if g.Enabled {
+					if s.Enabled {
 						<input
 							type="checkbox"
 							checked
-							hx-put={ "/groups/" + g.Name + "/disable" }
-							hx-target={ "#group-" + SlugID(g.Name) }
+							hx-put={ "/shunts/" + s.Name + "/disable" }
+							hx-target={ "#shunt-" + SlugID(s.Name) }
 							hx-swap="outerHTML"
 						/>
 					} else {
 						<input
 							type="checkbox"
-							hx-put={ "/groups/" + g.Name + "/enable" }
-							hx-target={ "#group-" + SlugID(g.Name) }
+							hx-put={ "/shunts/" + s.Name + "/enable" }
+							hx-target={ "#shunt-" + SlugID(s.Name) }
 							hx-swap="outerHTML"
 						/>
 					}
@@ -147,18 +147,18 @@ templ GroupCard(g group.Group) {
 				</label>
 				<button
 					class="btn btn-sm btn-danger"
-					hx-delete={ "/groups/" + g.Name }
-					hx-target={ "#group-" + SlugID(g.Name) }
+					hx-delete={ "/shunts/" + s.Name }
+					hx-target={ "#shunt-" + SlugID(s.Name) }
 					hx-swap="outerHTML"
-					hx-confirm={ "Delete group \"" + g.Name + "\"?" }
+					hx-confirm={ "Delete shunt \"" + s.Name + "\"?" }
 				>Delete</button>
 			</div>
 		</div>
-		<div class="entries-section" id={ "entries-" + SlugID(g.Name) } style="display:none">
-			@EntryList(SlugID(g.Name), g.Name, g.Entries)
+		<div class="entries-section" id={ "entries-" + SlugID(s.Name) } style="display:none">
+			@EntryList(SlugID(s.Name), s.Name, s.Entries)
 			<form
-				hx-post={ "/groups/" + g.Name + "/entries/bulk" }
-				hx-target={ "#group-" + SlugID(g.Name) }
+				hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
+				hx-target={ "#shunt-" + SlugID(s.Name) }
 				hx-swap="outerHTML"
 				hx-on::after-request="if(event.detail.successful) this.reset()"
 				class="mt-8"
@@ -172,7 +172,7 @@ templ GroupCard(g group.Group) {
 	</div>
 }
 
-templ EntryList(groupSlug string, groupName string, entries []group.Entry) {
+templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry) {
 	if len(entries) == 0 {
 		<p class="text-muted text-sm">No entries yet.</p>
 	} else {
@@ -182,8 +182,8 @@ templ EntryList(groupSlug string, groupName string, entries []group.Entry) {
 					<span>{ e.Value }</span>
 					<button
 						class="btn btn-sm btn-danger"
-						hx-delete={ "/groups/" + groupName + "/entries/" + e.Value }
-						hx-target={ "#entries-" + groupSlug }
+						hx-delete={ "/shunts/" + shuntName + "/entries/" + e.Value }
+						hx-target={ "#entries-" + shuntSlug }
 						hx-swap="innerHTML"
 					>&times;</button>
 				</li>

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
@@ -14,7 +14,7 @@ func (s *Server) handleDiagnosticsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
-	results := healthcheck.RunChecks(r.Context(), s.Config, s.Groups)
+	results := healthcheck.RunChecks(r.Context(), s.Config, s.Shunts)
 	templates.DiagnosticsResults(results).Render(r.Context(), w)
 }
 
@@ -26,10 +26,10 @@ func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Ensure the domain is in a group so it resolves through the pipeline.
+	// Ensure the domain is in a shunt so it resolves through the pipeline.
 	// Run reconcile synchronously so dnsmasq has the config before we probe.
-	_ = s.Groups.EnsureDefaultGroup()
-	if err := s.Groups.AddEntry(group.DefaultGroupName, domain); err == nil {
+	_ = s.Shunts.EnsureDefaultShunt()
+	if err := s.Shunts.AddEntry(shunt.DefaultShuntName, domain); err == nil {
 		_ = s.Reconciler.ApplyMutation(r.Context())
 	}
 

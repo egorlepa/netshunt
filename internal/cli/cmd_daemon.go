@@ -5,8 +5,8 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/daemon"
-	"github.com/egorlepa/netshunt/internal/group"
 	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newDaemonCmd() *cobra.Command {
@@ -20,8 +20,8 @@ func newDaemonCmd() *cobra.Command {
 			}
 
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)
-			groups := group.NewDefaultStore()
-			d := daemon.New(cfg, groups, logger, version)
+			shunts := shunt.NewDefaultStore()
+			d := daemon.New(cfg, shunts, logger, version)
 			return d.Run(cmd.Context())
 		},
 	}

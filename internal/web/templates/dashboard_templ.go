@@ -17,7 +17,7 @@ type ServiceStatus struct {
 type DashboardData struct {
 	Services      []ServiceStatus
 	IPSetCount    int
-	GroupCount    int
+	ShuntCount    int
 	EntryCount    int
 	RoutingMode   string
 	RoutingActive bool
@@ -197,12 +197,12 @@ func DashboardContent(data DashboardData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</td></tr><tr><td class=\"text-muted\">Groups</td><td>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</td></tr><tr><td class=\"text-muted\">Shunts</td><td>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(data.GroupCount))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(data.ShuntCount))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/dashboard.templ`, Line: 73, Col: 70}
 		}

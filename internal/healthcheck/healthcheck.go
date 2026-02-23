@@ -11,7 +11,7 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/routing"
@@ -33,7 +33,7 @@ type ProbeResult struct {
 }
 
 // RunChecks performs all health checks and returns the results.
-func RunChecks(ctx context.Context, cfg *config.Config, groups *group.Store) []Result {
+func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []Result {
 	var results []Result
 
 	// 1. dnsmasq
@@ -57,8 +57,8 @@ func RunChecks(ctx context.Context, cfg *config.Config, groups *group.Store) []R
 	// 6. Dnsmasq ipset config
 	results = append(results, checkDnsmasqConfig())
 
-	// 7. Groups
-	results = append(results, checkGroups(groups))
+	// 7. Shunts
+	results = append(results, checkShunts(shunts))
 
 	return results
 }
@@ -208,24 +208,24 @@ func checkDnsmasqConfig() Result {
 	return r
 }
 
-func checkGroups(groups *group.Store) Result {
-	r := Result{Name: "groups"}
-	list, err := groups.List()
+func checkShunts(shunts *shunt.Store) Result {
+	r := Result{Name: "shunts"}
+	list, err := shunts.List()
 	if err != nil {
 		r.Detail = err.Error()
 		return r
 	}
 
 	enabled, entries := 0, 0
-	for _, g := range list {
-		if g.Enabled {
+	for _, s := range list {
+		if s.Enabled {
 			enabled++
-			entries += len(g.Entries)
+			entries += len(s.Entries)
 		}
 	}
 
 	if enabled == 0 {
-		r.Detail = "no enabled groups"
+		r.Detail = "no enabled shunts"
 		return r
 	}
 

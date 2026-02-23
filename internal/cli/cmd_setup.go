@@ -15,7 +15,7 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/deploy"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/router"
@@ -169,14 +169,14 @@ func newSetupCmd() *cobra.Command {
 				printPass(fmt.Sprintf("Init script: %s", platform.InitScript))
 			}
 
-			// 12. Create default group if needed.
-			store := group.NewDefaultStore()
-			if err := store.EnsureDefaultGroup(); err != nil {
+			// 12. Create default shunt if needed.
+			store := shunt.NewDefaultStore()
+			if err := store.EnsureDefaultShunt(); err != nil {
 				return err
 			}
 
-			// 12b. Add ifconfig.me to the default group for IP verification.
-			if err := store.AddEntry(group.DefaultGroupName, "ifconfig.me"); err != nil {
+			// 12b. Add ifconfig.me to the default shunt for IP verification.
+			if err := store.AddEntry(shunt.DefaultShuntName, "ifconfig.me"); err != nil {
 				// Ignore "already exists" errors.
 				if !strings.Contains(err.Error(), "already exists") {
 					printFail(fmt.Sprintf("ifconfig.me: %v", err))

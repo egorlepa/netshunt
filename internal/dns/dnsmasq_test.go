@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/egorlepa/netshunt/internal/dns"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func TestGenerateIPSetConfig(t *testing.T) {
@@ -18,7 +18,7 @@ func TestGenerateIPSetConfig(t *testing.T) {
 		OutputFile: outFile,
 	}
 
-	entries := []group.Entry{
+	entries := []shunt.Entry{
 		{Value: "youtube.com"},
 		{Value: "googlevideo.com"},
 		{Value: "10.0.0.0/8"},       // CIDR — should be skipped

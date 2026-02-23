@@ -8,7 +8,7 @@ const (
 
 	// Config files.
 	ConfigFile = ConfigDir + "/config.yaml"
-	GroupsFile = ConfigDir + "/groups.yaml"
+	ShuntsFile = ConfigDir + "/shunts.yaml"
 
 	// dnsmasq integration.
 	DnsmasqDir       = OptDir + "/etc/dnsmasq.d"

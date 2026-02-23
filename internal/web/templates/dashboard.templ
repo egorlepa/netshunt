@@ -9,7 +9,7 @@ type ServiceStatus struct {
 type DashboardData struct {
 	Services      []ServiceStatus
 	IPSetCount    int
-	GroupCount    int
+	ShuntCount    int
 	EntryCount    int
 	RoutingMode   string
 	RoutingActive bool
@@ -70,7 +70,7 @@ templ DashboardContent(data DashboardData) {
 						</td>
 					</tr>
 					<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
-					<tr><td class="text-muted">Groups</td><td>{ itoa(data.GroupCount) }</td></tr>
+					<tr><td class="text-muted">Shunts</td><td>{ itoa(data.ShuntCount) }</td></tr>
 					<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
 				</tbody>
 			</table>

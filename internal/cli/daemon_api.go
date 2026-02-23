@@ -30,12 +30,12 @@ func daemonBaseURL() (string, error) {
 	return "http://" + listen, nil
 }
 
-func daemonAddEntry(ctx context.Context, groupName, value string) error {
+func daemonAddEntry(ctx context.Context, shuntName, value string) error {
 	base, err := daemonBaseURL()
 	if err != nil {
 		return err
 	}
-	u := base + "/groups/" + url.PathEscape(groupName) + "/entries"
+	u := base + "/shunts/" + url.PathEscape(shuntName) + "/entries"
 	body := strings.NewReader(url.Values{"value": {value}}.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
 	if err != nil {
@@ -45,12 +45,12 @@ func daemonAddEntry(ctx context.Context, groupName, value string) error {
 	return doRequest(req)
 }
 
-func daemonRemoveEntry(ctx context.Context, groupName, value string) error {
+func daemonRemoveEntry(ctx context.Context, shuntName, value string) error {
 	base, err := daemonBaseURL()
 	if err != nil {
 		return err
 	}
-	u := base + "/groups/" + url.PathEscape(groupName) + "/entries/" + url.PathEscape(value)
+	u := base + "/shunts/" + url.PathEscape(shuntName) + "/entries/" + url.PathEscape(value)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
 	if err != nil {
 		return err
@@ -58,13 +58,13 @@ func daemonRemoveEntry(ctx context.Context, groupName, value string) error {
 	return doRequest(req)
 }
 
-func daemonImportGroups(ctx context.Context, data []byte) error {
+func daemonImportShunts(ctx context.Context, data []byte) error {
 	base, err := daemonBaseURL()
 	if err != nil {
 		return err
 	}
 	body := strings.NewReader(url.Values{"body": {string(data)}}.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/groups/import", body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/shunts/import", body)
 	if err != nil {
 		return err
 	}

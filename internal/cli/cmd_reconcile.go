@@ -7,14 +7,14 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/daemon"
-	"github.com/egorlepa/netshunt/internal/group"
 	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newReconcileCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reconcile",
-		Short: "Reconcile current groups and config (ipset, iptables, dnsmasq)",
+		Short: "Reconcile current shunts and config (ipset, iptables, dnsmasq)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -22,8 +22,8 @@ func newReconcileCmd() *cobra.Command {
 			}
 
 			logger := platform.NewLogger(cfg.Daemon.LogLevel)
-			groups := group.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, groups, logger)
+			shunts := shunt.NewDefaultStore()
+			r := daemon.NewReconciler(cfg, shunts, logger)
 
 			if err := r.Reconcile(cmd.Context()); err != nil {
 				return err

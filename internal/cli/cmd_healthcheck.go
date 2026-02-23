@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/group"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 )
 
@@ -25,7 +25,7 @@ func newTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store := group.NewDefaultStore()
+			store := shunt.NewDefaultStore()
 
 			results := healthcheck.RunChecks(ctx, cfg, store)
 			allPassed := PrintResults(results)
@@ -36,9 +36,9 @@ func newTestCmd() *cobra.Command {
 				probeDomain = domain
 			}
 
-			// Ensure the probe domain is in a group so it resolves through the pipeline.
-			_ = store.EnsureDefaultGroup()
-			ensureDomainInGroup(ctx, probeDomain)
+			// Ensure the probe domain is in a shunt so it resolves through the pipeline.
+			_ = store.EnsureDefaultShunt()
+			ensureDomainInShunt(ctx, probeDomain)
 
 			fmt.Println()
 			if !printDomainProbe(ctx, cfg, probeDomain) {
@@ -56,14 +56,14 @@ func newTestCmd() *cobra.Command {
 	return cmd
 }
 
-// ensureDomainInGroup adds a domain to the default group via the daemon API
+// ensureDomainInShunt adds a domain to the default shunt via the daemon API
 // and waits for reconcile so dnsmasq has the config before probing.
 // Silently ignores 409 (already exists).
-func ensureDomainInGroup(ctx context.Context, domain string) {
-	if err := daemonAddEntry(ctx, group.DefaultGroupName, domain); err != nil {
+func ensureDomainInShunt(ctx context.Context, domain string) {
+	if err := daemonAddEntry(ctx, shunt.DefaultShuntName, domain); err != nil {
 		msg := err.Error()
 		if !strings.Contains(msg, "already exists") && !strings.Contains(msg, "409") {
-			printWarn(fmt.Sprintf("could not add %s to default group: %v", domain, err))
+			printWarn(fmt.Sprintf("could not add %s to default shunt: %v", domain, err))
 		}
 		return
 	}

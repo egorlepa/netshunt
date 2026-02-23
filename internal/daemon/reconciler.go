@@ -7,10 +7,10 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
-	"github.com/egorlepa/netshunt/internal/group"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/service"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 // DNS resolution is intentionally absent from the reconciler.
@@ -19,26 +19,25 @@ import (
 // Direct IP/CIDR entries are added to ipset directly by populateIPSet.
 
 // Reconciler performs the full state reconciliation:
-//  1. Load all enabled entries from all enabled groups
+//  1. Load all enabled entries from all enabled shunts
 //  2. Generate dnsmasq ipset config from domain entries
 //  3. Add direct IP/CIDR entries to ipset (with TTL)
 //  4. Verify/install iptables rules
 //  5. Reload dnsmasq if config changed
 type Reconciler struct {
 	Config  *config.Config
-	Groups  *group.Store
+	Shunts  *shunt.Store
 	IPSet   *netfilter.IPSet
 	Dnsmasq *dns.DnsmasqConfig
 	Mode    routing.Mode
 	Logger  *slog.Logger
 }
 
-
 // NewReconciler creates a Reconciler from the given configuration.
-func NewReconciler(cfg *config.Config, groups *group.Store, logger *slog.Logger) *Reconciler {
+func NewReconciler(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		Config:  cfg,
-		Groups:  groups,
+		Shunts:  shunts,
 		IPSet:   netfilter.NewIPSet(cfg.IPSet.TableName),
 		Dnsmasq: dns.NewDnsmasqConfig(cfg.IPSet.TableName),
 		Mode:    routing.New(cfg, logger),
@@ -51,7 +50,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.Logger.Info("starting full reconcile")
 
 	// 1. Load all enabled entries.
-	entries, err := r.Groups.EnabledEntries()
+	entries, err := r.Shunts.EnabledEntries()
 	if err != nil {
 		return fmt.Errorf("load enabled entries: %w", err)
 	}
@@ -88,10 +87,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// ApplyMutation updates dnsmasq config and adds IPs to ipset after a group mutation
-// (add/remove entry, enable/disable group). Never flushes ipset. Does not touch iptables.
+// ApplyMutation updates dnsmasq config and adds IPs to ipset after a shunt mutation
+// (add/remove entry, enable/disable shunt). Never flushes ipset. Does not touch iptables.
 func (r *Reconciler) ApplyMutation(ctx context.Context) error {
-	entries, err := r.Groups.EnabledEntries()
+	entries, err := r.Shunts.EnabledEntries()
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
 	}
@@ -116,10 +115,10 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 
 // populateIPSet adds direct IP/CIDR entries to ipset.
 // Domain entries are handled by dnsmasq via ipset= directives at DNS query time.
-func (r *Reconciler) populateIPSet(ctx context.Context, entries []group.Entry) {
+func (r *Reconciler) populateIPSet(ctx context.Context, entries []shunt.Entry) {
 	for _, e := range entries {
 		switch e.Type() {
-		case group.EntryIP, group.EntryCIDR:
+		case shunt.EntryIP, shunt.EntryCIDR:
 			if err := r.IPSet.Add(ctx, e.Value); err != nil {
 				r.Logger.Warn("failed to add to ipset", "entry", e.Value, "error", err)
 			}

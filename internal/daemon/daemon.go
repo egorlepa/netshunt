@@ -11,26 +11,26 @@ import (
 	"time"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/group"
 	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web"
 )
 
 // Daemon is the long-lived process that reconciles routing state and serves the web UI.
 type Daemon struct {
 	Config     *config.Config
-	Groups     *group.Store
+	Shunts     *shunt.Store
 	Reconciler *Reconciler
 	Logger     *slog.Logger
 	Version    string
 }
 
 // New creates a new Daemon.
-func New(cfg *config.Config, groups *group.Store, logger *slog.Logger, version string) *Daemon {
+func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, version string) *Daemon {
 	return &Daemon{
 		Config:     cfg,
-		Groups:     groups,
-		Reconciler: NewReconciler(cfg, groups, logger),
+		Shunts:     shunts,
+		Reconciler: NewReconciler(cfg, shunts, logger),
 		Logger:     logger,
 		Version:    version,
 	}
@@ -49,7 +49,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer cancel()
 
 	// Start web server.
-	webServer := web.NewServer(d.Config, d.Groups, d.Reconciler, d.Logger, d.Version)
+	webServer := web.NewServer(d.Config, d.Shunts, d.Reconciler, d.Logger, d.Version)
 	httpServer := &http.Server{
 		Addr:    d.Config.Daemon.WebListen,
 		Handler: webServer,
