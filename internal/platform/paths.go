@@ -7,8 +7,9 @@ const (
 	BinDir    = OptDir + "/bin"
 
 	// Config files.
-	ConfigFile = ConfigDir + "/config.yaml"
-	ShuntsFile = ConfigDir + "/shunts.yaml"
+	ConfigFile  = ConfigDir + "/config.yaml"
+	ShuntsFile  = ConfigDir + "/shunts.yaml"
+	GeositeFile = ConfigDir + "/dlc.dat"
 
 	// dnsmasq integration.
 	DnsmasqDir       = OptDir + "/etc/dnsmasq.d"

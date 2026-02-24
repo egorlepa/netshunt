@@ -79,6 +79,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /shunts/import", s.handleImportShunts)
 	s.mux.HandleFunc("GET /shunts/export", s.handleExportShunts)
 
+	// Geosite.
+	s.mux.HandleFunc("GET /geosite", s.handleGeositePage)
+	s.mux.HandleFunc("POST /geosite/download", s.handleGeositeDownload)
+	s.mux.HandleFunc("POST /geosite/update", s.handleGeositeUpdate)
+	s.mux.HandleFunc("POST /geosite/import/{category}", s.handleGeositeImport)
+	s.mux.HandleFunc("DELETE /geosite/import/{category}", s.handleGeositeRemove)
+
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
 

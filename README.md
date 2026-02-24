@@ -7,7 +7,8 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 ## Features
 
 - **Shunt-based routing** — organize domains, IPs, and CIDRs into named shunts, enable/disable entire shunts at once
-- **Web dashboard** — manage shunts, view status, adjust settings, run diagnostics
+- **Geosite integration** — import curated domain categories from the [v2fly domain-list-community](https://github.com/v2fly/domain-list-community) (google, netflix, facebook, and 1400+ more)
+- **Web dashboard** — manage shunts, browse geosite categories, view status, adjust settings, run diagnostics
 - **CLI** — full command-line interface for scripting and automation
 - **Encrypted DNS** — dnsmasq → dnscrypt-proxy for DoH/DoT upstream resolution
 - **Automatic IP tracking** — dnsmasq populates ipset in real-time at DNS query time

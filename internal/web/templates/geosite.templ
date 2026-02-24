@@ -1,0 +1,110 @@
+package templates
+
+import "github.com/egorlepa/netshunt/internal/geosite"
+
+templ GeositePage(info geosite.FileInfo, categories []geosite.CategoryInfo, imported map[string]bool) {
+	@Layout("Geosite", "geosite") {
+		<div id="geosite-content">
+			@GeositeContent(info, categories, imported)
+		</div>
+		<script>
+			function filterCategories() {
+				var q = document.getElementById('geosite-search').value.toLowerCase();
+				var rows = document.querySelectorAll('#category-table tbody tr');
+				rows.forEach(function(row) {
+					var name = (row.getAttribute('data-name') || '').toLowerCase();
+					row.style.display = name.indexOf(q) !== -1 ? '' : 'none';
+				});
+			}
+		</script>
+	}
+}
+
+templ GeositeContent(info geosite.FileInfo, categories []geosite.CategoryInfo, imported map[string]bool) {
+	<div class="flex-between mb-16">
+		<h1>Geosite Database</h1>
+		if info.Downloaded {
+			<div class="flex gap-8">
+				<button
+					class="btn btn-accent"
+					hx-post="/geosite/update"
+					hx-target="#geosite-content"
+					hx-swap="innerHTML"
+					hx-indicator="#geosite-spinner"
+				>
+					Update Database
+					<span id="geosite-spinner" class="htmx-indicator">...</span>
+				</button>
+			</div>
+		}
+	</div>
+	if !info.Downloaded {
+		<div class="card">
+			<p class="text-muted mb-16">No geosite database found. Download the v2fly domain-list-community database to import curated domain categories.</p>
+			<button
+				class="btn btn-accent"
+				hx-post="/geosite/download"
+				hx-target="#geosite-content"
+				hx-swap="innerHTML"
+				hx-indicator="#download-spinner"
+			>
+				Download Database
+				<span id="download-spinner" class="htmx-indicator">...</span>
+			</button>
+		</div>
+	} else {
+		<div class="card mb-16">
+			<div class="flex gap-16">
+				<div>
+					<span class="text-muted text-sm">Categories</span>
+					<div>{ itoa(info.CategoryCount) }</div>
+				</div>
+				<div>
+					<span class="text-muted text-sm">Last updated</span>
+					<div>{ info.LastModified.Format("2006-01-02 15:04") }</div>
+				</div>
+			</div>
+		</div>
+		<div class="mb-16">
+			<input type="text" id="geosite-search" placeholder="Search categories..." oninput="filterCategories()"/>
+		</div>
+		<div class="card">
+			<table id="category-table">
+				<thead>
+					<tr>
+						<th>Category</th>
+						<th>Domains</th>
+						<th style="text-align:right">Action</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, cat := range categories {
+						<tr data-name={ cat.Name }>
+							<td>{ cat.Name }</td>
+							<td class="text-muted">{ itoa(cat.DomainCount) }</td>
+							<td style="text-align:right">
+								if imported[cat.Name] {
+									<span class="badge badge-green" style="margin-right:8px">Imported</span>
+									<button
+										class="btn btn-sm btn-danger"
+										hx-delete={ "/geosite/import/" + cat.Name }
+										hx-target="#geosite-content"
+										hx-swap="innerHTML"
+										hx-confirm={ "Remove imported shunt \"" + cat.Name + "\"?" }
+									>Remove</button>
+								} else {
+									<button
+										class="btn btn-sm btn-accent"
+										hx-post={ "/geosite/import/" + cat.Name }
+										hx-target="#geosite-content"
+										hx-swap="innerHTML"
+									>Import</button>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

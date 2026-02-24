@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -265,6 +266,61 @@ func (s *Store) EnsureDefaultShunt() error {
 		Enabled: true,
 	})
 	return s.save(shunts)
+}
+
+// SyncGeositeShunt creates or fully replaces a shunt's entries from geosite data.
+func (s *Store) SyncGeositeShunt(name, source string, domains []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	shunts, err := s.load()
+	if err != nil {
+		return err
+	}
+
+	entries := make([]Entry, len(domains))
+	for i, d := range domains {
+		entries[i] = Entry{Value: d}
+	}
+
+	for i := range shunts {
+		if shunts[i].Name == name {
+			// Existing shunt with same name must be a geosite shunt.
+			if shunts[i].Source == "" {
+				return fmt.Errorf("shunt %q already exists and is not a geosite shunt", name)
+			}
+			shunts[i].Source = source
+			shunts[i].Entries = entries
+			return s.save(shunts)
+		}
+	}
+
+	shunts = append(shunts, Shunt{
+		Name:    name,
+		Enabled: true,
+		Source:  source,
+		Entries: entries,
+	})
+	return s.save(shunts)
+}
+
+// GeositeShunts returns all shunts that have a geosite source.
+func (s *Store) GeositeShunts() ([]Shunt, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	shunts, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []Shunt
+	for _, sh := range shunts {
+		if strings.HasPrefix(sh.Source, "geosite:") {
+			result = append(result, sh)
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) load() ([]Shunt, error) {

@@ -120,6 +120,9 @@ templ ShuntCard(s shunt.Shunt) {
 			<div class="flex gap-8 shunt-header" style="align-items:center;cursor:pointer;user-select:none" data-shunt={ SlugID(s.Name) } onclick="toggleShunt(this.dataset.shunt)">
 				<span class="expand-arrow">&#9654;</span>
 				<h2 style="margin:0">{ s.Name }</h2>
+				if s.Source != "" {
+					<span class="badge badge-yellow">geosite</span>
+				}
 				if s.Description != "" {
 					<span class="text-muted text-sm">{ s.Description }</span>
 				}
@@ -155,24 +158,26 @@ templ ShuntCard(s shunt.Shunt) {
 			</div>
 		</div>
 		<div class="entries-section" id={ "entries-" + SlugID(s.Name) } style="display:none">
-			@EntryList(SlugID(s.Name), s.Name, s.Entries)
-			<form
-				hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
-				hx-target={ "#shunt-" + SlugID(s.Name) }
-				hx-swap="outerHTML"
-				hx-on::after-request="if(event.detail.successful) this.reset()"
-				class="mt-8"
-			>
-				<div class="flex gap-8">
-					<textarea name="values" class="auto-resize" rows="1" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8 (one per line)" required></textarea>
-					<button class="btn btn-sm btn-accent" type="submit">Add</button>
-				</div>
-			</form>
+			@EntryList(SlugID(s.Name), s.Name, s.Entries, s.Source != "")
+			if s.Source == "" {
+				<form
+					hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
+					hx-target={ "#shunt-" + SlugID(s.Name) }
+					hx-swap="outerHTML"
+					hx-on::after-request="if(event.detail.successful) this.reset()"
+					class="mt-8"
+				>
+					<div class="flex gap-8">
+						<textarea name="values" class="auto-resize" rows="1" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8 (one per line)" required></textarea>
+						<button class="btn btn-sm btn-accent" type="submit">Add</button>
+					</div>
+				</form>
+			}
 		</div>
 	</div>
 }
 
-templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry) {
+templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readOnly bool) {
 	if len(entries) == 0 {
 		<p class="text-muted text-sm">No entries yet.</p>
 	} else {
@@ -180,12 +185,14 @@ templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry) {
 			for _, e := range sortedEntries(entries) {
 				<li class="entry-item">
 					<span>{ e.Value }</span>
-					<button
-						class="btn btn-sm btn-danger"
-						hx-delete={ "/shunts/" + shuntName + "/entries/" + e.Value }
-						hx-target={ "#entries-" + shuntSlug }
-						hx-swap="innerHTML"
-					>&times;</button>
+					if !readOnly {
+						<button
+							class="btn btn-sm btn-danger"
+							hx-delete={ "/shunts/" + shuntName + "/entries/" + e.Value }
+							hx-target={ "#entries-" + shuntSlug }
+							hx-swap="innerHTML"
+						>&times;</button>
+					}
 				</li>
 			}
 		</ul>

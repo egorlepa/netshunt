@@ -40,6 +40,7 @@ type Shunt struct {
 	Name        string  `yaml:"name"`
 	Description string  `yaml:"description,omitempty"`
 	Enabled     bool    `yaml:"enabled"`
+	Source      string  `yaml:"source,omitempty"` // e.g. "geosite:netflix"
 	Entries     []Entry `yaml:"entries"`
 }
 
