@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version    = "1.2.0RC6"
+	version    = "1.2.0"
 	binaryName = "netshunt"
 	ldflags    = fmt.Sprintf("-s -w -X main.version=%s", version)
 )
@@ -200,10 +200,10 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 
 	// NDM scripts.
 	ndmScripts := map[string]string{
-		"./opt/etc/netshunt/ndm/fs.d/100-ipset":                  "scripts/ndm/fs.d/100-ipset",
-		"./opt/etc/netshunt/ndm/netfilter.d/100-proxy-redirect":  "scripts/ndm/netfilter.d/100-proxy-redirect",
-		"./opt/etc/netshunt/ndm/ifstatechanged.d/100-ifstate":    "scripts/ndm/ifstatechanged.d/100-ifstate",
-		"./opt/etc/netshunt/ndm/wan.d/internet-up":               "scripts/ndm/wan.d/internet-up",
+		"./opt/etc/netshunt/ndm/fs.d/100-ipset":                 "scripts/ndm/fs.d/100-ipset",
+		"./opt/etc/netshunt/ndm/netfilter.d/100-proxy-redirect": "scripts/ndm/netfilter.d/100-proxy-redirect",
+		"./opt/etc/netshunt/ndm/ifstatechanged.d/100-ifstate":   "scripts/ndm/ifstatechanged.d/100-ifstate",
+		"./opt/etc/netshunt/ndm/wan.d/internet-up":              "scripts/ndm/wan.d/internet-up",
 	}
 	for dest, src := range ndmScripts {
 		if err := addFile(dest, src, 0755); err != nil {
