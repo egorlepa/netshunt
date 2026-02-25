@@ -105,6 +105,22 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
 	}
 
+	// DNS DNAT: redirect all port-53 traffic from the LAN to the local forwarder.
+	// Use br0 as the default interface when none is configured, to avoid redirecting
+	// the router's own DNS queries.
+	dnsIface := iface
+	if dnsIface == "" {
+		dnsIface = "br0"
+	}
+	if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
+		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
+		r.logger.Warn("dns dnat udp rule failed", "error", err)
+	}
+	if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
+		"-i", dnsIface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
+		r.logger.Warn("dns dnat tcp rule failed", "error", err)
+	}
+
 	return nil
 }
 

@@ -67,8 +67,7 @@ type ndmHook struct {
 var ndmHooks = []ndmHook{
 	{"fs.d", "100-ipset"},
 	{"netfilter.d", "100-proxy-redirect"},
-	{"netfilter.d", "100-dns-local"},
-	{"ifstatechanged.d", "100-unblock"},
+	{"ifstatechanged.d", "100-ifstate"},
 	{"wan.d", "internet-up"},
 }
 

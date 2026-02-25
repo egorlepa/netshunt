@@ -11,7 +11,6 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/routing"
-	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newHookCmd() *cobra.Command {
@@ -24,7 +23,6 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(
 		newHookFsCmd(),
 		newHookNetfilterCmd(),
-		newHookDNSLocalCmd(),
 		newHookIfstateCmd(),
 		newHookWanCmd(),
 	)
@@ -70,46 +68,6 @@ func newHookNetfilterCmd() *cobra.Command {
 			logger := hookLogger()
 			mode := routing.New(cfg, logger)
 			return mode.SetupRules(cmd.Context())
-		},
-	}
-}
-
-// hook dns-local — redirect all DNS (port 53) traffic to local DNS forwarder.
-func newHookDNSLocalCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "dns-local <type> <table>",
-		Short: "DNS local redirect event",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			ipt := netfilter.NewIPTables()
-			iface := cfg.Network.EntwareInterface
-			if iface == "" {
-				iface = "br0"
-			}
-
-			// Check if DNS DNAT rule already exists.
-			if ipt.RuleExists(ctx, "nat", "PREROUTING",
-				"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1") {
-				return nil
-			}
-
-			// Redirect UDP and TCP port 53 to local DNS forwarder.
-			if err := ipt.AppendRule(ctx, "nat", "PREROUTING",
-				"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-				return fmt.Errorf("dns dnat udp: %w", err)
-			}
-			if err := ipt.AppendRule(ctx, "nat", "PREROUTING",
-				"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-				return fmt.Errorf("dns dnat tcp: %w", err)
-			}
-
-			return nil
 		},
 	}
 }
@@ -166,8 +124,7 @@ func newHookIfstateCmd() *cobra.Command {
 	return cmd
 }
 
-// hook wan — WAN connectivity event. Delegates reconcile to the daemon via
-// HTTP API. Falls back to ipset/iptables-only setup if daemon is not running.
+// hook wan — WAN connectivity event. Delegates reconcile to the daemon via HTTP API.
 func newHookWanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "wan <start|stop>",
@@ -187,39 +144,14 @@ func newHookWanCmd() *cobra.Command {
 				return err
 			}
 
-			// Try to delegate reconcile to the running daemon.
-			apiURL := fmt.Sprintf("http://127.0.0.1%s/api/reconcile", cfg.Daemon.WebListen)
+			apiURL := fmt.Sprintf("http://127.0.0.1%s/actions/reconcile", cfg.Daemon.WebListen)
 			resp, err := http.Post(apiURL, "", nil)
-			if err == nil {
-				resp.Body.Close()
+			if err != nil {
+				hookLogger().Warn("daemon not reachable, skipping reconcile", "error", err)
 				return nil
 			}
-
-			// Daemon not running — best-effort: ensure ipset + iptables only.
-			logger := hookLogger()
-			logger.Warn("daemon not running, falling back to ipset/iptables only")
-
-			ctx := cmd.Context()
-			ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
-			if err := ipset.EnsureTable(ctx); err != nil {
-				return err
-			}
-
-			// Populate direct IP/CIDR entries.
-			shunts := shunt.NewDefaultStore()
-			entries, err := shunts.EnabledEntries()
-			if err != nil {
-				return err
-			}
-			for _, e := range entries {
-				switch e.Type() {
-				case shunt.EntryIP, shunt.EntryCIDR:
-					_ = ipset.Add(ctx, e.Value)
-				}
-			}
-
-			mode := routing.New(cfg, logger)
-			return mode.SetupRules(ctx)
+			resp.Body.Close()
+			return nil
 		},
 	}
 }
