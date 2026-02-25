@@ -100,7 +100,7 @@ func TestParseGeoSiteList(t *testing.T) {
 	}
 }
 
-func TestExtractDomains(t *testing.T) {
+func TestExtractEntries(t *testing.T) {
 	data := buildGeoSiteList(
 		buildGeoSite("NETFLIX",
 			buildDomain(DomainRoot, "netflix.com"),
@@ -115,29 +115,38 @@ func TestExtractDomains(t *testing.T) {
 		t.Fatalf("parseGeoSiteList: %v", err)
 	}
 
-	// Only RootDomain and Full should be extracted.
-	domains, err := ExtractDomains(db, "netflix")
+	// All 4 domain types should be extracted with prefixes.
+	entries, err := ExtractEntries(db, "netflix")
 	if err != nil {
-		t.Fatalf("ExtractDomains: %v", err)
+		t.Fatalf("ExtractEntries: %v", err)
 	}
-	if len(domains) != 2 {
-		t.Fatalf("expected 2 domains, got %d: %v", len(domains), domains)
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d: %v", len(entries), entries)
 	}
-	if domains[0] != "netflix.com" || domains[1] != "fast.com" {
-		t.Errorf("unexpected domains: %v", domains)
+
+	want := []string{
+		"domain:netflix.com",
+		"full:fast.com",
+		"keyword:nflx",
+		"regexp:nflx.*",
+	}
+	for i, w := range want {
+		if entries[i] != w {
+			t.Errorf("entry[%d] = %q, want %q", i, entries[i], w)
+		}
 	}
 
 	// Case-insensitive lookup.
-	domains, err = ExtractDomains(db, "NETFLIX")
+	entries, err = ExtractEntries(db, "NETFLIX")
 	if err != nil {
 		t.Fatalf("case-insensitive lookup: %v", err)
 	}
-	if len(domains) != 2 {
-		t.Fatalf("expected 2 domains, got %d", len(domains))
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
 	}
 
 	// Missing category.
-	_, err = ExtractDomains(db, "nonexistent")
+	_, err = ExtractEntries(db, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent category")
 	}

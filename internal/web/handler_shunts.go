@@ -48,7 +48,7 @@ func (s *Server) handleCreateShunt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	s.renderShuntList(w, r)
 }
 
@@ -58,7 +58,7 @@ func (s *Server) handleDeleteShunt(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	toastTrigger(w, "Shunt deleted", "success")
 	w.WriteHeader(http.StatusOK)
 }
@@ -69,8 +69,8 @@ func (s *Server) handleEnableShunt(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.triggerMutation()
-	s.renderShuntCard(w, r, name)
+	s.triggerMutation(r.Context())
+	s.renderShuntToggle(w, r, name)
 }
 
 func (s *Server) handleDisableShunt(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +79,8 @@ func (s *Server) handleDisableShunt(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.triggerMutation()
-	s.renderShuntCard(w, r, name)
+	s.triggerMutation(r.Context())
+	s.renderShuntToggle(w, r, name)
 }
 
 func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +97,7 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	s.renderShuntCard(w, r, name)
 }
 
@@ -110,7 +110,7 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	s.renderEntryList(w, r, name)
 }
 
@@ -136,7 +136,7 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	msg := fmt.Sprintf("%d entries added", added)
 	if skipped > 0 {
 		msg += fmt.Sprintf(", %d skipped", skipped)
@@ -167,9 +167,18 @@ func (s *Server) handleImportShunts(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	toastTrigger(w, "Shunts imported", "success")
 	s.renderShuntList(w, r)
+}
+
+func (s *Server) renderShuntToggle(w http.ResponseWriter, r *http.Request, name string) {
+	sh, err := s.Shunts.Get(name)
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	templates.ShuntToggle(*sh).Render(r.Context(), w)
 }
 
 func (s *Server) renderShuntList(w http.ResponseWriter, r *http.Request) {

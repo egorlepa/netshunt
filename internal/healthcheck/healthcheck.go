@@ -1,21 +1,18 @@
 package healthcheck
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
-	"os"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
-	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/netfilter"
-	"github.com/egorlepa/netshunt/internal/platform"
-	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/service"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 // Result represents a single health check outcome.
@@ -36,28 +33,28 @@ type ProbeResult struct {
 func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []Result {
 	var results []Result
 
-	// 1. dnsmasq
-	results = append(results, checkService(ctx, service.Dnsmasq))
-
-	// 2. dnscrypt-proxy
+	// 1. dnscrypt-proxy
 	results = append(results, checkService(ctx, service.DNSCrypt))
 
-	// 3. Daemon
+	// 2. Daemon
 	results = append(results, checkService(ctx, service.Daemon))
 
-	// 4. Routing active
-	results = append(results, checkRouting(ctx, cfg))
+	// 3. DNS forwarder
+	results = append(results, checkForwarder(ctx, cfg))
 
-	// 4. IPSet table
+	// 4. Transparent proxy listening
+	results = append(results, checkProxy(cfg))
+
+	// 5. Internet connectivity
+	results = append(results, checkConnectivity(ctx))
+
+	// 7. IPSet table
 	results = append(results, checkIPSet(ctx, cfg))
 
-	// 5. IPTables rules
+	// 8. IPTables rules
 	results = append(results, checkIPTables(ctx, cfg))
 
-	// 6. Dnsmasq ipset config
-	results = append(results, checkDnsmasqConfig())
-
-	// 7. Shunts
+	// 9. Shunts
 	results = append(results, checkShunts(shunts))
 
 	return results
@@ -130,20 +127,37 @@ func checkService(ctx context.Context, svc service.Service) Result {
 	return r
 }
 
-func checkRouting(ctx context.Context, cfg *config.Config) Result {
-	r := Result{Name: "routing"}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	mode := routing.New(cfg, logger)
-	active, _ := mode.IsActive(ctx)
-
-	detail := fmt.Sprintf("redirect (port %d)", cfg.Routing.LocalPort)
-
-	if active {
-		r.Passed = true
-		r.Detail = detail + " — active"
-	} else {
-		r.Detail = detail + " — inactive"
+func checkProxy(cfg *config.Config) Result {
+	r := Result{Name: "proxy"}
+	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Routing.LocalPort)
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		r.Detail = fmt.Sprintf("nothing listening on %s", addr)
+		return r
 	}
+	conn.Close()
+	r.Passed = true
+	r.Detail = fmt.Sprintf("listening on %s", addr)
+	return r
+}
+
+func checkConnectivity(ctx context.Context) Result {
+	r := Result{Name: "connectivity"}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://connectivitycheck.gstatic.com/generate_204", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		r.Detail = fmt.Sprintf("request failed: %v", err)
+		return r
+	}
+	resp.Body.Close()
+	r.Passed = true
+	r.Detail = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	return r
 }
 
@@ -175,36 +189,16 @@ func checkIPTables(ctx context.Context, cfg *config.Config) Result {
 	return r
 }
 
-func checkDnsmasqConfig() Result {
-	r := Result{Name: "dnsmasq config"}
-	info, err := os.Stat(platform.DnsmasqIPSetFile)
+func checkForwarder(ctx context.Context, cfg *config.Config) Result {
+	r := Result{Name: "dns forwarder"}
+	resolver := dns.NewResolver(cfg.DNS.ListenAddr)
+	_, err := resolver.ResolveToStrings(ctx, "example.com")
 	if err != nil {
-		r.Detail = "file missing"
+		r.Detail = fmt.Sprintf("not responding on %s", cfg.DNS.ListenAddr)
 		return r
 	}
-	if info.Size() == 0 {
-		r.Detail = "file empty"
-		return r
-	}
-
-	// Count domains in the file.
-	f, err := os.Open(platform.DnsmasqIPSetFile)
-	if err != nil {
-		r.Detail = "cannot read file"
-		return r
-	}
-	defer f.Close()
-
-	count := 0
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if strings.HasPrefix(scanner.Text(), "ipset=/") {
-			count++
-		}
-	}
-
 	r.Passed = true
-	r.Detail = fmt.Sprintf("%d domains", count)
+	r.Detail = fmt.Sprintf("responding on %s", cfg.DNS.ListenAddr)
 	return r
 }
 

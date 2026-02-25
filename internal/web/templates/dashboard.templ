@@ -1,89 +1,47 @@
 package templates
 
-type ServiceStatus struct {
-	Name      string
-	Installed bool
-	Running   bool
-}
-
 type DashboardData struct {
-	Services      []ServiceStatus
-	IPSetCount    int
-	ShuntCount    int
-	EntryCount    int
-	RoutingMode   string
-	RoutingActive bool
-	Version       string
+	IPSetCount        int
+	ShuntCount        int
+	EnabledShuntCount int
+	EntryCount        int
+	TrackedDomains    int
+	TrackedIPs        int
+	Version           string
 }
 
 templ Dashboard(data DashboardData) {
 	@Layout("Dashboard", "dashboard") {
 		<div class="flex-between mb-16">
 			<h1>Dashboard</h1>
-			<span class="text-muted text-sm">v{ data.Version }</span>
+			<div class="flex gap-8" style="align-items:center">
+				<span id="dash-poll-indicator" class="htmx-indicator"><span class="spinner"></span></span>
+				<span class="text-muted text-sm">v{ data.Version }</span>
+			</div>
 		</div>
-		<div id="dashboard-content" hx-get="/dashboard-content" hx-trigger="every 10s" hx-swap="innerHTML">
+		<div id="dashboard-content" hx-get="/dashboard-content" hx-trigger="every 10s" hx-swap="innerHTML" hx-indicator="#dash-poll-indicator">
 			@DashboardContent(data)
 		</div>
 	}
 }
 
 templ DashboardContent(data DashboardData) {
-	<div class="grid-2">
-		<div class="card">
-			<h2>Services</h2>
-			<table>
-				<thead>
-					<tr><th>Service</th><th>Status</th></tr>
-				</thead>
-				<tbody>
-					for _, svc := range data.Services {
-						<tr>
-							<td>{ svc.Name }</td>
-							<td>
-								if !svc.Installed {
-									<span class="badge badge-yellow">not installed</span>
-								} else if svc.Running {
-									<span class="badge badge-green">running</span>
-								} else {
-									<span class="badge badge-red">stopped</span>
-								}
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		</div>
-		<div class="card">
+	<div class="card">
+		<div class="flex-between mb-8">
 			<h2>Overview</h2>
-			<table>
-				<tbody>
-					<tr>
-						<td class="text-muted">Routing</td>
-						<td>
-							{ data.RoutingMode }
-							if data.RoutingActive {
-								<span class="badge badge-green">active</span>
-							} else {
-								<span class="badge badge-red">inactive</span>
-							}
-						</td>
-					</tr>
-					<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
-					<tr><td class="text-muted">Shunts</td><td>{ itoa(data.ShuntCount) }</td></tr>
-					<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
-				</tbody>
-			</table>
-			<div class="mt-8 flex gap-8">
-				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
-					Reconcile
-					<span class="htmx-indicator">...</span>
-				</button>
-				<button class="btn" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnsmasq and dnscrypt-proxy?">
-					Restart Services
-					<span class="htmx-indicator">...</span>
-				</button>
-			</div>
+			<button class="btn btn-sm" hx-get="/dashboard-content" hx-target="#dashboard-content" hx-swap="innerHTML">
+				Refresh
+				<span class="htmx-indicator"><span class="spinner"></span></span>
+			</button>
 		</div>
+		<table>
+			<tbody>
+				<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
+				<tr><td class="text-muted">Shunts</td><td>{ itoa(data.EnabledShuntCount) } / { itoa(data.ShuntCount) } enabled</td></tr>
+				<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
+				<tr><td class="text-muted">Tracked domains</td><td>{ itoa(data.TrackedDomains) }</td></tr>
+				<tr><td class="text-muted">Tracked IPs</td><td>{ itoa(data.TrackedIPs) }</td></tr>
+			</tbody>
+		</table>
 	</div>
 }

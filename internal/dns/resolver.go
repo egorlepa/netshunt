@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miekg/dns"
+	"codeberg.org/miekg/dns"
 )
 
 // Resolver resolves domain names to IP addresses using a specified DNS server.
@@ -33,12 +33,16 @@ func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error)
 		domain = domain + "."
 	}
 
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeA)
-	msg.RecursionDesired = true
+	msg := dns.NewMsg(domain, dns.TypeA)
+	if msg == nil {
+		return nil, fmt.Errorf("dns: failed to create query for %s", domain)
+	}
 
-	client := &dns.Client{Timeout: r.Timeout}
-	resp, _, err := client.ExchangeContext(ctx, msg, r.Server)
+	client := dns.NewClient()
+	client.ReadTimeout = r.Timeout
+	client.WriteTimeout = r.Timeout
+
+	resp, _, err := client.Exchange(ctx, msg, "udp", r.Server)
 	if err != nil {
 		return nil, fmt.Errorf("dns query %s: %w", domain, err)
 	}
@@ -50,8 +54,9 @@ func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error)
 	var ips []net.IP
 	for _, ans := range resp.Answer {
 		if a, ok := ans.(*dns.A); ok {
-			if a.A != nil && !a.A.IsUnspecified() {
-				ips = append(ips, a.A)
+			ip := a.A.Addr
+			if ip.IsValid() && !ip.IsUnspecified() {
+				ips = append(ips, ip.AsSlice())
 			}
 		}
 	}

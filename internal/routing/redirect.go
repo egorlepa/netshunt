@@ -25,7 +25,7 @@ const (
 // ss-redir (-u), xray (dokodemo-door), sing-box, etc.
 //
 // Traffic flow:
-//  1. DNS query resolved → IP added to ipset by dnsmasq
+//  1. DNS query resolved → IP added to ipset by DNS forwarder
 //  2. TCP: iptables PREROUTING (nat) redirects to cfg.Routing.LocalPort
 //  3. UDP: iptables PREROUTING (mangle) TPROXY to cfg.Routing.LocalPort
 //  4. Transparent proxy forwards traffic through the tunnel

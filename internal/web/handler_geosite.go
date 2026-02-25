@@ -49,7 +49,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 	var updated int
 	for _, sh := range geositeShunts {
 		category := strings.TrimPrefix(sh.Source, "geosite:")
-		domains, err := geosite.ExtractDomains(db, category)
+		domains, err := geosite.ExtractEntries(db, category)
 		if err != nil {
 			s.Logger.Warn("geosite category missing in update", "category", category)
 			continue
@@ -61,7 +61,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 		updated++
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Database updated, %d shunts refreshed", updated), "success")
 	info, categories, imported := s.loadGeositeState()
 	templates.GeositeContent(info, categories, imported).Render(r.Context(), w)
@@ -80,7 +80,7 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domains, err := geosite.ExtractDomains(db, category)
+	domains, err := geosite.ExtractEntries(db, category)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
@@ -92,10 +92,10 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Imported %s (%d domains)", category, len(domains)), "success")
-	info, categories, imported := s.loadGeositeState()
-	templates.GeositeContent(info, categories, imported).Render(r.Context(), w)
+	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
+	templates.GeositeCategoryRow(cat, true).Render(r.Context(), w)
 }
 
 func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
@@ -110,10 +110,17 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.triggerMutation()
+	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Removed %s", category), "success")
-	info, categories, imported := s.loadGeositeState()
-	templates.GeositeContent(info, categories, imported).Render(r.Context(), w)
+	// Get domain count from db to render the row with correct count.
+	domainCount := 0
+	if db, err := geosite.Parse(platform.GeositeFile); err == nil {
+		if domains, err := geosite.ExtractEntries(db, category); err == nil {
+			domainCount = len(domains)
+		}
+	}
+	cat := geosite.CategoryInfo{Name: category, DomainCount: domainCount}
+	templates.GeositeCategoryRow(cat, false).Render(r.Context(), w)
 }
 
 func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, map[string]bool) {

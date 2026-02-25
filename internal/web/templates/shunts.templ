@@ -80,21 +80,18 @@ templ ShuntsPage(shunts []shunt.Shunt) {
 			}
 			document.body.addEventListener('htmx:afterSettle', function(e) {
 				var elt = e.detail.elt;
-				if (!elt || !elt.id) return;
-				var slug;
-				if (elt.id.startsWith('shunt-')) {
-					slug = elt.id.replace('shunt-', '');
-				} else if (elt.closest && elt.closest('[id^="shunt-"]')) {
-					slug = elt.closest('[id^="shunt-"]').id.replace('shunt-', '');
-				}
-				if (!slug) return;
+				if (!elt || !elt.id || !elt.id.startsWith('shunt-')) return;
+				// Only re-expand when the whole card was replaced (add/bulk entry swaps the card outerHTML).
+				// Toggle and entry-only swaps target child elements, so expansion state is preserved as-is.
+				var slug = elt.id.replace('shunt-', '');
 				_expandedShunts.add(slug);
 				var card = document.getElementById('shunt-' + slug);
 				if (card) _applyShuntState(card);
 			});
 			function autoResize(el) {
+				if (!el._minH) el._minH = el.offsetHeight;
 				el.style.height = 'auto';
-				el.style.height = el.scrollHeight + 'px';
+				el.style.height = Math.max(el.scrollHeight, el._minH) + 'px';
 			}
 			document.addEventListener('input', function(e) {
 				if (e.target.matches('textarea.auto-resize')) autoResize(e.target);
@@ -114,6 +111,28 @@ templ ShuntList(shunts []shunt.Shunt) {
 	}
 }
 
+templ ShuntToggle(s shunt.Shunt) {
+	<label class="toggle" id={ "toggle-" + SlugID(s.Name) }>
+		if s.Enabled {
+			<input
+				type="checkbox"
+				checked
+				hx-put={ "/shunts/" + s.Name + "/disable" }
+				hx-target={ "#toggle-" + SlugID(s.Name) }
+				hx-swap="outerHTML"
+			/>
+		} else {
+			<input
+				type="checkbox"
+				hx-put={ "/shunts/" + s.Name + "/enable" }
+				hx-target={ "#toggle-" + SlugID(s.Name) }
+				hx-swap="outerHTML"
+			/>
+		}
+		<span class="slider"></span>
+	</label>
+}
+
 templ ShuntCard(s shunt.Shunt) {
 	<div class="card" id={ "shunt-" + SlugID(s.Name) }>
 		<div class="flex-between mb-8">
@@ -129,25 +148,7 @@ templ ShuntCard(s shunt.Shunt) {
 				<span class="text-muted text-sm">({ itoa(len(s.Entries)) } entries)</span>
 			</div>
 			<div class="flex gap-8" style="align-items:center">
-				<label class="toggle">
-					if s.Enabled {
-						<input
-							type="checkbox"
-							checked
-							hx-put={ "/shunts/" + s.Name + "/disable" }
-							hx-target={ "#shunt-" + SlugID(s.Name) }
-							hx-swap="outerHTML"
-						/>
-					} else {
-						<input
-							type="checkbox"
-							hx-put={ "/shunts/" + s.Name + "/enable" }
-							hx-target={ "#shunt-" + SlugID(s.Name) }
-							hx-swap="outerHTML"
-						/>
-					}
-					<span class="slider"></span>
-				</label>
+				@ShuntToggle(s)
 				<button
 					class="btn btn-sm btn-danger"
 					hx-delete={ "/shunts/" + s.Name }
@@ -168,7 +169,7 @@ templ ShuntCard(s shunt.Shunt) {
 					class="mt-8"
 				>
 					<div class="flex gap-8">
-						<textarea name="values" class="auto-resize" rows="1" placeholder="domain.com, 1.2.3.4, or 10.0.0.0/8 (one per line)" required></textarea>
+						<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8&#10;Prefixes: full:example.com  keyword:youtube  regexp:^.*\.google\." required></textarea>
 						<button class="btn btn-sm btn-accent" type="submit">Add</button>
 					</div>
 				</form>

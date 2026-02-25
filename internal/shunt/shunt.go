@@ -9,9 +9,20 @@ import (
 type EntryType int
 
 const (
-	EntryDomain  EntryType = iota // example.com
-	EntryIP                       // 1.2.3.4
-	EntryCIDR                     // 1.2.3.0/24
+	EntryDomainSuffix  EntryType = iota // domain:example.com or bare example.com
+	EntryDomainFull                     // full:example.com
+	EntryDomainKeyword                  // keyword:tube
+	EntryDomainRegexp                   // regexp:^.+\.google\.
+	EntryIP                             // 1.2.3.4
+	EntryCIDR                           // 1.2.3.0/24
+)
+
+// Domain entry prefixes (xray-style notation).
+const (
+	PrefixDomainSuffix = "domain:"
+	PrefixDomainFull   = "full:"
+	PrefixKeyword      = "keyword:"
+	PrefixRegexp       = "regexp:"
 )
 
 // Entry is a single host entry (domain, IP, or CIDR).
@@ -21,18 +32,39 @@ type Entry struct {
 
 // Type returns the detected type of this entry.
 func (e Entry) Type() EntryType {
+	switch {
+	case strings.HasPrefix(e.Value, PrefixDomainFull):
+		return EntryDomainFull
+	case strings.HasPrefix(e.Value, PrefixDomainSuffix):
+		return EntryDomainSuffix
+	case strings.HasPrefix(e.Value, PrefixKeyword):
+		return EntryDomainKeyword
+	case strings.HasPrefix(e.Value, PrefixRegexp):
+		return EntryDomainRegexp
+	}
 	if _, _, err := net.ParseCIDR(e.Value); err == nil {
 		return EntryCIDR
 	}
 	if ip := net.ParseIP(e.Value); ip != nil {
 		return EntryIP
 	}
-	return EntryDomain
+	return EntryDomainSuffix
 }
 
 // IsDomain returns true if the entry is a domain name (not IP/CIDR).
 func (e Entry) IsDomain() bool {
-	return e.Type() == EntryDomain
+	t := e.Type()
+	return t == EntryDomainSuffix || t == EntryDomainFull || t == EntryDomainKeyword || t == EntryDomainRegexp
+}
+
+// DomainValue returns the raw domain/pattern string with the prefix stripped.
+func (e Entry) DomainValue() string {
+	for _, prefix := range []string{PrefixDomainFull, PrefixDomainSuffix, PrefixKeyword, PrefixRegexp} {
+		if strings.HasPrefix(e.Value, prefix) {
+			return e.Value[len(prefix):]
+		}
+	}
+	return e.Value
 }
 
 // Shunt is a named collection of host entries.
@@ -80,6 +112,23 @@ func (s *Shunt) RemoveEntry(value string) bool {
 func normalizeEntry(s string) string {
 	s = strings.TrimSpace(s)
 
+	// If entry has a recognized prefix, normalize only the value portion.
+	for _, prefix := range []string{PrefixDomainFull, PrefixDomainSuffix, PrefixKeyword, PrefixRegexp} {
+		if strings.HasPrefix(s, prefix) {
+			val := s[len(prefix):]
+			// keyword and regexp values are used as-is (no URL stripping).
+			if prefix == PrefixKeyword || prefix == PrefixRegexp {
+				return prefix + strings.TrimSpace(val)
+			}
+			return prefix + normalizeDomain(val)
+		}
+	}
+
+	// No prefix — fall back to standard normalization.
+	return normalizeDomain(s)
+}
+
+func normalizeDomain(s string) string {
 	// Strip URL scheme (http://, https://).
 	if i := strings.Index(s, "://"); i != -1 {
 		s = s[i+3:]

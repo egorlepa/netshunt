@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -30,7 +29,6 @@ func newDebugCmd() *cobra.Command {
 			debugServices(ctx)
 			debugIPSet(ctx, cfg)
 			debugIPTables(ctx)
-			debugDnsmasqConfig()
 			debugConfig(cfg)
 
 			return nil
@@ -40,7 +38,7 @@ func newDebugCmd() *cobra.Command {
 
 func debugServices(ctx context.Context) {
 	fmt.Println("--- Services ---")
-	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt, service.Daemon} {
+	for _, svc := range []service.Service{service.DNSCrypt, service.Daemon} {
 		installed := svc.IsInstalled()
 		running := false
 		if installed {
@@ -73,17 +71,6 @@ func debugIPTables(ctx context.Context) {
 		fmt.Printf("Error: %v\n", err)
 	} else {
 		fmt.Println(out)
-	}
-	fmt.Println()
-}
-
-func debugDnsmasqConfig() {
-	fmt.Println("--- dnsmasq ipset config ---")
-	data, err := os.ReadFile(platform.DnsmasqIPSetFile)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-	} else {
-		fmt.Print(string(data))
 	}
 	fmt.Println()
 }

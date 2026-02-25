@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
@@ -23,11 +24,23 @@ type Reconciler interface {
 	ApplyMutation(ctx context.Context) error
 }
 
+// TrackerStats is the interface the web server uses to read DNS tracker state.
+type TrackerStats interface {
+	Count() (domains int, ips int)
+}
+
+// LogReader is the interface the web server uses to read recent log entries.
+type LogReader interface {
+	Entries() []platform.LogEntry
+}
+
 // Server is the web UI HTTP server.
 type Server struct {
 	Config     *config.Config
 	Shunts     *shunt.Store
 	Reconciler Reconciler
+	Tracker    TrackerStats
+	Logs       LogReader
 	Logger     *slog.Logger
 	Version    string
 	mux        *http.ServeMux
@@ -40,11 +53,13 @@ func (s *Server) MarkReady() {
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Config, shunts *shunt.Store, reconciler Reconciler, logger *slog.Logger, version string) *Server {
+func NewServer(cfg *config.Config, shunts *shunt.Store, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
 		Shunts:     shunts,
 		Reconciler: reconciler,
+		Tracker:    tracker,
+		Logs:       logs,
 		Logger:     logger,
 		Version:    version,
 		mux:        http.NewServeMux(),
@@ -67,6 +82,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
 	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
 	s.mux.HandleFunc("POST /diagnostics/probe", s.handleDiagnosticsProbe)
+	s.mux.HandleFunc("GET /diagnostics/logs", s.handleDiagnosticsLogs)
 
 	// Shunt mutations (htmx).
 	s.mux.HandleFunc("POST /shunts", s.handleCreateShunt)
@@ -108,13 +124,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// triggerMutation applies shunt changes in the background after a store mutation.
-func (s *Server) triggerMutation() {
-	go func() {
-		if err := s.Reconciler.ApplyMutation(context.Background()); err != nil {
-			s.Logger.Error("apply mutation failed", "error", err)
-		}
-	}()
+// triggerMutation applies shunt changes after a store mutation.
+func (s *Server) triggerMutation(ctx context.Context) {
+	if err := s.Reconciler.ApplyMutation(ctx); err != nil {
+		s.Logger.Error("apply mutation failed", "error", err)
+	}
 }
 
 // toastTrigger sets HX-Trigger header to show a toast notification.

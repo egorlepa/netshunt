@@ -11,11 +11,7 @@ const (
 	ShuntsFile  = ConfigDir + "/shunts.yaml"
 	GeositeFile = ConfigDir + "/dlc.dat"
 
-	// dnsmasq integration.
-	DnsmasqDir       = OptDir + "/etc/dnsmasq.d"
-	DnsmasqIPSetFile = DnsmasqDir + "/netshunt.dnsmasq"
-	DnsmasqConfFile  = OptDir + "/etc/dnsmasq.conf"
-	DnsmasqPidFile   = "/var/run/opt-dnsmasq.pid"
+	// dnscrypt-proxy.
 	DnscryptConfFile = OptDir + "/etc/dnscrypt-proxy.toml"
 
 	// Daemon.

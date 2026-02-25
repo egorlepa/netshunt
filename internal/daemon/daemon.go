@@ -11,27 +11,39 @@ import (
 	"time"
 
 	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web"
 )
 
-// Daemon is the long-lived process that reconciles routing state and serves the web UI.
+// Daemon is the long-lived process that runs the DNS forwarder, reconciles
+// routing state, and serves the web UI.
 type Daemon struct {
 	Config     *config.Config
 	Shunts     *shunt.Store
 	Reconciler *Reconciler
+	Forwarder  *dns.Forwarder
 	Logger     *slog.Logger
+	LogBuf     *platform.LogBuffer
 	Version    string
 }
 
-// New creates a new Daemon.
-func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, version string) *Daemon {
+// New creates a new Daemon with the DNS forwarder and reconciler wired up.
+func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) *Daemon {
+	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+	tracker := dns.NewTracker(ipset, logger)
+	upstream := fmt.Sprintf("127.0.0.1:%d", cfg.DNSCrypt.Port)
+	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, tracker, logger)
+
 	return &Daemon{
 		Config:     cfg,
 		Shunts:     shunts,
-		Reconciler: NewReconciler(cfg, shunts, logger),
+		Reconciler: NewReconciler(cfg, shunts, forwarder, logger),
+		Forwarder:  forwarder,
 		Logger:     logger,
+		LogBuf:     logBuf,
 		Version:    version,
 	}
 }
@@ -48,8 +60,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Start web server.
-	webServer := web.NewServer(d.Config, d.Shunts, d.Reconciler, d.Logger, d.Version)
+	// 1. Initial reconcile — populates matcher + ipset before DNS starts.
+	if err := d.Reconciler.Reconcile(ctx); err != nil {
+		d.Logger.Error("initial reconcile failed", "error", err)
+	}
+
+	// 2. Start DNS forwarder (now has domain list ready).
+	if err := d.Forwarder.Start(); err != nil {
+		return fmt.Errorf("start dns forwarder: %w", err)
+	}
+
+	// 4. Start web server.
+	webServer := web.NewServer(d.Config, d.Shunts, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
 	httpServer := &http.Server{
 		Addr:    d.Config.Daemon.WebListen,
 		Handler: webServer,
@@ -62,16 +84,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}()
 
-	// Initial reconcile.
-	if err := d.Reconciler.Reconcile(ctx); err != nil {
-		d.Logger.Error("initial reconcile failed", "error", err)
-	}
 	webServer.MarkReady()
-
 	d.Logger.Info("daemon started")
 
 	<-ctx.Done()
 	d.Logger.Info("shutting down")
+
+	d.Forwarder.Stop()
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	httpServer.Shutdown(shutdownCtx)

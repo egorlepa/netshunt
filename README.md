@@ -9,9 +9,9 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 - **Shunt-based routing** — organize domains, IPs, and CIDRs into named shunts, enable/disable entire shunts at once
 - **Geosite integration** — import curated domain categories from the [v2fly domain-list-community](https://github.com/v2fly/domain-list-community) (google, netflix, facebook, and 1400+ more)
 - **Web dashboard** — manage shunts, browse geosite categories, view status, adjust settings, run diagnostics
-- **CLI** — full command-line interface for scripting and automation
-- **Encrypted DNS** — dnsmasq → dnscrypt-proxy for DoH/DoT upstream resolution
-- **Automatic IP tracking** — dnsmasq populates ipset in real-time at DNS query time
+- **HTTP API** — full API for scripting and automation
+- **Encrypted DNS** — built-in DNS forwarder → dnscrypt-proxy for DoH/DoT upstream resolution
+- **Automatic IP tracking** — DNS forwarder populates ipset in real-time; tracked IPs persist until the domain is removed or the daemon restarts
 - **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP
 - **Keenetic integration** — NDM hooks restore rules on reboots, WAN changes, interface restarts
 - **Proxy-agnostic** — redirects to a local port, any transparent proxy works
@@ -21,10 +21,10 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 ```mermaid
 flowchart LR
     Client([LAN Client])
-    Client -->|DNS query| dnsmasq[dnsmasq :53]
-    dnsmasq -->|forward| dnscrypt[dnscrypt-proxy :9153]
+    Client -->|DNS query| forwarder[netshunt forwarder :53]
+    forwarder -->|forward| dnscrypt[dnscrypt-proxy :9153]
     dnscrypt -->|DoH / DoT| upstream((Encrypted Upstream DNS))
-    dnsmasq -.->|resolved IPs| ipset[(ipset bypass)]
+    forwarder -.->|matched IPs| ipset[(ipset bypass)]
 
     Client -->|TCP / UDP| iptables{iptables PREROUTING}
     iptables -->|match ipset| proxy[Transparent Proxy :1080]
@@ -41,10 +41,7 @@ opkg install netshunt_x.x.x_aarch64.ipk
 # Run the interactive setup wizard
 netshunt setup
 
-# Add domains
-netshunt add example.com netflix.com
-
-# Open the web UI at http://<router-ip>:8080
+# Open the web UI at http://<router-ip>:8765 to add domains
 ```
 
 ## Requirements
@@ -53,7 +50,7 @@ netshunt add example.com netflix.com
 - A transparent proxy listening on a local port (e.g. Shadowsocks, xray, sing-box, Hysteria 2)
 - SSH access to the router
 
-System dependencies (`ipset`, `iptables`, `ip-full`, `dnsmasq-full`, `dnscrypt-proxy2`) are installed automatically as opkg dependencies.
+System dependencies (`ipset`, `iptables`, `ip-full`, `dnscrypt-proxy2`) are installed automatically as opkg dependencies.
 
 ## Building from Source
 

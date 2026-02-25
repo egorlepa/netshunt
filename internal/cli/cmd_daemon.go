@@ -19,9 +19,9 @@ func newDaemonCmd() *cobra.Command {
 				return err
 			}
 
-			logger := platform.NewLogger(cfg.Daemon.LogLevel)
+			logger, logBuf := platform.NewLogger(cfg.Daemon.LogLevel)
 			shunts := shunt.NewDefaultStore()
-			d := daemon.New(cfg, shunts, logger, version)
+			d := daemon.New(cfg, shunts, logger, logBuf, version)
 			return d.Run(cmd.Context())
 		},
 	}

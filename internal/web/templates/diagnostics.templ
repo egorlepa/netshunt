@@ -1,6 +1,9 @@
 package templates
 
-import "github.com/egorlepa/netshunt/internal/healthcheck"
+import (
+	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/platform"
+)
 
 templ DiagnosticsPage() {
 	@Layout("Diagnostics", "diagnostics") {
@@ -10,14 +13,14 @@ templ DiagnosticsPage() {
 				<h2>Health Checks</h2>
 				<button class="btn btn-sm btn-accent" hx-get="/diagnostics/run" hx-target="#check-results" hx-swap="innerHTML">
 					Run Checks
-					<span class="htmx-indicator">...</span>
+					<span class="htmx-indicator"><span class="spinner"></span></span>
 				</button>
 			</div>
 			<div id="check-results" hx-get="/diagnostics/run" hx-trigger="load" hx-swap="innerHTML">
 				<p class="text-muted text-sm">Running checks...</p>
 			</div>
 		</div>
-		<div class="card">
+		<div class="card mb-16">
 			<h2 class="mb-8">Domain Probe</h2>
 			<p class="text-muted text-sm mb-8">Test if a domain resolves and its IPs are in the ipset.</p>
 			<form
@@ -29,12 +32,55 @@ templ DiagnosticsPage() {
 				<input type="text" name="domain" value="ifconfig.me" placeholder="example.com" required/>
 				<button class="btn btn-accent" type="submit">
 					Test
-					<span class="htmx-indicator">...</span>
+					<span class="htmx-indicator"><span class="spinner"></span></span>
 				</button>
 			</form>
 			<div id="probe-results" class="mt-8" hx-post="/diagnostics/probe" hx-trigger="load" hx-swap="innerHTML" hx-vals='{"domain":"ifconfig.me"}'>
 				<p class="text-muted text-sm">Running probe...</p>
 			</div>
+		</div>
+		<div class="card mb-16">
+			<h2 class="mb-8">Maintenance</h2>
+			<div class="flex gap-8">
+				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
+					Force Reconcile
+					<span class="htmx-indicator"><span class="spinner"></span></span>
+				</button>
+				<button class="btn btn-accent" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnscrypt-proxy?">
+					Restart dnscrypt-proxy
+					<span class="htmx-indicator"><span class="spinner"></span></span>
+				</button>
+			</div>
+		</div>
+		<div class="card">
+			<div class="flex-between mb-8">
+				<h2>Logs</h2>
+				<button class="btn btn-sm" hx-get="/diagnostics/logs" hx-target="#log-lines" hx-swap="innerHTML">
+					Refresh
+				</button>
+			</div>
+			<div id="log-lines" hx-get="/diagnostics/logs" hx-trigger="load" hx-swap="innerHTML">
+				<p class="text-muted text-sm">Loading logs...</p>
+			</div>
+		</div>
+	}
+}
+
+templ DiagnosticsLogs(entries []platform.LogEntry) {
+	if len(entries) == 0 {
+		<p class="text-muted text-sm">No log entries.</p>
+	} else {
+		<div class="log-viewer">
+			for _, e := range entries {
+				<div class="log-line">
+					<span class="log-time">{ e.Time.Format("15:04:05") }</span>
+					<span class={ logLevelClass(e.Level) }>{ e.Level }</span>
+					<span class="log-msg">{ e.Msg }</span>
+					if e.Attrs != "" {
+						<span class="log-attrs">{ e.Attrs }</span>
+					}
+				</div>
+			}
 		</div>
 	}
 }

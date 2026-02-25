@@ -73,7 +73,7 @@ func newSetupCmd() *cobra.Command {
 				printPass("TPROXY: available")
 			}
 
-			// 2. Check dns-override (Keenetic must delegate DNS to Entware dnsmasq).
+			// 2. Check dns-override (Keenetic must delegate DNS to Entware).
 			rci := router.NewClient()
 			dnsOverride, err := rci.IsDNSOverrideEnabled(ctx)
 			if err != nil {
@@ -116,7 +116,7 @@ func newSetupCmd() *cobra.Command {
 
 			// 5. DNS configuration (informational).
 			fmt.Println("DNS configuration:")
-			fmt.Printf("  DNS queries: dnsmasq -> dnscrypt-proxy (:%d) -> encrypted upstream\n", cfg.DNSCrypt.Port)
+			fmt.Printf("  DNS queries: netshunt forwarder -> dnscrypt-proxy (:%d) -> encrypted upstream\n", cfg.DNSCrypt.Port)
 			fmt.Println()
 
 			// 6. Network interface.
@@ -141,20 +141,7 @@ func newSetupCmd() *cobra.Command {
 				printPass("dnscrypt-proxy: running")
 			}
 
-			// 9. Generate dnsmasq.conf and start dnsmasq.
-			if err := deploy.WriteDnsmasqConf(cfg); err != nil {
-				return fmt.Errorf("write dnsmasq.conf: %w", err)
-			}
-			printPass(fmt.Sprintf("dnsmasq.conf: written to %s", platform.DnsmasqConfFile))
-
-			if err := service.Dnsmasq.Restart(ctx); err != nil {
-				printFail(fmt.Sprintf("dnsmasq: %v", err))
-				fmt.Println("      Ensure dns-override is enabled, then: /opt/etc/init.d/S56dnsmasq start")
-			} else {
-				printPass("dnsmasq: running")
-			}
-
-			// 10. Install NDM hooks.
+			// 9. Install NDM hooks.
 			n, err := deploy.InstallNDMHooks()
 			if err != nil {
 				printFail(fmt.Sprintf("NDM hooks: %v", err))
@@ -224,7 +211,6 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Printf("  Web UI: http://%s%s\n", interfaceIP(cfg.Network.EntwareInterface), cfg.Daemon.WebListen)
-			fmt.Println("  CLI:    netshunt add <domain>")
 
 			return nil
 		},

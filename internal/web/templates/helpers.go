@@ -39,3 +39,14 @@ func sortedEntries(entries []shunt.Entry) []shunt.Entry {
 func faviconDataURI() string {
 	return ""
 }
+
+func logLevelClass(level string) string {
+	switch level {
+	case "ERROR":
+		return "log-level text-red"
+	case "WARN":
+		return "log-level text-yellow"
+	default:
+		return "log-level text-muted"
+	}
+}

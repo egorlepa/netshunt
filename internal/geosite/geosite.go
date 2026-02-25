@@ -120,21 +120,32 @@ func ListCategories(db *Database) []CategoryInfo {
 	return infos
 }
 
-// ExtractDomains returns domain strings for a category, filtered to only
-// RootDomain and Full types (the types netshunt can use).
-func ExtractDomains(db *Database, category string) ([]string, error) {
+// ExtractEntries returns domain strings with prefixes for all 4 domain types.
+// Each entry uses xray-style prefix notation:
+//   - DomainRoot  → "domain:value"
+//   - DomainFull  → "full:value"
+//   - DomainPlain → "keyword:value"
+//   - DomainRegex → "regexp:value"
+func ExtractEntries(db *Database, category string) ([]string, error) {
 	category = strings.ToLower(category)
 	for _, c := range db.Categories {
 		if strings.ToLower(c.Code) != category {
 			continue
 		}
-		var domains []string
+		var entries []string
 		for _, d := range c.Domains {
-			if d.Type == DomainRoot || d.Type == DomainFull {
-				domains = append(domains, d.Value)
+			switch d.Type {
+			case DomainRoot:
+				entries = append(entries, "domain:"+d.Value)
+			case DomainFull:
+				entries = append(entries, "full:"+d.Value)
+			case DomainPlain:
+				entries = append(entries, "keyword:"+d.Value)
+			case DomainRegex:
+				entries = append(entries, "regexp:"+d.Value)
 			}
 		}
-		return domains, nil
+		return entries, nil
 	}
 	return nil, fmt.Errorf("category %q not found", category)
 }

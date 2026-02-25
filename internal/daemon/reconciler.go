@@ -4,49 +4,55 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/routing"
-	"github.com/egorlepa/netshunt/internal/service"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
-// DNS resolution is intentionally absent from the reconciler.
-// dnsmasq's ipset= directive populates the bypass set on every DNS query in real-time,
-// which is both correct and sufficient — a TCP connection cannot precede its DNS lookup.
-// Direct IP/CIDR entries are added to ipset directly by populateIPSet.
-
-// Reconciler performs the full state reconciliation:
-//  1. Load all enabled entries from all enabled shunts
-//  2. Generate dnsmasq ipset config from domain entries
-//  3. Add direct IP/CIDR entries to ipset (with TTL)
-//  4. Verify/install iptables rules
-//  5. Reload dnsmasq if config changed
+// Reconciler performs state reconciliation between shunt entries, the DNS
+// forwarder matcher, the kernel ipset, and iptables rules.
+//
+// Full reconcile: flush ipset, reload matcher, repopulate IP/CIDR entries,
+// setup iptables. DNS-resolved IPs repopulate naturally as queries flow in.
+//
+// Mutation reconcile: update matcher (diff removed domains via tracker),
+// ensure ipset table, populate IP/CIDRs.
 type Reconciler struct {
-	Config  *config.Config
-	Shunts  *shunt.Store
-	IPSet   *netfilter.IPSet
-	Dnsmasq *dns.DnsmasqConfig
-	Mode    routing.Mode
-	Logger  *slog.Logger
+	mu        sync.Mutex
+	Config    *config.Config
+	Shunts    *shunt.Store
+	IPSet     *netfilter.IPSet
+	Forwarder *dns.Forwarder
+	Mode      routing.Mode
+	Logger    *slog.Logger
+
+	// lastDomains tracks the domain entries from the previous mutation
+	// reconcile so we can detect removals.
+	lastDomains map[string]struct{}
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
-func NewReconciler(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger) *Reconciler {
+func NewReconciler(cfg *config.Config, shunts *shunt.Store, forwarder *dns.Forwarder, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
-		Config:  cfg,
-		Shunts:  shunts,
-		IPSet:   netfilter.NewIPSet(cfg.IPSet.TableName),
-		Dnsmasq: dns.NewDnsmasqConfig(cfg.IPSet.TableName),
-		Mode:    routing.New(cfg, logger),
-		Logger:  logger,
+		Config:      cfg,
+		Shunts:      shunts,
+		IPSet:       netfilter.NewIPSet(cfg.IPSet.TableName),
+		Forwarder:   forwarder,
+		Mode:        routing.New(cfg, logger),
+		Logger:      logger,
+		lastDomains: make(map[string]struct{}),
 	}
 }
 
 // Reconcile performs a full state reconciliation.
 func (r *Reconciler) Reconcile(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.Logger.Info("starting full reconcile")
 
 	// 1. Load all enabled entries.
@@ -56,28 +62,23 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 	r.Logger.Info("loaded entries", "count", len(entries))
 
-	// 2. Generate dnsmasq ipset config.
-	changed, err := r.Dnsmasq.GenerateIPSetConfig(entries)
-	if err != nil {
-		return fmt.Errorf("generate dnsmasq config: %w", err)
-	}
-	if changed {
-		r.Logger.Info("dnsmasq config updated, reloading")
-		if err := service.Dnsmasq.Restart(ctx); err != nil {
-			r.Logger.Warn("failed to restart dnsmasq", "error", err)
-		}
-	}
+	// 2. Update forwarder matcher with domain entries.
+	r.Forwarder.UpdateMatcher(entries)
+	r.lastDomains = domainSet(entries)
 
 	// 3. Ensure ipset table exists.
 	if err := r.IPSet.EnsureTable(ctx); err != nil {
 		return fmt.Errorf("ensure ipset table: %w", err)
 	}
 
-	// 4. Populate ipset with direct IP/CIDR entries.
+	// 4. Flush ipset — full reconcile clears stale state.
+	// DNS-resolved IPs will repopulate as queries flow through the forwarder.
+	r.Forwarder.TrackerRef().Flush(ctx)
+
+	// 5. Populate ipset with direct IP/CIDR entries.
 	r.populateIPSet(ctx, entries)
 
-	// 5. Teardown then re-setup iptables rules. Teardown first ensures stale
-	// rules (e.g. from a changed port) don't interfere.
+	// 6. Teardown then re-setup iptables rules.
 	_ = r.Mode.TeardownRules(ctx)
 	if err := r.Mode.SetupRules(ctx); err != nil {
 		return fmt.Errorf("setup iptables rules: %w", err)
@@ -87,24 +88,29 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// ApplyMutation updates dnsmasq config and adds IPs to ipset after a shunt mutation
-// (add/remove entry, enable/disable shunt). Never flushes ipset. Does not touch iptables.
+// ApplyMutation updates the matcher and ipset after a shunt change.
+// It diffs the domain list against the previous snapshot and removes
+// stale domains from the tracker. Never flushes ipset or touches iptables.
 func (r *Reconciler) ApplyMutation(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	entries, err := r.Shunts.EnabledEntries()
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
 	}
 
-	changed, err := r.Dnsmasq.GenerateIPSetConfig(entries)
-	if err != nil {
-		return fmt.Errorf("generate dnsmasq config: %w", err)
-	}
-	if changed {
-		r.Logger.Info("dnsmasq config updated, reloading")
-		if err := service.Dnsmasq.Restart(ctx); err != nil {
-			r.Logger.Warn("failed to restart dnsmasq", "error", err)
+	// Build new domain set and detect removals.
+	newDomains := domainSet(entries)
+	for domain := range r.lastDomains {
+		if _, ok := newDomains[domain]; !ok {
+			r.Forwarder.TrackerRef().RemoveDomain(ctx, domain)
 		}
 	}
+
+	// Update matcher and snapshot.
+	r.Forwarder.UpdateMatcher(entries)
+	r.lastDomains = newDomains
 
 	if err := r.IPSet.EnsureTable(ctx); err != nil {
 		return fmt.Errorf("ensure ipset table: %w", err)
@@ -114,7 +120,7 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 }
 
 // populateIPSet adds direct IP/CIDR entries to ipset.
-// Domain entries are handled by dnsmasq via ipset= directives at DNS query time.
+// Domain entries are handled by the DNS forwarder at query time.
 func (r *Reconciler) populateIPSet(ctx context.Context, entries []shunt.Entry) {
 	for _, e := range entries {
 		switch e.Type() {
@@ -124,4 +130,14 @@ func (r *Reconciler) populateIPSet(ctx context.Context, entries []shunt.Entry) {
 			}
 		}
 	}
+}
+
+func domainSet(entries []shunt.Entry) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, e := range entries {
+		if e.IsDomain() {
+			set[e.DomainValue()] = struct{}{}
+		}
+	}
+	return set
 }

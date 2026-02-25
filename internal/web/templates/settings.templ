@@ -21,19 +21,12 @@ templ SettingsPage(cfg *config.Config) {
 				<div class="card">
 					<h2>DNS</h2>
 					<div class="mb-8">
+						<label class="text-muted text-sm">Forwarder Listen Address</label>
+						<input type="text" name="dns_listen_addr" value={ cfg.DNS.ListenAddr }/>
+					</div>
+					<div class="mb-8">
 						<label class="text-muted text-sm">dnscrypt-proxy Port</label>
 						<input type="number" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) } min="1" max="65535"/>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">DNS Cache</label>
-						<label class="toggle" style="margin-top:6px">
-							<input type="checkbox" name="dns_cache_enabled" if cfg.DNS.CacheEnabled { checked }/>
-							<span class="slider"></span>
-						</label>
-					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Cache Size</label>
-						<input type="number" name="dns_cache_size" value={ itoa(cfg.DNS.CacheSize) } min="0" max="100000"/>
 					</div>
 				</div>
 				<div class="card">
@@ -66,7 +59,7 @@ templ SettingsPage(cfg *config.Config) {
 			</div>
 			<button class="btn btn-accent" type="submit">
 				Save &amp; Apply
-				<span class="htmx-indicator">...</span>
+				<span class="htmx-indicator"><span class="spinner"></span></span>
 			</button>
 		</form>
 	}

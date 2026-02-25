@@ -167,12 +167,21 @@ func TestEntryType(t *testing.T) {
 		value string
 		want  shunt.EntryType
 	}{
-		{"youtube.com", shunt.EntryDomain},
+		// Bare domains → suffix match.
+		{"youtube.com", shunt.EntryDomainSuffix},
+		{"sub.domain.example.com", shunt.EntryDomainSuffix},
+
+		// Prefixed domains.
+		{"domain:example.com", shunt.EntryDomainSuffix},
+		{"full:example.com", shunt.EntryDomainFull},
+		{"keyword:tube", shunt.EntryDomainKeyword},
+		{"regexp:^.+\\.google\\.", shunt.EntryDomainRegexp},
+
+		// IPs and CIDRs.
 		{"1.2.3.4", shunt.EntryIP},
 		{"10.0.0.0/8", shunt.EntryCIDR},
 		{"2001:db8::/32", shunt.EntryCIDR},
 		{"::1", shunt.EntryIP},
-		{"sub.domain.example.com", shunt.EntryDomain},
 	}
 
 	for _, tt := range tests {
@@ -180,6 +189,74 @@ func TestEntryType(t *testing.T) {
 		if got := e.Type(); got != tt.want {
 			t.Errorf("Entry(%q).Type() = %d, want %d", tt.value, got, tt.want)
 		}
+	}
+}
+
+func TestIsDomain(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"youtube.com", true},
+		{"domain:example.com", true},
+		{"full:example.com", true},
+		{"keyword:tube", true},
+		{"regexp:^.+\\.google\\.", true},
+		{"1.2.3.4", false},
+		{"10.0.0.0/8", false},
+	}
+
+	for _, tt := range tests {
+		e := shunt.Entry{Value: tt.value}
+		if got := e.IsDomain(); got != tt.want {
+			t.Errorf("Entry(%q).IsDomain() = %v, want %v", tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestDomainValue(t *testing.T) {
+	tests := []struct {
+		value string
+		want  string
+	}{
+		{"youtube.com", "youtube.com"},
+		{"domain:example.com", "example.com"},
+		{"full:fast.com", "fast.com"},
+		{"keyword:tube", "tube"},
+		{"regexp:^.+\\.google\\.", "^.+\\.google\\."},
+		{"1.2.3.4", "1.2.3.4"},
+	}
+
+	for _, tt := range tests {
+		e := shunt.Entry{Value: tt.value}
+		if got := e.DomainValue(); got != tt.want {
+			t.Errorf("Entry(%q).DomainValue() = %q, want %q", tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeEntry(t *testing.T) {
+	s := tempStore(t)
+	_ = s.Create(shunt.Shunt{Name: "Test", Enabled: true})
+
+	// Prefixed entries should normalize correctly.
+	_ = s.AddEntry("Test", "domain:Example.COM")
+	sh, _ := s.Get("Test")
+	if sh.Entries[0].Value != "domain:example.com" {
+		t.Errorf("expected domain:example.com, got %q", sh.Entries[0].Value)
+	}
+
+	// keyword and regexp preserve their value as-is (no lowering).
+	_ = s.AddEntry("Test", "keyword:Tube")
+	sh, _ = s.Get("Test")
+	if sh.Entries[1].Value != "keyword:Tube" {
+		t.Errorf("expected keyword:Tube, got %q", sh.Entries[1].Value)
+	}
+
+	_ = s.AddEntry("Test", "regexp:^.+\\.Google\\.")
+	sh, _ = s.Get("Test")
+	if sh.Entries[2].Value != "regexp:^.+\\.Google\\." {
+		t.Errorf("expected regexp:^.+\\.Google\\., got %q", sh.Entries[2].Value)
 	}
 }
 

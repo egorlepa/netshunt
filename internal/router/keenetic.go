@@ -140,7 +140,7 @@ func (c *Client) IsDNSOverrideEnabled(ctx context.Context) (bool, error) {
 	return strings.TrimSpace(string(body)) == "true", nil
 }
 
-// EnableDNSOverride enables opkg dns-override so Entware dnsmasq can take over port 53.
+// EnableDNSOverride enables opkg dns-override so Entware can take over port 53.
 // Equivalent to: opkg dns-override && system configuration save
 func (c *Client) EnableDNSOverride(ctx context.Context) error {
 	if err := c.rciPost(ctx, map[string]any{

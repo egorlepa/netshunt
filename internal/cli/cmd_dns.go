@@ -25,7 +25,7 @@ func newDNSCmd() *cobra.Command {
 func newDNSTestCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "test [domain]",
-		Short: "Test DNS resolution via local dnsmasq",
+		Short: "Test DNS resolution via local forwarder",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			domain := "example.com"
@@ -34,7 +34,7 @@ func newDNSTestCmd() *cobra.Command {
 			}
 
 			resolver := intdns.NewResolver("127.0.0.1")
-			fmt.Printf("Resolving %s via 127.0.0.1 (dnsmasq)...\n", domain)
+			fmt.Printf("Resolving %s via 127.0.0.1 (forwarder)...\n", domain)
 			ips, err := resolver.ResolveToStrings(cmd.Context(), domain)
 			if err != nil {
 				fmt.Printf("  Error: %v\n", err)

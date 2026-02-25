@@ -27,10 +27,9 @@ type NetworkConfig struct {
 	EntwareInterface string `yaml:"entware_interface"`
 }
 
-// DNSConfig holds DNS cache settings for dnsmasq.
+// DNSConfig holds DNS forwarder settings.
 type DNSConfig struct {
-	CacheEnabled bool `yaml:"cache_enabled"`
-	CacheSize    int  `yaml:"cache_size"`
+	ListenAddr string `yaml:"listen_addr"`
 }
 
 // DNSCryptConfig holds dnscrypt-proxy2 settings.
@@ -57,8 +56,7 @@ func Defaults() Config {
 			LocalPort: 1080,
 		},
 		DNS: DNSConfig{
-			CacheEnabled: true,
-			CacheSize:    1536,
+			ListenAddr: ":53",
 		},
 		DNSCrypt: DNSCryptConfig{
 			Port: 9153,
@@ -67,7 +65,7 @@ func Defaults() Config {
 			TableName: "bypass",
 		},
 		Daemon: DaemonConfig{
-			WebListen: ":8080",
+			WebListen: ":8765",
 			LogLevel:  "info",
 		},
 		ExcludedNetworks: []string{

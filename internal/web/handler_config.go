@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/deploy"
 	"github.com/egorlepa/netshunt/internal/service"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
@@ -39,9 +38,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("dnscrypt_port"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.DNSCrypt.Port)
 	}
-	cfg.DNS.CacheEnabled = r.FormValue("dns_cache_enabled") == "on"
-	if v := r.FormValue("dns_cache_size"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.DNS.CacheSize)
+	if v := r.FormValue("dns_listen_addr"); v != "" {
+		cfg.DNS.ListenAddr = v
 	}
 
 	// IPSet.
@@ -79,20 +77,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Regenerate dnsmasq.conf from updated settings.
-	if err := deploy.WriteDnsmasqConf(cfg); err != nil {
-		s.Logger.Warn("failed to write dnsmasq.conf", "error", err)
-	}
-
 	// Update the server's config reference.
 	*s.Config = *cfg
 
-	// Apply changes: restart services and reconcile routing rules.
-	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt} {
-		if svc.IsInstalled() {
-			if err := svc.Restart(ctx); err != nil {
-				s.Logger.Warn("failed to restart service", "service", svc.Name, "error", err)
-			}
+	// Apply changes: restart dnscrypt-proxy and reconcile routing rules.
+	if service.DNSCrypt.IsInstalled() {
+		if err := service.DNSCrypt.Restart(ctx); err != nil {
+			s.Logger.Warn("failed to restart dnscrypt-proxy", "error", err)
 		}
 	}
 	if err := s.Reconciler.Reconcile(ctx); err != nil {
@@ -119,11 +110,9 @@ func (s *Server) handleActionReconcile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleActionRestart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	for _, svc := range []service.Service{service.Dnsmasq, service.DNSCrypt} {
-		if svc.IsInstalled() {
-			if err := svc.Restart(ctx); err != nil {
-				s.Logger.Warn("failed to restart service", "service", svc.Name, "error", err)
-			}
+	if service.DNSCrypt.IsInstalled() {
+		if err := service.DNSCrypt.Restart(ctx); err != nil {
+			s.Logger.Warn("failed to restart dnscrypt-proxy", "error", err)
 		}
 	}
 

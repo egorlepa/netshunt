@@ -13,6 +13,10 @@ func (s *Server) handleDiagnosticsPage(w http.ResponseWriter, r *http.Request) {
 	templates.DiagnosticsPage().Render(r.Context(), w)
 }
 
+func (s *Server) handleDiagnosticsLogs(w http.ResponseWriter, r *http.Request) {
+	templates.DiagnosticsLogs(s.Logs.Entries()).Render(r.Context(), w)
+}
+
 func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 	results := healthcheck.RunChecks(r.Context(), s.Config, s.Shunts)
 	templates.DiagnosticsResults(results).Render(r.Context(), w)
@@ -27,7 +31,7 @@ func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Ensure the domain is in a shunt so it resolves through the pipeline.
-	// Run reconcile synchronously so dnsmasq has the config before we probe.
+	// Run mutation so the forwarder matcher is updated before we probe.
 	_ = s.Shunts.EnsureDefaultShunt()
 	if err := s.Shunts.AddEntry(shunt.DefaultShuntName, domain); err == nil {
 		_ = s.Reconciler.ApplyMutation(r.Context())

@@ -3,14 +3,15 @@ package cli
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/daemon"
-	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/routing"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newHookCmd() *cobra.Command {
@@ -67,14 +68,13 @@ func newHookNetfilterCmd() *cobra.Command {
 				return err
 			}
 			logger := hookLogger()
-			shunts := shunt.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, shunts, logger)
-			return r.Mode.SetupRules(cmd.Context())
+			mode := routing.New(cfg, logger)
+			return mode.SetupRules(cmd.Context())
 		},
 	}
 }
 
-// hook dns-local — redirect all DNS (port 53) traffic to local dnsmasq.
+// hook dns-local — redirect all DNS (port 53) traffic to local DNS forwarder.
 func newHookDNSLocalCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "dns-local <type> <table>",
@@ -99,7 +99,7 @@ func newHookDNSLocalCmd() *cobra.Command {
 				return nil
 			}
 
-			// Redirect UDP and TCP port 53 to local dnsmasq.
+			// Redirect UDP and TCP port 53 to local DNS forwarder.
 			if err := ipt.AppendRule(ctx, "nat", "PREROUTING",
 				"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
 				return fmt.Errorf("dns dnat udp: %w", err)
@@ -128,8 +128,6 @@ func newHookIfstateCmd() *cobra.Command {
 			}
 
 			// NDM passes the Linux system name as --system-name (or SYSTEM_NAME env).
-			// EntwareInterface is stored as the Linux name (e.g., "br0"), not the
-			// Keenetic logical ID (e.g., "Bridge0") that --id carries.
 			name := systemName
 			if name == "" {
 				name = os.Getenv("SYSTEM_NAME")
@@ -143,17 +141,16 @@ func newHookIfstateCmd() *cobra.Command {
 			}
 
 			logger := hookLogger()
-			shunts := shunt.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, shunts, logger)
+			mode := routing.New(cfg, logger)
 
 			if connected == "yes" && link == "up" {
 				logger.Info("interface up, setting up rules", "system-name", name)
-				return r.Mode.SetupRules(cmd.Context())
+				return mode.SetupRules(cmd.Context())
 			}
 
 			if link == "down" {
 				logger.Info("interface down, tearing down rules", "system-name", name)
-				return r.Mode.TeardownRules(cmd.Context())
+				return mode.TeardownRules(cmd.Context())
 			}
 
 			_ = up // available for future use
@@ -169,7 +166,8 @@ func newHookIfstateCmd() *cobra.Command {
 	return cmd
 }
 
-// hook wan — WAN connectivity event.
+// hook wan — WAN connectivity event. Delegates reconcile to the daemon via
+// HTTP API. Falls back to ipset/iptables-only setup if daemon is not running.
 func newHookWanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "wan <start|stop>",
@@ -184,16 +182,44 @@ func newHookWanCmd() *cobra.Command {
 				return nil
 			}
 
-			// On WAN up, do a full reconcile.
 			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
+
+			// Try to delegate reconcile to the running daemon.
+			apiURL := fmt.Sprintf("http://127.0.0.1%s/api/reconcile", cfg.Daemon.WebListen)
+			resp, err := http.Post(apiURL, "", nil)
+			if err == nil {
+				resp.Body.Close()
+				return nil
+			}
+
+			// Daemon not running — best-effort: ensure ipset + iptables only.
 			logger := hookLogger()
+			logger.Warn("daemon not running, falling back to ipset/iptables only")
+
+			ctx := cmd.Context()
+			ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+			if err := ipset.EnsureTable(ctx); err != nil {
+				return err
+			}
+
+			// Populate direct IP/CIDR entries.
 			shunts := shunt.NewDefaultStore()
-			r := daemon.NewReconciler(cfg, shunts, logger)
-			return r.Reconcile(cmd.Context())
+			entries, err := shunts.EnabledEntries()
+			if err != nil {
+				return err
+			}
+			for _, e := range entries {
+				switch e.Type() {
+				case shunt.EntryIP, shunt.EntryCIDR:
+					_ = ipset.Add(ctx, e.Value)
+				}
+			}
+
+			mode := routing.New(cfg, logger)
+			return mode.SetupRules(ctx)
 		},
 	}
 }
-

@@ -3,14 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newTestCmd() *cobra.Command {
@@ -36,9 +37,9 @@ func newTestCmd() *cobra.Command {
 				probeDomain = domain
 			}
 
-			// Ensure the probe domain is in a shunt so it resolves through the pipeline.
+			// Ensure the probe domain is in a shunt via the daemon API.
 			_ = store.EnsureDefaultShunt()
-			ensureDomainInShunt(ctx, probeDomain)
+			ensureDomainInShunt(cfg, probeDomain)
 
 			fmt.Println()
 			if !printDomainProbe(ctx, cfg, probeDomain) {
@@ -56,19 +57,27 @@ func newTestCmd() *cobra.Command {
 	return cmd
 }
 
-// ensureDomainInShunt adds a domain to the default shunt via the daemon API
-// and waits for reconcile so dnsmasq has the config before probing.
-// Silently ignores 409 (already exists).
-func ensureDomainInShunt(ctx context.Context, domain string) {
-	if err := daemonAddEntry(ctx, shunt.DefaultShuntName, domain); err != nil {
-		msg := err.Error()
-		if !strings.Contains(msg, "already exists") && !strings.Contains(msg, "409") {
-			printWarn(fmt.Sprintf("could not add %s to default shunt: %v", domain, err))
-		}
+// ensureDomainInShunt adds a domain to the default shunt via the daemon HTTP
+// API and triggers a reconcile. Silently ignores errors (daemon may not be running).
+func ensureDomainInShunt(cfg *config.Config, domain string) {
+	base := fmt.Sprintf("http://127.0.0.1%s", cfg.Daemon.WebListen)
+
+	// Add entry.
+	resp, err := http.PostForm(base+"/api/entries", url.Values{
+		"shunt": {shunt.DefaultShuntName},
+		"value": {domain},
+	})
+	if err != nil {
+		printWarn(fmt.Sprintf("could not add %s to default shunt (daemon not running?)", domain))
 		return
 	}
-	// Wait for reconcile so dnsmasq picks up the new domain before we probe.
-	_ = daemonReconcile(ctx)
+	resp.Body.Close()
+
+	// Trigger reconcile.
+	resp, err = http.Post(base+"/api/reconcile", "", nil)
+	if err == nil {
+		resp.Body.Close()
+	}
 }
 
 // PrintResults prints health check results with colored output and returns true if all passed.

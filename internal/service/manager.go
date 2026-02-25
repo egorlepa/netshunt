@@ -19,7 +19,6 @@ type Service struct {
 
 // Common services on Keenetic with Entware.
 var (
-	Dnsmasq  = Service{Name: "dnsmasq", InitScript: "/opt/etc/init.d/S56dnsmasq", PidFile: platform.DnsmasqPidFile}
 	DNSCrypt = Service{Name: "dnscrypt-proxy", InitScript: "/opt/etc/init.d/S09dnscrypt-proxy2"}
 	Daemon   = Service{Name: "netshunt-daemon", InitScript: platform.InitScript, PidFile: platform.PidFile}
 )

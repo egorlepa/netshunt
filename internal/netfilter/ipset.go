@@ -3,17 +3,10 @@ package netfilter
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/egorlepa/netshunt/internal/platform"
 )
-
-// entryTimeout is the TTL for ipset entries in seconds.
-// dnsmasq re-adds IPs on every DNS query (refreshing TTL).
-// IP/CIDR entries are re-added by the daemon periodically.
-// Entries for removed domains expire naturally after this interval.
-const entryTimeout = 86400 // 24 hours
 
 // IPSet manages an ipset hash:net table.
 type IPSet struct {
@@ -25,34 +18,13 @@ func NewIPSet(name string) *IPSet {
 	return &IPSet{Name: name}
 }
 
-// EnsureTable creates the ipset table with timeout support if it doesn't exist.
-// If the table exists without timeout support, it is destroyed and recreated.
+// EnsureTable creates the ipset table if it doesn't exist.
 func (s *IPSet) EnsureTable(ctx context.Context) error {
-	out, err := platform.Run(ctx, "ipset", "list", s.Name)
+	_, err := platform.Run(ctx, "ipset", "list", s.Name)
 	if err == nil {
-		// Table exists — check if it has timeout support.
-		for _, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "Header:") && strings.Contains(line, "timeout") {
-				return nil // already good
-			}
-		}
-		// Exists without timeout — upgrade via swap to avoid "set in use" errors.
-		// iptables holds a reference by name; swapping keeps the name intact.
-		tmp := s.Name + "_tmp"
-		platform.RunSilent(ctx, "ipset", "destroy", tmp) // clean up any leftover
-		if err := platform.RunSilent(ctx, "ipset", "create", tmp, "hash:net",
-			"timeout", strconv.Itoa(entryTimeout)); err != nil {
-			return fmt.Errorf("create temporary ipset: %w", err)
-		}
-		if err := platform.RunSilent(ctx, "ipset", "swap", s.Name, tmp); err != nil {
-			platform.RunSilent(ctx, "ipset", "destroy", tmp)
-			return fmt.Errorf("swap ipset to add timeout support: %w", err)
-		}
-		platform.RunSilent(ctx, "ipset", "destroy", tmp) // old set, now safely unreferenced
-		return nil
+		return nil // already exists
 	}
-	return platform.RunSilent(ctx, "ipset", "create", s.Name, "hash:net",
-		"timeout", strconv.Itoa(entryTimeout))
+	return platform.RunSilent(ctx, "ipset", "create", s.Name, "hash:net")
 }
 
 // Flush removes all entries from the table.
@@ -60,11 +32,9 @@ func (s *IPSet) Flush(ctx context.Context) error {
 	return platform.RunSilent(ctx, "ipset", "flush", s.Name)
 }
 
-// Add adds an IP or CIDR to the table as a permanent entry (timeout 0).
-// The set's default timeout applies only to entries added by dnsmasq.
+// Add adds an IP or CIDR to the table.
 func (s *IPSet) Add(ctx context.Context, entry string) error {
-	return platform.RunSilent(ctx, "ipset", "add", s.Name, entry,
-		"timeout", "0", "-exist")
+	return platform.RunSilent(ctx, "ipset", "add", s.Name, entry, "-exist")
 }
 
 // Del removes an IP or CIDR from the table.
