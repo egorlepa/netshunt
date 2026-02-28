@@ -178,13 +178,50 @@ func checkIPTables(ctx context.Context, cfg *config.Config) Result {
 	r := Result{Name: "iptables"}
 	ipt := netfilter.NewIPTables()
 
-	chain, table := "NSHUNT", "nat"
-	exists, _ := ipt.ChainExists(ctx, table, chain)
-	if exists {
-		r.Passed = true
-		r.Detail = fmt.Sprintf("%s chain in %s table", chain, table)
+	port := fmt.Sprintf("%d", cfg.Routing.LocalPort)
+	ipsetName := cfg.IPSet.TableName
+	iface := cfg.Network.EntwareInterface
+
+	var missing []string
+
+	// NSHUNT chain must exist.
+	if exists, _ := ipt.ChainExists(ctx, "nat", "NSHUNT"); !exists {
+		missing = append(missing, "NSHUNT chain")
+	}
+
+	// TCP redirect rule inside NSHUNT.
+	if !ipt.RuleExists(ctx, "nat", "NSHUNT", "-p", "tcp",
+		"-m", "set", "--match-set", ipsetName, "dst",
+		"-j", "REDIRECT", "--to-port", port) {
+		missing = append(missing, "tcp redirect")
+	}
+
+	// PREROUTING → NSHUNT jump.
+	if iface != "" {
+		if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-i", iface, "-j", "NSHUNT") {
+			missing = append(missing, "prerouting jump")
+		}
 	} else {
-		r.Detail = fmt.Sprintf("%s chain missing in %s table", chain, table)
+		if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-j", "NSHUNT") {
+			missing = append(missing, "prerouting jump")
+		}
+	}
+
+	// DNS DNAT rule (port 53 → local forwarder).
+	dnsIface := iface
+	if dnsIface == "" {
+		dnsIface = "br0"
+	}
+	if !ipt.RuleExists(ctx, "nat", "PREROUTING",
+		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1") {
+		missing = append(missing, "dns dnat")
+	}
+
+	if len(missing) == 0 {
+		r.Passed = true
+		r.Detail = "all rules present"
+	} else {
+		r.Detail = fmt.Sprintf("missing: %s", strings.Join(missing, ", "))
 	}
 	return r
 }

@@ -72,12 +72,12 @@ templ DiagnosticsLogs(entries []platform.LogEntry) {
 	} else {
 		<div class="log-viewer">
 			for _, e := range entries {
-				<div class="log-line">
+				<div class="log-line" onclick="this.classList.toggle('expanded')">
 					<span class="log-time">{ e.Time.Format("15:04:05") }</span>
 					<span class={ logLevelClass(e.Level) }>{ e.Level }</span>
-					<span class="log-msg">{ e.Msg }</span>
+					<span class="log-msg" title={ e.Msg }>{ e.Msg }</span>
 					if e.Attrs != "" {
-						<span class="log-attrs">{ e.Attrs }</span>
+						<span class="log-attrs" title={ e.Attrs }>{ e.Attrs }</span>
 					}
 				</div>
 			}
