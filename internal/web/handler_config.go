@@ -64,6 +64,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		cfg.ExcludedNetworks = nil
 	}
 
+	// IPv6.
+	cfg.IPv6 = r.FormValue("ipv6") == "on"
+
 	// Daemon.
 	if v := r.FormValue("web_listen"); v != "" {
 		cfg.Daemon.WebListen = v

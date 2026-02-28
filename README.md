@@ -11,7 +11,8 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 - **Web dashboard** — manage shunts, browse geosite categories, view status, adjust settings, run diagnostics
 - **HTTP API** — full API for scripting and automation
 - **Encrypted DNS** — built-in DNS forwarder → dnscrypt-proxy for DoH/DoT upstream resolution
-- **Automatic IP tracking** — DNS forwarder populates ipset in real-time; tracked IPs persist until the domain is removed or the daemon restarts
+- **Automatic IP tracking** — DNS forwarder populates ipset in real-time (both A and AAAA records); tracked IPs persist until the domain is removed or the daemon restarts
+- **Dual-stack IPv4/IPv6** — separate ipset tables and iptables/ip6tables rules for full dual-stack coverage
 - **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP
 - **Keenetic integration** — NDM hooks restore rules on reboots, WAN changes, interface restarts
 - **Proxy-agnostic** — redirects to a local port, any transparent proxy works
@@ -24,9 +25,10 @@ flowchart LR
     Client -->|DNS query| forwarder[netshunt forwarder :53]
     forwarder -->|forward| dnscrypt[dnscrypt-proxy :9153]
     dnscrypt -->|DoH / DoT| upstream((Encrypted Upstream DNS))
-    forwarder -.->|matched IPs| ipset[(ipset bypass)]
+    forwarder -.->|matched IPv4| ipset4[(ipset bypass)]
+    forwarder -.->|matched IPv6| ipset6[(ipset bypass6)]
 
-    Client -->|TCP / UDP| iptables{iptables PREROUTING}
+    Client -->|TCP / UDP| iptables{iptables / ip6tables}
     iptables -->|match ipset| proxy[Transparent Proxy :1080]
     iptables -->|no match| direct((Default Route))
     proxy -->|tunnel| internet((Internet))

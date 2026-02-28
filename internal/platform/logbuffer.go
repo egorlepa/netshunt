@@ -74,7 +74,7 @@ func (h *logBufHandler) Handle(_ context.Context, r slog.Record) error {
 		Time:  r.Time,
 		Level: r.Level.String(),
 		Msg:   r.Message,
-		Attrs: strings.Join(parts, " "),
+		Attrs: strings.Join(parts, "\n"),
 	})
 	return nil
 }

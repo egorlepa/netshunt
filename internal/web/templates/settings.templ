@@ -13,8 +13,22 @@ templ SettingsPage(cfg *config.Config) {
 					<input type="number" name="routing_local_port" value={ itoa(cfg.Routing.LocalPort) } min="1" max="65535"/>
 				</div>
 				<div class="mb-8">
-					<label class="text-muted text-sm">Excluded Networks <span class="text-muted">(one CIDR per line, bypasses tunnel)</span></label>
+					<label class="text-muted text-sm">Excluded Networks <span class="text-muted">(one CIDR per line, IPv4 + IPv6, bypasses tunnel)</span></label>
 					<textarea name="excluded_networks" rows="4" style="width:100%">{ joinLines(cfg.ExcludedNetworks) }</textarea>
+				</div>
+				<div class="flex-between">
+					<div>
+						<label class="text-muted text-sm">IPv6 Routing</label>
+						<div class="text-muted text-sm">Route matched IPv6 traffic through proxy (requires ISP IPv6 support)</div>
+					</div>
+					<label class="toggle">
+						if cfg.IPv6 {
+							<input type="checkbox" name="ipv6" checked/>
+						} else {
+							<input type="checkbox" name="ipv6"/>
+						}
+						<span class="slider"></span>
+					</label>
 				</div>
 			</div>
 			<div class="grid-2 mb-16">

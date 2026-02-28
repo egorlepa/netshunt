@@ -10,20 +10,27 @@ import (
 
 // IPTables manages iptables rules for traffic redirection.
 // All commands use -w to wait for the xtables lock.
-type IPTables struct{}
-
-// NewIPTables creates an IPTables manager.
-func NewIPTables() *IPTables {
-	return &IPTables{}
+type IPTables struct {
+	cmd string // "iptables" or "ip6tables"
 }
 
-func iptables(args ...string) (string, []string) {
-	return "iptables", append([]string{"-w"}, args...)
+// NewIPTables creates an IPTables manager for IPv4.
+func NewIPTables() *IPTables {
+	return &IPTables{cmd: "iptables"}
+}
+
+// NewIP6Tables creates an IPTables manager for IPv6.
+func NewIP6Tables() *IPTables {
+	return &IPTables{cmd: "ip6tables"}
+}
+
+func (ipt *IPTables) iptables(args ...string) (string, []string) {
+	return ipt.cmd, append([]string{"-w"}, args...)
 }
 
 // ChainExists checks if a chain exists in the given table.
 func (ipt *IPTables) ChainExists(ctx context.Context, table, chain string) (bool, error) {
-	cmd, args := iptables("-t", table, "-L", chain, "-n")
+	cmd, args := ipt.iptables("-t", table, "-L", chain, "-n")
 	err := platform.RunSilent(ctx, cmd, args...)
 	return err == nil, nil
 }
@@ -34,7 +41,7 @@ func (ipt *IPTables) CreateChain(ctx context.Context, table, chain string) error
 	if exists {
 		return nil
 	}
-	cmd, args := iptables("-t", table, "-N", chain)
+	cmd, args := ipt.iptables("-t", table, "-N", chain)
 	return platform.RunSilent(ctx, cmd, args...)
 }
 
@@ -44,15 +51,15 @@ func (ipt *IPTables) DeleteChain(ctx context.Context, table, chain string) error
 	if !exists {
 		return nil
 	}
-	cmd, args := iptables("-t", table, "-F", chain)
+	cmd, args := ipt.iptables("-t", table, "-F", chain)
 	_ = platform.RunSilent(ctx, cmd, args...)
-	cmd, args = iptables("-t", table, "-X", chain)
+	cmd, args = ipt.iptables("-t", table, "-X", chain)
 	return platform.RunSilent(ctx, cmd, args...)
 }
 
 // RuleExists checks if a specific rule exists.
 func (ipt *IPTables) RuleExists(ctx context.Context, table string, ruleSpec ...string) bool {
-	cmd, args := iptables(append([]string{"-t", table, "-C"}, ruleSpec...)...)
+	cmd, args := ipt.iptables(append([]string{"-t", table, "-C"}, ruleSpec...)...)
 	return platform.RunSilent(ctx, cmd, args...) == nil
 }
 
@@ -61,7 +68,7 @@ func (ipt *IPTables) AppendRule(ctx context.Context, table string, ruleSpec ...s
 	if ipt.RuleExists(ctx, table, ruleSpec...) {
 		return nil
 	}
-	cmd, args := iptables(append([]string{"-t", table, "-A"}, ruleSpec...)...)
+	cmd, args := ipt.iptables(append([]string{"-t", table, "-A"}, ruleSpec...)...)
 	return platform.RunSilent(ctx, cmd, args...)
 }
 
@@ -70,7 +77,7 @@ func (ipt *IPTables) InsertRule(ctx context.Context, table string, ruleSpec ...s
 	if ipt.RuleExists(ctx, table, ruleSpec...) {
 		return nil
 	}
-	cmd, args := iptables(append([]string{"-t", table, "-I"}, ruleSpec...)...)
+	cmd, args := ipt.iptables(append([]string{"-t", table, "-I"}, ruleSpec...)...)
 	return platform.RunSilent(ctx, cmd, args...)
 }
 
@@ -79,13 +86,13 @@ func (ipt *IPTables) DeleteRule(ctx context.Context, table string, ruleSpec ...s
 	if !ipt.RuleExists(ctx, table, ruleSpec...) {
 		return nil
 	}
-	cmd, args := iptables(append([]string{"-t", table, "-D"}, ruleSpec...)...)
+	cmd, args := ipt.iptables(append([]string{"-t", table, "-D"}, ruleSpec...)...)
 	return platform.RunSilent(ctx, cmd, args...)
 }
 
 // RemoveJumpRules removes all jump rules to the given chain from a parent chain.
 func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, targetChain string) error {
-	cmd, args := iptables("-t", table, "-L", parentChain, "--line-numbers", "-n")
+	cmd, args := ipt.iptables("-t", table, "-L", parentChain, "--line-numbers", "-n")
 	out, err := platform.Run(ctx, cmd, args...)
 	if err != nil {
 		return nil // Parent chain doesn't exist, nothing to do.
@@ -101,7 +108,7 @@ func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, ta
 	}
 
 	for _, num := range lineNums {
-		cmd, args := iptables("-t", table, "-D", parentChain, num)
+		cmd, args := ipt.iptables("-t", table, "-D", parentChain, num)
 		if err := platform.RunSilent(ctx, cmd, args...); err != nil {
 			return fmt.Errorf("delete rule %s from %s: %w", num, parentChain, err)
 		}

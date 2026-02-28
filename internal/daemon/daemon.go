@@ -32,10 +32,14 @@ type Daemon struct {
 
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
 func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) *Daemon {
-	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
-	tracker := dns.NewTracker(ipset, logger)
+	ipset4 := netfilter.NewIPSet(cfg.IPSet.TableName)
+	var ipset6 *netfilter.IPSet
+	if cfg.IPv6 {
+		ipset6 = netfilter.NewIPSet6(cfg.IPSet.TableName + "6")
+	}
+	tracker := dns.NewTracker(ipset4, ipset6, logger)
 	upstream := fmt.Sprintf("127.0.0.1:%d", cfg.DNSCrypt.Port)
-	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, tracker, logger)
+	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, cfg.IPv6, tracker, logger)
 
 	return &Daemon{
 		Config:     cfg,

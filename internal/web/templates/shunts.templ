@@ -159,7 +159,9 @@ templ ShuntCard(s shunt.Shunt) {
 			</div>
 		</div>
 		<div class="entries-section" id={ "entries-" + SlugID(s.Name) } style="display:none">
-			@EntryList(SlugID(s.Name), s.Name, s.Entries, s.Source != "")
+			<div id={ "entry-items-" + SlugID(s.Name) }>
+				@EntryList(SlugID(s.Name), s.Name, s.Entries, s.Source != "")
+			</div>
 			if s.Source == "" {
 				<form
 					hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
@@ -190,7 +192,7 @@ templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readO
 						<button
 							class="btn btn-sm btn-danger"
 							hx-delete={ "/shunts/" + shuntName + "/entries/" + e.Value }
-							hx-target={ "#entries-" + shuntSlug }
+							hx-target={ "#entry-items-" + shuntSlug }
 							hx-swap="innerHTML"
 						>&times;</button>
 					}

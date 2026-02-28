@@ -124,6 +124,12 @@ func newSetupCmd() *cobra.Command {
 			cfg.Network.EntwareInterface = promptInterface(reader, ctx, cfg.Network.EntwareInterface)
 			fmt.Println()
 
+			// 7. IPv6.
+			fmt.Println("IPv6:")
+			ipv6Answer := prompt(reader, "  Enable IPv6 routing support?", "n")
+			cfg.IPv6 = strings.ToLower(ipv6Answer) == "y"
+			fmt.Println()
+
 			cfg.SetupFinished = true
 
 			// 7. Save config.

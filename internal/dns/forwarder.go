@@ -13,11 +13,14 @@ import (
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
-// Forwarder is a DNS proxy that intercepts responses, tracks matched domains
-// in the ipset, and strips AAAA records.
+// Forwarder is a DNS proxy that intercepts responses and tracks matched
+// domains in the ipset. When IPv6 is enabled, both A and AAAA records are
+// tracked. When disabled, AAAA records are stripped from matched responses
+// to prevent IPv6 bypass.
 type Forwarder struct {
 	listenAddr string // e.g. ":53"
 	upstream   string // e.g. "127.0.0.1:9153"
+	ipv6       bool
 	matcher    *Matcher
 	tracker    *Tracker
 	client     *dns.Client
@@ -28,7 +31,7 @@ type Forwarder struct {
 
 // NewForwarder creates a forwarder that listens on listenAddr and forwards
 // queries to upstream.
-func NewForwarder(listenAddr, upstream string, tracker *Tracker, logger *slog.Logger) *Forwarder {
+func NewForwarder(listenAddr, upstream string, ipv6 bool, tracker *Tracker, logger *slog.Logger) *Forwarder {
 	client := dns.NewClient()
 	client.ReadTimeout = 5 * time.Second
 	client.WriteTimeout = 5 * time.Second
@@ -36,6 +39,7 @@ func NewForwarder(listenAddr, upstream string, tracker *Tracker, logger *slog.Lo
 	return &Forwarder{
 		listenAddr: listenAddr,
 		upstream:   upstream,
+		ipv6:       ipv6,
 		matcher:    NewMatcher(),
 		tracker:    tracker,
 		client:     client,
@@ -152,19 +156,31 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	io.Copy(w, resp)
 }
 
-// processMatchedResponse extracts A records for tracking and strips AAAA
-// records from matched domains.
+// processMatchedResponse extracts A records for tracking. When IPv6 is
+// enabled, AAAA records are also tracked. When disabled, AAAA records are
+// stripped from the response to prevent IPv6 bypass.
 func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, resp *dns.Msg) {
-	var filtered []dns.RR
+	if f.ipv6 {
+		for _, rr := range resp.Answer {
+			switch a := rr.(type) {
+			case *dns.A:
+				f.tracker.Track(ctx, domain, a.A.Addr.String())
+			case *dns.AAAA:
+				f.tracker.Track(ctx, domain, a.AAAA.Addr.String())
+			}
+		}
+		return
+	}
+
+	// IPv6 disabled: track A records, strip AAAA records.
+	filtered := resp.Answer[:0]
 	for _, rr := range resp.Answer {
 		switch a := rr.(type) {
 		case *dns.A:
-			ip := a.A.Addr.String()
-			f.tracker.Track(ctx, domain, ip)
+			f.tracker.Track(ctx, domain, a.A.Addr.String())
 			filtered = append(filtered, rr)
 		case *dns.AAAA:
-			// Strip AAAA records for matched domains (prevent IPv6 bypass).
-			continue
+			// Strip AAAA records.
 		default:
 			filtered = append(filtered, rr)
 		}

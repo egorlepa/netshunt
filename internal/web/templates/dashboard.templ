@@ -1,7 +1,9 @@
 package templates
 
 type DashboardData struct {
-	IPSetCount        int
+	IPv6              bool
+	IPSet4Count       int
+	IPSet6Count       int
 	ShuntCount        int
 	EnabledShuntCount int
 	EntryCount        int
@@ -36,7 +38,10 @@ templ DashboardContent(data DashboardData) {
 		</div>
 		<table>
 			<tbody>
-				<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
+				<tr><td class="text-muted">IPSet v4 entries</td><td>{ itoa(data.IPSet4Count) }</td></tr>
+				if data.IPv6 {
+					<tr><td class="text-muted">IPSet v6 entries</td><td>{ itoa(data.IPSet6Count) }</td></tr>
+				}
 				<tr><td class="text-muted">Shunts</td><td>{ itoa(data.EnabledShuntCount) } / { itoa(data.ShuntCount) } enabled</td></tr>
 				<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
 				<tr><td class="text-muted">Tracked domains</td><td>{ itoa(data.TrackedDomains) }</td></tr>

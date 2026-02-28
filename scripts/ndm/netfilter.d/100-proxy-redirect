@@ -1,2 +1,2 @@
 #!/bin/sh
-[ "$type" = "iptables" ] && [ "$table" = "nat" ] && /opt/bin/netshunt hook netfilter "$type" "$table"
+{ [ "$type" = "iptables" ] || [ "$type" = "ip6tables" ]; } && [ "$table" = "nat" ] && /opt/bin/netshunt hook netfilter "$type" "$table"

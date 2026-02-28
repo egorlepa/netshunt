@@ -12,6 +12,7 @@ type Config struct {
 	Daemon   DaemonConfig   `yaml:"daemon"`
 
 	ExcludedNetworks []string `yaml:"excluded_networks"`
+	IPv6             bool     `yaml:"ipv6"`
 	SetupFinished    bool     `yaml:"setup_finished"`
 }
 
@@ -72,6 +73,9 @@ func Defaults() Config {
 			"10.0.0.0/8",
 			"172.16.0.0/12",
 			"192.168.0.0/16",
+			"fc00::/7",
+			"fe80::/10",
+			"::1/128",
 		},
 	}
 }

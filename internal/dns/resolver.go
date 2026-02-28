@@ -29,11 +29,20 @@ func NewResolver(server string) *Resolver {
 
 // Resolve returns all A-record IPv4 addresses for a domain.
 func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error) {
+	return r.resolve(ctx, domain, dns.TypeA)
+}
+
+// Resolve6 returns all AAAA-record IPv6 addresses for a domain.
+func (r *Resolver) Resolve6(ctx context.Context, domain string) ([]net.IP, error) {
+	return r.resolve(ctx, domain, dns.TypeAAAA)
+}
+
+func (r *Resolver) resolve(ctx context.Context, domain string, qtype uint16) ([]net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
 	}
 
-	msg := dns.NewMsg(domain, dns.TypeA)
+	msg := dns.NewMsg(domain, qtype)
 	if msg == nil {
 		return nil, fmt.Errorf("dns: failed to create query for %s", domain)
 	}
@@ -53,8 +62,14 @@ func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error)
 
 	var ips []net.IP
 	for _, ans := range resp.Answer {
-		if a, ok := ans.(*dns.A); ok {
+		switch a := ans.(type) {
+		case *dns.A:
 			ip := a.A.Addr
+			if ip.IsValid() && !ip.IsUnspecified() {
+				ips = append(ips, ip.AsSlice())
+			}
+		case *dns.AAAA:
+			ip := a.AAAA.Addr
 			if ip.IsValid() && !ip.IsUnspecified() {
 				ips = append(ips, ip.AsSlice())
 			}
@@ -63,12 +78,16 @@ func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error)
 	return ips, nil
 }
 
-// ResolveToStrings is a convenience wrapper that returns IPs as strings.
+// ResolveToStrings resolves both A and AAAA records and returns IPs as strings.
 func (r *Resolver) ResolveToStrings(ctx context.Context, domain string) ([]string, error) {
-	ips, err := r.Resolve(ctx, domain)
+	v4, err := r.Resolve(ctx, domain)
 	if err != nil {
 		return nil, err
 	}
+
+	v6, _ := r.Resolve6(ctx, domain) // best-effort; don't fail if AAAA is unavailable
+
+	ips := append(v4, v6...)
 	result := make([]string, len(ips))
 	for i, ip := range ips {
 		result[i] = ip.String()
