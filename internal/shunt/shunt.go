@@ -124,6 +124,14 @@ func normalizeEntry(s string) string {
 		}
 	}
 
+	// IPs and CIDRs must not go through domain normalization (which strips "/").
+	if _, _, err := net.ParseCIDR(s); err == nil {
+		return strings.ToLower(s)
+	}
+	if net.ParseIP(s) != nil {
+		return s
+	}
+
 	// No prefix — fall back to standard normalization.
 	return normalizeDomain(s)
 }
@@ -139,7 +147,7 @@ func normalizeDomain(s string) string {
 		s = s[:i]
 	}
 
-	// Strip port (but not from CIDR like 10.0.0.0/8 — already handled above).
+	// Strip port.
 	if host, _, err := net.SplitHostPort(s); err == nil {
 		s = host
 	}

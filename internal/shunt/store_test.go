@@ -246,17 +246,24 @@ func TestNormalizeEntry(t *testing.T) {
 		t.Errorf("expected domain:example.com, got %q", sh.Entries[0].Value)
 	}
 
+	// CIDRs should preserve the prefix length.
+	_ = s.AddEntry("Test", "10.0.0.0/8")
+	sh, _ = s.Get("Test")
+	if sh.Entries[1].Value != "10.0.0.0/8" {
+		t.Errorf("expected 10.0.0.0/8, got %q", sh.Entries[1].Value)
+	}
+
 	// keyword and regexp preserve their value as-is (no lowering).
 	_ = s.AddEntry("Test", "keyword:Tube")
 	sh, _ = s.Get("Test")
-	if sh.Entries[1].Value != "keyword:Tube" {
-		t.Errorf("expected keyword:Tube, got %q", sh.Entries[1].Value)
+	if sh.Entries[2].Value != "keyword:Tube" {
+		t.Errorf("expected keyword:Tube, got %q", sh.Entries[2].Value)
 	}
 
 	_ = s.AddEntry("Test", "regexp:^.+\\.Google\\.")
 	sh, _ = s.Get("Test")
-	if sh.Entries[2].Value != "regexp:^.+\\.Google\\." {
-		t.Errorf("expected regexp:^.+\\.Google\\., got %q", sh.Entries[2].Value)
+	if sh.Entries[3].Value != "regexp:^.+\\.Google\\." {
+		t.Errorf("expected regexp:^.+\\.Google\\., got %q", sh.Entries[3].Value)
 	}
 }
 
