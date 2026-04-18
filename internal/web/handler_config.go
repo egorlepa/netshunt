@@ -16,11 +16,14 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	templates.SettingsPage(cfg).Render(r.Context(), w)
+	s.render(r, w, templates.SettingsPage(cfg))
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	ctx := r.Context()
 
 	cfg, err := config.Load()
@@ -31,12 +34,12 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Routing.
 	if v := r.FormValue("routing_local_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
+		_, _ = fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
 
 	// DNS.
 	if v := r.FormValue("dnscrypt_port"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.DNSCrypt.Port)
+		_, _ = fmt.Sscanf(v, "%d", &cfg.DNSCrypt.Port)
 	}
 	if v := r.FormValue("dns_listen_addr"); v != "" {
 		cfg.DNS.ListenAddr = v

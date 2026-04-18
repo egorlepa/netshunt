@@ -43,13 +43,11 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	data := s.dashboardData(ctx)
-	templates.Dashboard(data).Render(ctx, w)
+	data := s.dashboardData(r.Context())
+	s.render(r, w, templates.Dashboard(data))
 }
 
 func (s *Server) handleDashboardContent(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	data := s.dashboardData(ctx)
-	templates.DashboardContent(data).Render(ctx, w)
+	data := s.dashboardData(r.Context())
+	s.render(r, w, templates.DashboardContent(data))
 }

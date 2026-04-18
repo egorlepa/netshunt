@@ -15,7 +15,7 @@ func (s *Server) handleShuntsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	templates.ShuntsPage(shunts).Render(r.Context(), w)
+	s.render(r, w, templates.ShuntsPage(shunts))
 }
 
 func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
@@ -25,11 +25,14 @@ func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.ShuntCard(*sh).Render(r.Context(), w)
+	s.render(r, w, templates.ShuntCard(*sh))
 }
 
 func (s *Server) handleCreateShunt(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	name := r.FormValue("name")
 	desc := r.FormValue("description")
 
@@ -85,7 +88,10 @@ func (s *Server) handleDisableShunt(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	value := r.FormValue("value")
 	if value == "" {
 		errorResponse(w, "value is required", http.StatusBadRequest)
@@ -116,7 +122,10 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	raw := r.FormValue("values")
 	if raw == "" {
 		errorResponse(w, "values is required", http.StatusBadRequest)
@@ -153,11 +162,16 @@ func (s *Server) handleExportShunts(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Header().Set("Content-Disposition", "attachment; filename=netshunt-shunts.yaml")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		s.Logger.Warn("write export response", "error", err)
+	}
 }
 
 func (s *Server) handleImportShunts(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(1 << 20) // 1 MB limit
+	if err := r.ParseMultipartForm(1 << 20); err != nil { // 1 MB limit
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	raw := r.FormValue("body")
 	if raw == "" {
 		errorResponse(w, "empty import data", http.StatusBadRequest)
@@ -178,12 +192,12 @@ func (s *Server) renderShuntToggle(w http.ResponseWriter, r *http.Request, name 
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.ShuntToggle(*sh).Render(r.Context(), w)
+	s.render(r, w, templates.ShuntToggle(*sh))
 }
 
 func (s *Server) renderShuntList(w http.ResponseWriter, r *http.Request) {
 	shunts, _ := s.Shunts.List()
-	templates.ShuntList(shunts).Render(r.Context(), w)
+	s.render(r, w, templates.ShuntList(shunts))
 }
 
 func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name string) {
@@ -192,7 +206,7 @@ func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.ShuntCard(*sh).Render(r.Context(), w)
+	s.render(r, w, templates.ShuntCard(*sh))
 }
 
 func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name string) {
@@ -201,5 +215,5 @@ func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	templates.EntryList(templates.SlugID(name), name, sh.Entries, sh.Source != "").Render(r.Context(), w)
+	s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, sh.Source != ""))
 }

@@ -156,7 +156,7 @@ func newHookWanCmd() *cobra.Command {
 				hookLogger().Warn("daemon not reachable, skipping reconcile", "error", err)
 				return nil
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		},
 	}

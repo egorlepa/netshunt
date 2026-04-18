@@ -71,12 +71,12 @@ func ensureDomainInShunt(cfg *config.Config, domain string) {
 		printWarn(fmt.Sprintf("could not add %s to default shunt (daemon not running?)", domain))
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Trigger reconcile.
 	resp, err = http.Post(base+"/api/reconcile", "", nil)
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 

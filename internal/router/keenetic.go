@@ -40,7 +40,7 @@ func (c *Client) rciPost(ctx context.Context, body any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("rci post: status %d: %s", resp.StatusCode, bytes.TrimSpace(b))
@@ -60,7 +60,7 @@ func (c *Client) rciGet(ctx context.Context, path string) (map[string]any, error
 	if err != nil {
 		return nil, fmt.Errorf("rci request %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -129,7 +129,7 @@ func (c *Client) IsDNSOverrideEnabled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("rci dns-override: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

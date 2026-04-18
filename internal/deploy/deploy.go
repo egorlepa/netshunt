@@ -213,7 +213,7 @@ func UpgradeOpkgDeps(ctx context.Context, packages []string) error {
 func UninstallNDMHooks() {
 	for _, h := range ndmHooks {
 		dest := filepath.Join(platform.NDMDir, h.subdir, h.name)
-		os.Remove(dest)
+		_ = os.Remove(dest)
 	}
 }
 

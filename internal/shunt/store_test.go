@@ -279,7 +279,9 @@ func TestImportExportFile(t *testing.T) {
 
 	// Write to file and re-import.
 	f := filepath.Join(t.TempDir(), "export.yaml")
-	os.WriteFile(f, data, 0644)
+	if err := os.WriteFile(f, data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	s2 := tempStore(t)
 	raw, _ := os.ReadFile(f)

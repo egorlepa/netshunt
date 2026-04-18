@@ -64,12 +64,12 @@ func (r *Resolver) resolve(ctx context.Context, domain string, qtype uint16) ([]
 	for _, ans := range resp.Answer {
 		switch a := ans.(type) {
 		case *dns.A:
-			ip := a.A.Addr
+			ip := a.Addr
 			if ip.IsValid() && !ip.IsUnspecified() {
 				ips = append(ips, ip.AsSlice())
 			}
 		case *dns.AAAA:
-			ip := a.AAAA.Addr
+			ip := a.Addr
 			if ip.IsValid() && !ip.IsUnspecified() {
 				ips = append(ips, ip.AsSlice())
 			}

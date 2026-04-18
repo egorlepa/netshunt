@@ -350,7 +350,7 @@ func waitForDaemon(cfg *config.Config) error {
 		if err != nil {
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			return nil
 		}

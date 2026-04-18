@@ -10,20 +10,23 @@ import (
 )
 
 func (s *Server) handleDiagnosticsPage(w http.ResponseWriter, r *http.Request) {
-	templates.DiagnosticsPage().Render(r.Context(), w)
+	s.render(r, w, templates.DiagnosticsPage())
 }
 
 func (s *Server) handleDiagnosticsLogs(w http.ResponseWriter, r *http.Request) {
-	templates.DiagnosticsLogs(s.Logs.Entries()).Render(r.Context(), w)
+	s.render(r, w, templates.DiagnosticsLogs(s.Logs.Entries()))
 }
 
 func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 	results := healthcheck.RunChecks(r.Context(), s.Config, s.Shunts)
-	templates.DiagnosticsResults(results).Render(r.Context(), w)
+	s.render(r, w, templates.DiagnosticsResults(results))
 }
 
 func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	domain := strings.TrimSpace(r.FormValue("domain"))
 	if domain == "" {
 		errorResponse(w, "domain is required", http.StatusBadRequest)
@@ -39,8 +42,8 @@ func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) 
 
 	probe, err := healthcheck.ProbeDomain(r.Context(), s.Config, domain)
 	if err != nil {
-		templates.DiagnosticsProbeError(domain, err.Error()).Render(r.Context(), w)
+		s.render(r, w, templates.DiagnosticsProbeError(domain, err.Error()))
 		return
 	}
-	templates.DiagnosticsProbeResult(*probe).Render(r.Context(), w)
+	s.render(r, w, templates.DiagnosticsProbeResult(*probe))
 }

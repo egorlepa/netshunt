@@ -13,7 +13,7 @@ import (
 
 func (s *Server) handleGeositePage(w http.ResponseWriter, r *http.Request) {
 	info, categories, imported := s.loadGeositeState()
-	templates.GeositePage(info, categories, imported).Render(r.Context(), w)
+	s.render(r, w, templates.GeositePage(info, categories, imported))
 }
 
 func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
 
 	toastTrigger(w, "Database downloaded", "success")
 	info, categories, imported := s.loadGeositeState()
-	templates.GeositeContent(info, categories, imported).Render(r.Context(), w)
+	s.render(r, w, templates.GeositeContent(info, categories, imported))
 }
 
 func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Database updated, %d shunts refreshed", updated), "success")
 	info, categories, imported := s.loadGeositeState()
-	templates.GeositeContent(info, categories, imported).Render(r.Context(), w)
+	s.render(r, w, templates.GeositeContent(info, categories, imported))
 }
 
 func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +95,7 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Imported %s (%d domains)", category, len(domains)), "success")
 	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
-	templates.GeositeCategoryRow(cat, true).Render(r.Context(), w)
+	s.render(r, w, templates.GeositeCategoryRow(cat, true))
 }
 
 func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cat := geosite.CategoryInfo{Name: category, DomainCount: domainCount}
-	templates.GeositeCategoryRow(cat, false).Render(r.Context(), w)
+	s.render(r, w, templates.GeositeCategoryRow(cat, false))
 }
 
 func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, map[string]bool) {

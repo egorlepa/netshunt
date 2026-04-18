@@ -70,7 +70,7 @@ func Download(ctx context.Context, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -82,8 +82,8 @@ func Download(ctx context.Context, destPath string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	defer func() {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 	}()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {

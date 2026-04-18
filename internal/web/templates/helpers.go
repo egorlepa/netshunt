@@ -36,10 +36,6 @@ func sortedEntries(entries []shunt.Entry) []shunt.Entry {
 	return sorted
 }
 
-func faviconDataURI() string {
-	return ""
-}
-
 func logLevelClass(level string) string {
 	switch level {
 	case "ERROR":
