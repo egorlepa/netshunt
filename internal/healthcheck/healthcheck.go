@@ -45,8 +45,8 @@ func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []R
 	// 4. Transparent proxy listening
 	results = append(results, checkProxy(cfg))
 
-	// 5. Internet connectivity
-	results = append(results, checkConnectivity(ctx))
+	// 5. Proxy connectivity (route a test request through the proxy via OUTPUT redirect)
+	results = append(results, checkProxyConnectivity(ctx, cfg))
 
 	// 6. IPSet v4
 	results = append(results, checkIPSet4(ctx, cfg))
@@ -147,29 +147,53 @@ func checkProxy(cfg *config.Config) Result {
 		r.Detail = fmt.Sprintf("nothing listening on %s", addr)
 		return r
 	}
-	conn.Close()
+	_ = conn.Close()
 	r.Passed = true
 	r.Detail = fmt.Sprintf("listening on %s", addr)
 	return r
 }
 
-func checkConnectivity(ctx context.Context) Result {
-	r := Result{Name: "connectivity"}
+func checkProxyConnectivity(ctx context.Context, cfg *config.Config) Result {
+	r := Result{Name: "proxy connectivity"}
+	port := fmt.Sprintf("%d", cfg.Routing.LocalPort)
+
+	const testHost = "connectivitycheck.gstatic.com"
+	ips, err := net.DefaultResolver.LookupHost(ctx, testHost)
+	if err != nil || len(ips) == 0 {
+		r.Detail = "cannot resolve test host"
+		return r
+	}
+	testIP := ips[0]
+
+	// Temporary OUTPUT rule so the transparent proxy sees SO_ORIGINAL_DST.
+	ipt := netfilter.NewIPTables()
+	rule := []string{
+		"OUTPUT", "-d", testIP, "-p", "tcp", "--dport", "80",
+		"-j", "REDIRECT", "--to-port", port,
+	}
+	if err := ipt.AppendRule(ctx, "nat", rule...); err != nil {
+		r.Detail = fmt.Sprintf("cannot add test rule: %v", err)
+		return r
+	}
+	defer func() { _ = ipt.DeleteRule(ctx, "nat", rule...) }()
+
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://connectivitycheck.gstatic.com/generate_204", nil)
+	url := fmt.Sprintf("http://%s/generate_204", testIP)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.Host = testHost
 	resp, err := client.Do(req)
 	if err != nil {
-		r.Detail = fmt.Sprintf("request failed: %v", err)
+		r.Detail = fmt.Sprintf("proxy not forwarding: %v", err)
 		return r
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	r.Passed = true
-	r.Detail = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	r.Detail = fmt.Sprintf("HTTP %d via proxy", resp.StatusCode)
 	return r
 }
 
@@ -239,6 +263,15 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 		missing = append(missing, "dns dnat")
 	}
 
+	// UDP: mangle TPROXY rules.
+	if exists, _ := ipt.ChainExists(ctx, "mangle", "NSHUNT_UDP"); !exists {
+		missing = append(missing, "NSHUNT_UDP chain")
+	} else if !ipt.RuleExists(ctx, "mangle", "NSHUNT_UDP", "-p", "udp",
+		"-m", "set", "--match-set", ipsetName, "dst",
+		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", "0x1/0x1") {
+		missing = append(missing, "udp tproxy")
+	}
+
 	if len(missing) == 0 {
 		r.Passed = true
 		r.Detail = "all rules present"
@@ -276,6 +309,15 @@ func checkIPTables6(ctx context.Context, cfg *config.Config) Result {
 	if !ipt6.RuleExists(ctx, "nat", "PREROUTING",
 		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "[::1]") {
 		missing = append(missing, "dns dnat")
+	}
+
+	// UDP: mangle TPROXY rules.
+	if exists, _ := ipt6.ChainExists(ctx, "mangle", "NSHUNT6_UDP"); !exists {
+		missing = append(missing, "NSHUNT6_UDP chain")
+	} else if !ipt6.RuleExists(ctx, "mangle", "NSHUNT6_UDP", "-p", "udp",
+		"-m", "set", "--match-set", ipset6Name, "dst",
+		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", "0x1/0x1") {
+		missing = append(missing, "udp tproxy")
 	}
 
 	if len(missing) == 0 {
