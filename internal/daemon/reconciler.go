@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
@@ -30,6 +31,7 @@ type Reconciler struct {
 	IPSet6    *netfilter.IPSet
 	Forwarder *dns.Forwarder
 	Mode      routing.Mode
+	Blocklist *blocklist.Store
 	Logger    *slog.Logger
 
 	// lastDomains tracks the domain entries from the previous mutation
@@ -38,7 +40,7 @@ type Reconciler struct {
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
-func NewReconciler(cfg *config.Config, shunts *shunt.Store, forwarder *dns.Forwarder, logger *slog.Logger) *Reconciler {
+func NewReconciler(cfg *config.Config, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, logger *slog.Logger) *Reconciler {
 	var ipset6 *netfilter.IPSet
 	if cfg.IPv6 {
 		ipset6 = netfilter.NewIPSet6(cfg.IPSet.TableName + "6")
@@ -50,6 +52,7 @@ func NewReconciler(cfg *config.Config, shunts *shunt.Store, forwarder *dns.Forwa
 		IPSet6:      ipset6,
 		Forwarder:   forwarder,
 		Mode:        routing.New(cfg, logger),
+		Blocklist:   blocklistStore,
 		Logger:      logger,
 		lastDomains: make(map[string]struct{}),
 	}
@@ -96,8 +99,43 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("setup rules: %w", err)
 	}
 
+	// 7. Apply blocklist matcher + response from store/config.
+	r.applyBlocklistLocked()
+
 	r.Logger.Info("reconcile complete")
 	return nil
+}
+
+// ApplyBlocklist rebuilds the forwarder's blocklist matcher from the store
+// and re-applies the configured response kind. Cheap — just file reads.
+func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.applyBlocklistLocked()
+	return nil
+}
+
+func (r *Reconciler) applyBlocklistLocked() {
+	r.Forwarder.SetBlockResponse(blockResponseFromConfig(r.Config.Blocklist.Response))
+
+	if r.Blocklist == nil || !r.Config.Blocklist.Enabled {
+		r.Forwarder.UpdateBlocklist(nil)
+		return
+	}
+	entries, counts := blocklist.BuildEntries(r.Blocklist)
+	r.Forwarder.UpdateBlocklist(entries)
+	r.Logger.Info("blocklist applied", "domains", len(entries), "per_source", counts)
+}
+
+func blockResponseFromConfig(r config.BlocklistResponse) dns.BlockResponse {
+	switch r {
+	case config.BlocklistResponseNoData:
+		return dns.BlockNoData
+	case config.BlocklistResponseZero:
+		return dns.BlockZero
+	default:
+		return dns.BlockNXDomain
+	}
 }
 
 // ApplyMutation updates the matcher and ipsets after a shunt change.

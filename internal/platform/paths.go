@@ -7,9 +7,11 @@ const (
 	BinDir    = OptDir + "/bin"
 
 	// Config files.
-	ConfigFile  = ConfigDir + "/config.yaml"
-	ShuntsFile  = ConfigDir + "/shunts.yaml"
-	GeositeFile = ConfigDir + "/dlc.dat"
+	ConfigFile    = ConfigDir + "/config.yaml"
+	ShuntsFile    = ConfigDir + "/shunts.yaml"
+	GeositeFile   = ConfigDir + "/dlc.dat"
+	BlocklistFile = ConfigDir + "/blocklist.yaml"
+	BlocklistDir  = ConfigDir + "/blocklist-cache"
 
 	// dnscrypt-proxy.
 	DnscryptConfFile = OptDir + "/etc/dnscrypt-proxy.toml"

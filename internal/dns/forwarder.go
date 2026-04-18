@@ -5,13 +5,32 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"codeberg.org/miekg/dns"
+	"codeberg.org/miekg/dns/rdata"
 
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
+
+// BlockResponse is the kind of reply returned for a blocklisted query.
+type BlockResponse int32
+
+const (
+	// BlockNXDomain replies with RCODE=NXDOMAIN.
+	BlockNXDomain BlockResponse = iota
+	// BlockNoData replies with RCODE=NOERROR and an empty answer section.
+	BlockNoData
+	// BlockZero replies with 0.0.0.0 / :: sinkhole addresses.
+	BlockZero
+)
+
+// blockTTL is the TTL stamped on sinkhole / NXDOMAIN replies. Short so the
+// client re-asks quickly after the user toggles a list.
+const blockTTL = 60
 
 // Forwarder is a DNS proxy that intercepts responses and tracks matched
 // domains in the ipset. When IPv6 is enabled, both A and AAAA records are
@@ -22,6 +41,8 @@ type Forwarder struct {
 	upstream   string // e.g. "127.0.0.1:9153"
 	ipv6       bool
 	matcher    *Matcher
+	blocklist  *Matcher
+	blockResp  atomic.Int32
 	tracker    *Tracker
 	client     *dns.Client
 	udpServer  *dns.Server
@@ -41,6 +62,7 @@ func NewForwarder(listenAddr, upstream string, ipv6 bool, tracker *Tracker, logg
 		upstream:   upstream,
 		ipv6:       ipv6,
 		matcher:    NewMatcher(),
+		blocklist:  NewMatcher(),
 		tracker:    tracker,
 		client:     client,
 		logger:     logger,
@@ -111,6 +133,22 @@ func (f *Forwarder) Matcher() *Matcher {
 	return f.matcher
 }
 
+// UpdateBlocklist replaces the blocklist matcher rules. Pass an empty slice
+// to disable blocking without changing the response type.
+func (f *Forwarder) UpdateBlocklist(entries []shunt.Entry) {
+	f.blocklist.Update(entries)
+}
+
+// Blocklist returns the blocklist matcher for external introspection.
+func (f *Forwarder) Blocklist() *Matcher {
+	return f.blocklist
+}
+
+// SetBlockResponse sets the response kind sent for blocklisted queries.
+func (f *Forwarder) SetBlockResponse(r BlockResponse) {
+	f.blockResp.Store(int32(r))
+}
+
 // Tracker returns the forwarder's tracker for external use.
 func (f *Forwarder) TrackerRef() *Tracker {
 	return f.tracker
@@ -123,6 +161,14 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	}
 
 	if len(r.Question) == 0 {
+		return
+	}
+
+	// Blocklist check — short-circuits before any upstream forward.
+	qname := strings.TrimSuffix(r.Question[0].Header().Name, ".")
+	qname = strings.ToLower(qname)
+	if f.blocklist.Match(qname) {
+		f.sendBlockResponse(w, r, qname)
 		return
 	}
 
@@ -144,16 +190,11 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 		}
 	}
 
-	// Extract queried domain (lowercase, without trailing dot).
-	qname := strings.TrimSuffix(r.Question[0].Header().Name, ".")
-	qname = strings.ToLower(qname)
-
 	if f.matcher.Match(qname) {
 		f.processMatchedResponse(ctx, qname, resp)
 	}
 
-	resp.Pack()
-	io.Copy(w, resp)
+	f.writeMsg(w, resp)
 }
 
 // processMatchedResponse extracts A records for tracking. When IPv6 is
@@ -164,9 +205,9 @@ func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, r
 		for _, rr := range resp.Answer {
 			switch a := rr.(type) {
 			case *dns.A:
-				f.tracker.Track(ctx, domain, a.A.Addr.String())
+				f.tracker.Track(ctx, domain, a.Addr.String())
 			case *dns.AAAA:
-				f.tracker.Track(ctx, domain, a.AAAA.Addr.String())
+				f.tracker.Track(ctx, domain, a.Addr.String())
 			}
 		}
 		return
@@ -177,7 +218,7 @@ func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, r
 	for _, rr := range resp.Answer {
 		switch a := rr.(type) {
 		case *dns.A:
-			f.tracker.Track(ctx, domain, a.A.Addr.String())
+			f.tracker.Track(ctx, domain, a.Addr.String())
 			filtered = append(filtered, rr)
 		case *dns.AAAA:
 			// Strip AAAA records.
@@ -188,6 +229,63 @@ func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, r
 	resp.Answer = filtered
 }
 
+// writeMsg packs and writes a DNS message, logging any failure.
+func (f *Forwarder) writeMsg(w dns.ResponseWriter, m *dns.Msg) {
+	if err := m.Pack(); err != nil {
+		f.logger.Debug("dns pack failed", "error", err)
+		return
+	}
+	if _, err := io.Copy(w, m); err != nil {
+		f.logger.Debug("dns write failed", "error", err)
+	}
+}
+
+// sendBlockResponse crafts the configured reply for a blocklisted query.
+// For NXDOMAIN / NoData: empty answer with the appropriate rcode.
+// For Zero: an A or AAAA RR pointing at 0.0.0.0 / :: matching the query type.
+// Other query types (MX, TXT, ...) on a blocked domain always get NoData
+// to avoid leaking real records.
+func (f *Forwarder) sendBlockResponse(w dns.ResponseWriter, r *dns.Msg, qname string) {
+	f.writeMsg(w, blockReply(r, qname, BlockResponse(f.blockResp.Load())))
+}
+
+func blockReply(r *dns.Msg, qname string, kind BlockResponse) *dns.Msg {
+	m := new(dns.Msg)
+	m.ID = r.ID
+	m.Response = true
+	m.Question = r.Question
+	m.RecursionDesired = r.RecursionDesired
+	m.RecursionAvailable = true
+	m.Rcode = dns.RcodeSuccess
+
+	if kind == BlockNXDomain {
+		m.Rcode = dns.RcodeNameError
+		return m
+	}
+
+	if kind == BlockZero && len(r.Question) > 0 {
+		qtype := dns.RRToType(r.Question[0])
+		fqdn := qname
+		if !strings.HasSuffix(fqdn, ".") {
+			fqdn = fqdn + "."
+		}
+		switch qtype {
+		case dns.TypeA:
+			m.Answer = []dns.RR{&dns.A{
+				Hdr:  dns.Header{Name: fqdn, TTL: blockTTL, Class: dns.ClassINET},
+				A:    rdata.A{Addr: netip.IPv4Unspecified()},
+			}}
+		case dns.TypeAAAA:
+			m.Answer = []dns.RR{&dns.AAAA{
+				Hdr:  dns.Header{Name: fqdn, TTL: blockTTL, Class: dns.ClassINET},
+				AAAA: rdata.AAAA{Addr: netip.IPv6Unspecified()},
+			}}
+		}
+	}
+	// BlockNoData (and Zero for non-A/AAAA queries) → empty answer + NOERROR.
+	return m
+}
+
 func (f *Forwarder) sendServFail(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.ID = r.ID
@@ -196,6 +294,5 @@ func (f *Forwarder) sendServFail(w dns.ResponseWriter, r *dns.Msg) {
 	m.Question = r.Question
 	m.RecursionDesired = r.RecursionDesired
 	m.RecursionAvailable = true
-	m.Pack()
-	io.Copy(w, m)
+	f.writeMsg(w, m)
 }

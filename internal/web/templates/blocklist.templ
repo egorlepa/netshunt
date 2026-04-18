@@ -1,0 +1,116 @@
+package templates
+
+import (
+	"github.com/egorlepa/netshunt/internal/blocklist"
+	"github.com/egorlepa/netshunt/internal/config"
+)
+
+// SourceView pairs a preset definition with its persisted state for rendering.
+type SourceView struct {
+	Preset blocklist.Source
+	State  blocklist.SourceState
+}
+
+templ BlocklistPage(enabled bool, response config.BlocklistResponse, sources []SourceView) {
+	@Layout("Blocklist", "blocklist") {
+		<div id="blocklist-content">
+			@BlocklistContent(enabled, response, sources)
+		</div>
+	}
+}
+
+templ BlocklistContent(enabled bool, response config.BlocklistResponse, sources []SourceView) {
+	<div class="flex-between mb-16">
+		<h1>Blocklist</h1>
+		<button
+			class="btn btn-accent"
+			hx-post="/blocklist/update"
+			hx-target="#blocklist-content"
+			hx-swap="innerHTML"
+			hx-indicator="#blocklist-spinner"
+		>
+			Update Enabled Sources
+			<span id="blocklist-spinner" class="htmx-indicator"><span class="spinner"></span></span>
+		</button>
+	</div>
+	<div class="card mb-16">
+		<form hx-put="/blocklist/enabled" hx-trigger="change" hx-swap="none">
+			<label>
+				<input type="checkbox" name="enabled" if enabled { checked } value="1"/>
+				Enable DNS blocking
+			</label>
+		</form>
+		<div class="mt-8">
+			<form hx-put="/blocklist/response" hx-trigger="change" hx-swap="none">
+				<label class="text-muted text-sm">Response when blocked</label>
+				<select name="response">
+					<option value="nxdomain" if response == config.BlocklistResponseNXDomain { selected }>NXDOMAIN (recommended)</option>
+					<option value="nodata" if response == config.BlocklistResponseNoData { selected }>NODATA (empty answer)</option>
+					<option value="zero" if response == config.BlocklistResponseZero { selected }>0.0.0.0 / :: sinkhole</option>
+				</select>
+			</form>
+		</div>
+	</div>
+	<div class="card">
+		<table id="blocklist-sources">
+			<thead>
+				<tr>
+					<th>Enabled</th>
+					<th>Source</th>
+					<th>Domains</th>
+					<th>Last updated</th>
+					<th style="text-align:right">Action</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, sv := range sources {
+					@BlocklistSourceRow(sv)
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ BlocklistSourceRow(sv SourceView) {
+	<tr id={ "src-" + SlugID(sv.Preset.ID) } data-id={ sv.Preset.ID }>
+		<td>
+			<input
+				type="checkbox"
+				name="enabled"
+				if sv.State.Enabled { checked }
+				hx-put={ "/blocklist/sources/" + sv.Preset.ID + "/enabled" }
+				hx-trigger="change"
+				hx-swap="none"
+			/>
+		</td>
+		<td>
+			<div><strong>{ sv.Preset.Name }</strong></div>
+			<div class="text-muted text-sm">{ sv.Preset.Description }</div>
+		</td>
+		<td class="text-muted">
+			if sv.State.DomainCount > 0 {
+				{ itoa(sv.State.DomainCount) }
+			} else {
+				<span class="text-muted">—</span>
+			}
+		</td>
+		<td class="text-muted text-sm">
+			if !sv.State.LastFetched.IsZero() {
+				{ sv.State.LastFetched.Format("2006-01-02 15:04") }
+			} else {
+				<span class="text-muted">never</span>
+			}
+			if sv.State.LastError != "" {
+				<div class="text-red text-sm">{ sv.State.LastError }</div>
+			}
+		</td>
+		<td style="text-align:right">
+			<button
+				class="btn btn-sm btn-accent"
+				hx-post={ "/blocklist/sources/" + sv.Preset.ID + "/update" }
+				hx-target={ "#src-" + SlugID(sv.Preset.ID) }
+				hx-swap="outerHTML"
+			>Update</button>
+		</td>
+	</tr>
+}

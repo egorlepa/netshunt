@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
@@ -23,6 +24,7 @@ import (
 type Daemon struct {
 	Config     *config.Config
 	Shunts     *shunt.Store
+	Blocklist  *blocklist.Store
 	Reconciler *Reconciler
 	Forwarder  *dns.Forwarder
 	Logger     *slog.Logger
@@ -31,7 +33,7 @@ type Daemon struct {
 }
 
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
-func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) *Daemon {
+func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) (*Daemon, error) {
 	ipset4 := netfilter.NewIPSet(cfg.IPSet.TableName)
 	var ipset6 *netfilter.IPSet
 	if cfg.IPv6 {
@@ -41,15 +43,21 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 	upstream := fmt.Sprintf("127.0.0.1:%d", cfg.DNSCrypt.Port)
 	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, cfg.IPv6, tracker, logger)
 
+	blocklistStore, err := blocklist.NewStore(platform.BlocklistFile, platform.BlocklistDir)
+	if err != nil {
+		return nil, fmt.Errorf("init blocklist store: %w", err)
+	}
+
 	return &Daemon{
 		Config:     cfg,
 		Shunts:     shunts,
-		Reconciler: NewReconciler(cfg, shunts, forwarder, logger),
+		Blocklist:  blocklistStore,
+		Reconciler: NewReconciler(cfg, shunts, forwarder, blocklistStore, logger),
 		Forwarder:  forwarder,
 		Logger:     logger,
 		LogBuf:     logBuf,
 		Version:    version,
-	}
+	}, nil
 }
 
 // Run starts the daemon, blocking until a signal is received.
@@ -58,7 +66,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err := os.WriteFile(platform.PidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
 		d.Logger.Warn("failed to write pid file", "error", err)
 	}
-	defer os.Remove(platform.PidFile)
+	defer func() { _ = os.Remove(platform.PidFile) }()
 
 	// Setup signal handling.
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -75,7 +83,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// 4. Start web server.
-	webServer := web.NewServer(d.Config, d.Shunts, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
+	webServer := web.NewServer(d.Config, d.Shunts, d.Blocklist, d.Forwarder, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
 	httpServer := &http.Server{
 		Addr:    d.Config.Daemon.WebListen,
 		Handler: webServer,
@@ -98,6 +106,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	httpServer.Shutdown(shutdownCtx)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		d.Logger.Warn("http server shutdown", "error", err)
+	}
 	return nil
 }

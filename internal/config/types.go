@@ -4,12 +4,13 @@ package config
 type Config struct {
 	Version int `yaml:"version"`
 
-	Routing  RoutingConfig  `yaml:"routing"`
-	Network  NetworkConfig  `yaml:"network"`
-	DNS      DNSConfig      `yaml:"dns"`
-	DNSCrypt DNSCryptConfig `yaml:"dnscrypt"`
-	IPSet    IPSetConfig    `yaml:"ipset"`
-	Daemon   DaemonConfig   `yaml:"daemon"`
+	Routing   RoutingConfig   `yaml:"routing"`
+	Network   NetworkConfig   `yaml:"network"`
+	DNS       DNSConfig       `yaml:"dns"`
+	DNSCrypt  DNSCryptConfig  `yaml:"dnscrypt"`
+	IPSet     IPSetConfig     `yaml:"ipset"`
+	Daemon    DaemonConfig    `yaml:"daemon"`
+	Blocklist BlocklistConfig `yaml:"blocklist"`
 
 	ExcludedNetworks []string `yaml:"excluded_networks"`
 	IPv6             bool     `yaml:"ipv6"`
@@ -49,6 +50,24 @@ type DaemonConfig struct {
 	LogLevel  string `yaml:"log_level"`
 }
 
+// BlocklistResponse is the reply returned for blocklisted queries.
+type BlocklistResponse string
+
+const (
+	// BlocklistResponseNXDomain replies with RCODE=NXDOMAIN.
+	BlocklistResponseNXDomain BlocklistResponse = "nxdomain"
+	// BlocklistResponseNoData replies with RCODE=NOERROR and an empty answer.
+	BlocklistResponseNoData BlocklistResponse = "nodata"
+	// BlocklistResponseZero replies with 0.0.0.0 / :: sinkhole addresses.
+	BlocklistResponseZero BlocklistResponse = "zero"
+)
+
+// BlocklistConfig holds DNS-level blocklist settings.
+type BlocklistConfig struct {
+	Enabled  bool              `yaml:"enabled"`
+	Response BlocklistResponse `yaml:"response"`
+}
+
 // Defaults returns a Config with sensible default values.
 func Defaults() Config {
 	return Config{
@@ -68,6 +87,10 @@ func Defaults() Config {
 		Daemon: DaemonConfig{
 			WebListen: ":8765",
 			LogLevel:  "info",
+		},
+		Blocklist: BlocklistConfig{
+			Enabled:  false,
+			Response: BlocklistResponseNXDomain,
 		},
 		ExcludedNetworks: []string{
 			"10.0.0.0/8",

@@ -8,7 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/a-h/templ"
+
+	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
@@ -22,6 +26,7 @@ var staticFS embed.FS
 type Reconciler interface {
 	Reconcile(ctx context.Context) error
 	ApplyMutation(ctx context.Context) error
+	ApplyBlocklist(ctx context.Context) error
 }
 
 // TrackerStats is the interface the web server uses to read DNS tracker state.
@@ -38,6 +43,8 @@ type LogReader interface {
 type Server struct {
 	Config     *config.Config
 	Shunts     *shunt.Store
+	Blocklist  *blocklist.Store
+	Forwarder  *dns.Forwarder
 	Reconciler Reconciler
 	Tracker    TrackerStats
 	Logs       LogReader
@@ -53,10 +60,12 @@ func (s *Server) MarkReady() {
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Config, shunts *shunt.Store, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
+func NewServer(cfg *config.Config, shunts *shunt.Store, blocklistStore *blocklist.Store, forwarder *dns.Forwarder, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
 		Shunts:     shunts,
+		Blocklist:  blocklistStore,
+		Forwarder:  forwarder,
 		Reconciler: reconciler,
 		Tracker:    tracker,
 		Logs:       logs,
@@ -101,6 +110,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /geosite/update", s.handleGeositeUpdate)
 	s.mux.HandleFunc("POST /geosite/import/{category}", s.handleGeositeImport)
 	s.mux.HandleFunc("DELETE /geosite/import/{category}", s.handleGeositeRemove)
+
+	// Blocklist.
+	s.mux.HandleFunc("GET /blocklist", s.handleBlocklistPage)
+	s.mux.HandleFunc("PUT /blocklist/enabled", s.handleBlocklistToggleEnabled)
+	s.mux.HandleFunc("PUT /blocklist/response", s.handleBlocklistResponse)
+	s.mux.HandleFunc("PUT /blocklist/sources/{id}/enabled", s.handleBlocklistSourceToggle)
+	s.mux.HandleFunc("POST /blocklist/sources/{id}/update", s.handleBlocklistSourceUpdate)
+	s.mux.HandleFunc("POST /blocklist/update", s.handleBlocklistUpdateAll)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
@@ -148,4 +165,11 @@ func errorResponse(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("HX-Retarget", "none")
 	w.Header().Set("HX-Trigger", string(data))
 	w.WriteHeader(code)
+}
+
+// render writes a templ component to w, logging any failure.
+func (s *Server) render(r *http.Request, w http.ResponseWriter, c templ.Component) {
+	if err := c.Render(r.Context(), w); err != nil {
+		s.Logger.Warn("template render failed", "error", err)
+	}
 }
