@@ -1,18 +1,22 @@
 // Package blocklist provides DNS-level ad/tracker/malware blocking sourced
 // from curated remote lists. Sources are downloaded on demand (manual
-// "Update" trigger, mirroring the geosite pattern) and cached on disk. The
-// matcher is built by merging all enabled source caches and deduplicating.
+// "Update" trigger, mirroring the geosite pattern) and cached on disk.
+//
+// The matcher is built by streaming each enabled source's cache file
+// line-by-line directly into the matcher's rule set — no intermediate
+// []string or []shunt.Entry slice is materialised. This matters on routers
+// where a 1M-entry list would otherwise peak tens of MB of transient heap.
 package blocklist
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -40,29 +44,24 @@ type Source struct {
 
 // Presets is the built-in list of supported blocklist sources.
 // Adding a source = adding one entry here.
+//
+// Sizing target: routers have limited RAM. Light is the default; Pro is
+// opt-in for users who have headroom.
 var Presets = []Source{
 	{
-		ID:          "oisd-big",
-		Name:        "OISD Big",
-		Description: "Aggregated ads/tracking/malware list. Balanced false-positive handling.",
-		URL:         "https://big.oisd.nl/domainswild2",
+		ID:          "hagezi-light",
+		Name:        "Hagezi Light",
+		Description: "Router-friendly default: ads, tracking, telemetry, phishing. Low false-positive rate, ~130k entries.",
+		URL:         "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt",
 		Format:      FormatDomains,
 		DefaultOn:   true,
 	},
 	{
-		ID:          "hagezi-tif",
-		Name:        "Hagezi Threat Intelligence",
-		Description: "Malware, phishing, scam domains. Pairs with a general ad list.",
-		URL:         "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/tif.txt",
+		ID:          "hagezi-pro",
+		Name:        "Hagezi Multi PRO",
+		Description: "Heavier coverage: ads, tracking, telemetry, phishing, malware, scam, fake, cryptojacking. ~410k entries — needs RAM headroom.",
+		URL:         "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt",
 		Format:      FormatDomains,
-		DefaultOn:   false,
-	},
-	{
-		ID:          "stevenblack",
-		Name:        "StevenBlack Unified Hosts",
-		Description: "Community-maintained hosts file (ads + malware).",
-		URL:         "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-		Format:      FormatHosts,
 		DefaultOn:   false,
 	},
 }
@@ -82,9 +81,10 @@ func CachePath(dir, id string) string {
 	return filepath.Join(dir, id+".txt")
 }
 
-// MaxDownloadBytes caps a single source download to guard against a
-// misbehaving or malicious upstream streaming unbounded data.
-const MaxDownloadBytes = 50 * 1024 * 1024
+// MaxDownloadBytes caps a single source download. The largest list we ship
+// (Hagezi Pro) is ~10 MB; 15 MB is a real ceiling that flags misconfig early
+// and keeps router RAM predictable.
+const MaxDownloadBytes = 15 * 1024 * 1024
 
 // DownloadResult reports the outcome of a Download call.
 type DownloadResult struct {
@@ -100,7 +100,8 @@ type DownloadResult struct {
 // Download fetches src into destPath atomically. If prevETag or prevLastModified
 // are non-empty they are sent as If-None-Match / If-Modified-Since — on a 304
 // response destPath is not touched and the returned DownloadResult has
-// NotModified=true. The response body is capped at MaxDownloadBytes.
+// NotModified=true. The response body is capped at MaxDownloadBytes and
+// streamed directly to disk (never buffered entirely in memory).
 func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModified string) (DownloadResult, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return DownloadResult{}, fmt.Errorf("create directory: %w", err)
@@ -165,113 +166,149 @@ func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModif
 	}, nil
 }
 
-// Parse reads a cache file and returns the domains it contains.
-// The returned domains are lowercased, have no comment lines, no empty lines,
-// and no format-specific sigils. Duplicates within the same file are removed.
-func Parse(path string, format Format) ([]string, error) {
+// StreamFile opens path and invokes emit for every normalized domain in the
+// file. emit receives a byte slice that is only valid until the next call;
+// the caller must copy it (e.g. via string(b)) to retain it.
+//
+// This is the low-memory path: no []string is built, no dedup map is kept —
+// dedup happens in whatever target data structure emit writes to.
+func StreamFile(path string, format Format, emit func(domain []byte)) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = f.Close() }()
-	return parseReader(f, format)
+	return streamReader(f, format, emit)
 }
 
-func parseReader(r io.Reader, format Format) ([]string, error) {
-	seen := make(map[string]struct{})
-	var domains []string
-
+func streamReader(r io.Reader, format Format, emit func([]byte)) error {
 	scanner := bufio.NewScanner(r)
-	// Allow long lines (some adguard-style lines can be long).
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// 64 KB initial buffer, 256 KB line ceiling. Plain-domain lists never
+	// need more; guards against pathological input.
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
 
 	for scanner.Scan() {
-		d := extract(scanner.Text(), format)
-		if d == "" {
+		d := extractAndNormalize(scanner.Bytes(), format)
+		if len(d) == 0 {
 			continue
 		}
-		if _, ok := seen[d]; ok {
-			continue
-		}
-		seen[d] = struct{}{}
-		domains = append(domains, d)
+		emit(d)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return domains, nil
+	return scanner.Err()
 }
 
-// extract returns a single normalized domain from a line, or "" if the line
-// should be skipped (comment, blank, unsupported content).
-func extract(line string, format Format) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return ""
+// extractAndNormalize reads one line of input and returns the normalized
+// domain bytes (lowercased in place inside the scanner's buffer) or nil if
+// the line is a comment / unsupported / invalid.
+//
+// Important: the returned slice aliases the scanner's buffer. It is only
+// valid until the next call into the scanner — the emit callback must copy
+// before retaining.
+func extractAndNormalize(line []byte, format Format) []byte {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return nil
 	}
-	// Common comment markers.
-	if line[0] == '#' || line[0] == '!' || line[0] == ';' {
-		return ""
+	switch line[0] {
+	case '#', '!', ';':
+		return nil
 	}
 
 	switch format {
 	case FormatDomains:
-		// Strip inline comment.
-		if i := strings.IndexByte(line, '#'); i >= 0 {
-			line = strings.TrimSpace(line[:i])
+		if i := bytes.IndexByte(line, '#'); i >= 0 {
+			line = bytes.TrimSpace(line[:i])
 		}
-		// Some "domains" lists ship with a leading wildcard sigil ("*.example.com").
-		line = strings.TrimPrefix(line, "*.")
-		return normalizeDomain(line)
+		line = bytes.TrimPrefix(line, []byte("*."))
+		return normalizeBytes(line)
 
 	case FormatHosts:
-		// "0.0.0.0 ads.example.com  # comment"
-		if i := strings.IndexByte(line, '#'); i >= 0 {
-			line = strings.TrimSpace(line[:i])
+		if i := bytes.IndexByte(line, '#'); i >= 0 {
+			line = bytes.TrimSpace(line[:i])
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return ""
+		// Fast two-field split — avoids strings.Fields allocation.
+		idx := bytes.IndexAny(line, " \t")
+		if idx < 0 {
+			return nil
 		}
-		ip := fields[0]
-		if ip != "0.0.0.0" && ip != "127.0.0.1" && ip != "::" && ip != "::1" {
-			return ""
+		ip := line[:idx]
+		if !isHostsSinkholeIP(ip) {
+			return nil
 		}
-		host := fields[1]
-		// Skip localhost-ish entries present in standard hosts file.
-		if isLocalhostName(host) {
-			return ""
+		rest := line[idx+1:]
+		// Skip extra whitespace between IP and host.
+		for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t') {
+			rest = rest[1:]
 		}
-		return normalizeDomain(host)
+		hostEnd := bytes.IndexAny(rest, " \t")
+		host := rest
+		if hostEnd >= 0 {
+			host = rest[:hostEnd]
+		}
+		if isLocalhostNameBytes(host) {
+			return nil
+		}
+		return normalizeBytes(host)
 	}
-	return ""
+	return nil
 }
 
-func normalizeDomain(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimSuffix(s, ".")
-	s = strings.ToLower(s)
-	if s == "" {
-		return ""
+// normalizeBytes lowercases (in place) and validates s. Returns s (possibly
+// shortened) if valid, nil otherwise. Requires at least one '.' and DNS-safe
+// ASCII only.
+func normalizeBytes(s []byte) []byte {
+	// Trim a single trailing dot (FQDN form).
+	for len(s) > 0 && s[len(s)-1] == '.' {
+		s = s[:len(s)-1]
 	}
-	// Sanity check — must contain at least one dot and only valid DNS chars.
-	if !strings.ContainsRune(s, '.') {
-		return ""
+	if len(s) == 0 {
+		return nil
 	}
-	for _, r := range s {
-		if r == '.' || r == '-' || r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			continue
+	hasDot := false
+	for i, b := range s {
+		switch {
+		case b >= 'A' && b <= 'Z':
+			s[i] = b + ('a' - 'A')
+		case b == '.':
+			hasDot = true
+		case b == '-', b == '_',
+			b >= 'a' && b <= 'z',
+			b >= '0' && b <= '9':
+			// ok
+		default:
+			return nil
 		}
-		return ""
+	}
+	if !hasDot {
+		return nil
 	}
 	return s
 }
 
-func isLocalhostName(h string) bool {
-	switch strings.ToLower(h) {
-	case "localhost", "localhost.localdomain", "local", "broadcasthost", "ip6-localhost",
-		"ip6-loopback", "ip6-localnet", "ip6-mcastprefix", "ip6-allnodes",
-		"ip6-allrouters", "ip6-allhosts":
+func isHostsSinkholeIP(b []byte) bool {
+	switch string(b) {
+	case "0.0.0.0", "127.0.0.1", "::", "::1":
+		return true
+	}
+	return false
+}
+
+func isLocalhostNameBytes(h []byte) bool {
+	// Case-fold without allocating a string.
+	if len(h) == 0 || len(h) > 32 {
+		return false
+	}
+	var buf [32]byte
+	for i, b := range h {
+		if b >= 'A' && b <= 'Z' {
+			b += 'a' - 'A'
+		}
+		buf[i] = b
+	}
+	switch string(buf[:len(h)]) {
+	case "localhost", "localhost.localdomain", "local", "broadcasthost",
+		"ip6-localhost", "ip6-loopback", "ip6-localnet", "ip6-mcastprefix",
+		"ip6-allnodes", "ip6-allrouters", "ip6-allhosts":
 		return true
 	}
 	return false

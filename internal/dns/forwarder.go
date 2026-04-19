@@ -133,13 +133,8 @@ func (f *Forwarder) Matcher() *Matcher {
 	return f.matcher
 }
 
-// UpdateBlocklist replaces the blocklist matcher rules. Pass an empty slice
-// to disable blocking without changing the response type.
-func (f *Forwarder) UpdateBlocklist(entries []shunt.Entry) {
-	f.blocklist.Update(entries)
-}
-
-// Blocklist returns the blocklist matcher for external introspection.
+// Blocklist returns the blocklist matcher. Callers drive the low-memory
+// streaming build via Blocklist().ReplaceSuffixes(...). Reads are atomic.
 func (f *Forwarder) Blocklist() *Matcher {
 	return f.blocklist
 }

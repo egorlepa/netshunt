@@ -11,8 +11,24 @@ import (
 	"testing"
 )
 
-func TestParseDomains(t *testing.T) {
-	input := `# OISD-style list
+// collectStream runs the streaming parser over input and copies each emitted
+// domain into a freshly-allocated string slice for assertion convenience.
+// Production callers never build such a slice — they insert directly into
+// the matcher map — but tests need a stable value to compare.
+func collectStream(t *testing.T, input string, format Format) []string {
+	t.Helper()
+	var out []string
+	err := streamReader(strings.NewReader(input), format, func(b []byte) {
+		out = append(out, string(b))
+	})
+	if err != nil {
+		t.Fatalf("streamReader: %v", err)
+	}
+	return out
+}
+
+func TestStreamDomains(t *testing.T) {
+	input := `# Hagezi-style list
 ! comment
 ; also comment
 
@@ -21,14 +37,10 @@ Tracker.Net
 *.wildcard.io
 bad.invalid
 foo.bar.co   # inline comment
-ads.example.com
 localhost-missing-dot
 bad$chars.com
 `
-	got, err := parseReader(strings.NewReader(input), FormatDomains)
-	if err != nil {
-		t.Fatalf("parseReader: %v", err)
-	}
+	got := collectStream(t, input, FormatDomains)
 	want := []string{
 		"ads.example.com",
 		"tracker.net",
@@ -41,8 +53,8 @@ bad$chars.com
 	}
 }
 
-func TestParseHosts(t *testing.T) {
-	input := `# StevenBlack-style hosts file
+func TestStreamHosts(t *testing.T) {
+	input := `# hosts-file format
 127.0.0.1 localhost
 127.0.0.1 localhost.localdomain
 255.255.255.255 broadcasthost
@@ -53,18 +65,12 @@ func TestParseHosts(t *testing.T) {
 
 0.0.0.0 ads.example.com
 0.0.0.0 Tracker.Net  # inline
-0.0.0.0 duplicate.test
-0.0.0.0 duplicate.test
 127.0.0.1 malware.test
 `
-	got, err := parseReader(strings.NewReader(input), FormatHosts)
-	if err != nil {
-		t.Fatalf("parseReader: %v", err)
-	}
+	got := collectStream(t, input, FormatHosts)
 	want := []string{
 		"ads.example.com",
 		"tracker.net",
-		"duplicate.test",
 		"malware.test",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -72,31 +78,31 @@ func TestParseHosts(t *testing.T) {
 	}
 }
 
-func TestNormalizeDomain(t *testing.T) {
+func TestNormalizeBytes(t *testing.T) {
 	cases := map[string]string{
-		"Example.COM":      "example.com",
-		"trailing.dot.":    "trailing.dot",
-		"":                 "",
-		"no-tld":           "",
-		"has space.com":    "",
-		"evil$char.net":    "",
-		"  spaced.io  ":    "spaced.io",
-		"under_score.io":   "under_score.io",
-		"MixedCase.Co.Uk":  "mixedcase.co.uk",
+		"Example.COM":     "example.com",
+		"trailing.dot.":   "trailing.dot",
+		"":                "",
+		"no-tld":          "",
+		"has space.com":   "",
+		"evil$char.net":   "",
+		"under_score.io":  "under_score.io",
+		"MixedCase.Co.Uk": "mixedcase.co.uk",
 	}
 	for in, want := range cases {
-		if got := normalizeDomain(in); got != want {
-			t.Errorf("normalizeDomain(%q) = %q, want %q", in, got, want)
+		got := normalizeBytes([]byte(in))
+		if string(got) != want {
+			t.Errorf("normalizeBytes(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
 func TestPresetByID(t *testing.T) {
-	if p := PresetByID("oisd-big"); p == nil || p.Format != FormatDomains {
-		t.Errorf("PresetByID(oisd-big) mismatch: %+v", p)
+	if p := PresetByID("hagezi-light"); p == nil || p.Format != FormatDomains || !p.DefaultOn {
+		t.Errorf("PresetByID(hagezi-light) mismatch: %+v", p)
 	}
-	if p := PresetByID("stevenblack"); p == nil || p.Format != FormatHosts {
-		t.Errorf("PresetByID(stevenblack) mismatch: %+v", p)
+	if p := PresetByID("hagezi-pro"); p == nil || p.Format != FormatDomains || p.DefaultOn {
+		t.Errorf("PresetByID(hagezi-pro) mismatch: %+v", p)
 	}
 	if p := PresetByID("does-not-exist"); p != nil {
 		t.Errorf("PresetByID(does-not-exist) = %+v, want nil", p)
@@ -220,12 +226,12 @@ func TestStoreRecordFetchPersistsValidators(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	if err := s.RecordFetch("oisd-big", 42, `"v1"`, "Wed, 21 Oct 2026 07:28:00 GMT"); err != nil {
+	if err := s.RecordFetch("hagezi-pro", 42, `"v1"`, "Wed, 21 Oct 2026 07:28:00 GMT"); err != nil {
 		t.Fatalf("RecordFetch: %v", err)
 	}
-	st, ok := s.State("oisd-big")
+	st, ok := s.State("hagezi-pro")
 	if !ok {
-		t.Fatalf("oisd-big not found after RecordFetch")
+		t.Fatalf("hagezi-pro not found after RecordFetch")
 	}
 	if st.DomainCount != 42 || st.ETag != `"v1"` || st.LastModified == "" {
 		t.Errorf("state not persisted: %+v", st)
@@ -236,7 +242,7 @@ func TestStoreRecordFetchPersistsValidators(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	st2, _ := s2.State("oisd-big")
+	st2, _ := s2.State("hagezi-pro")
 	if st2.ETag != `"v1"` || st2.LastModified != "Wed, 21 Oct 2026 07:28:00 GMT" {
 		t.Errorf("validators did not round-trip: %+v", st2)
 	}

@@ -34,20 +34,34 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, sources 
 		</button>
 	</div>
 	<div class="card mb-16">
-		<form hx-put="/blocklist/enabled" hx-trigger="change" hx-swap="none">
+		<form
+			hx-put="/blocklist/enabled"
+			hx-trigger="change"
+			hx-swap="none"
+			hx-indicator="#blocklist-enabled-spinner"
+			hx-disabled-elt="find input[name='enabled']"
+		>
 			<label>
 				<input type="checkbox" name="enabled" if enabled { checked } value="1"/>
 				Enable DNS blocking
+				<span id="blocklist-enabled-spinner" class="htmx-indicator"><span class="spinner"></span></span>
 			</label>
 		</form>
 		<div class="mt-8">
-			<form hx-put="/blocklist/response" hx-trigger="change" hx-swap="none">
+			<form
+				hx-put="/blocklist/response"
+				hx-trigger="change"
+				hx-swap="none"
+				hx-indicator="#blocklist-response-spinner"
+				hx-disabled-elt="find select[name='response']"
+			>
 				<label class="text-muted text-sm">Response when blocked</label>
 				<select name="response">
 					<option value="nxdomain" if response == config.BlocklistResponseNXDomain { selected }>NXDOMAIN (recommended)</option>
 					<option value="nodata" if response == config.BlocklistResponseNoData { selected }>NODATA (empty answer)</option>
 					<option value="zero" if response == config.BlocklistResponseZero { selected }>0.0.0.0 / :: sinkhole</option>
 				</select>
+				<span id="blocklist-response-spinner" class="htmx-indicator"><span class="spinner"></span></span>
 			</form>
 		</div>
 	</div>
@@ -81,7 +95,10 @@ templ BlocklistSourceRow(sv SourceView) {
 				hx-put={ "/blocklist/sources/" + sv.Preset.ID + "/enabled" }
 				hx-trigger="change"
 				hx-swap="none"
+				hx-indicator={ "#toggle-spinner-" + SlugID(sv.Preset.ID) }
+				hx-disabled-elt="this"
 			/>
+			<span id={ "toggle-spinner-" + SlugID(sv.Preset.ID) } class="htmx-indicator"><span class="spinner"></span></span>
 		</td>
 		<td>
 			<div><strong>{ sv.Preset.Name }</strong></div>
@@ -110,7 +127,12 @@ templ BlocklistSourceRow(sv SourceView) {
 				hx-post={ "/blocklist/sources/" + sv.Preset.ID + "/update" }
 				hx-target={ "#src-" + SlugID(sv.Preset.ID) }
 				hx-swap="outerHTML"
-			>Update</button>
+				hx-indicator={ "#spinner-" + SlugID(sv.Preset.ID) }
+				hx-disabled-elt="this"
+			>
+				Update
+				<span id={ "spinner-" + SlugID(sv.Preset.ID) } class="htmx-indicator"><span class="spinner"></span></span>
+			</button>
 		</td>
 	</tr>
 }

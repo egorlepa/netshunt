@@ -1,25 +1,21 @@
 package blocklist
 
-import (
-	"os"
-
-	"github.com/egorlepa/netshunt/internal/shunt"
-)
-
-// BuildEntries reads every enabled source's cache file, dedups across all
-// sources, and returns them as suffix-match shunt entries (so "example.com"
-// blocks that domain and any subdomain). Missing or unreadable cache files
-// are skipped silently — updating a source populates its cache.
+// Stream invokes emit for every normalized domain from every enabled source
+// cache file. Domains are yielded as byte slices that alias the scanner's
+// buffer — emit must string() the slice if it intends to retain it past the
+// callback.
 //
-// Returns (entries, perSourceCounts). perSourceCounts maps source ID to the
-// number of unique domains contributed (after cross-source dedup — a domain
-// counts for the first source that provided it).
-func BuildEntries(s *Store) ([]shunt.Entry, map[string]int) {
+// perSource, if non-nil, is called once per source after its file has been
+// fully streamed, with the number of domains emitted from that source
+// (pre-cross-source-dedup). Missing or unreadable cache files are skipped
+// silently — updating the source will populate the cache.
+//
+// This is the low-memory apply path: no []string, no dedup map, no
+// []shunt.Entry is built inside this call. The caller's emit closure is
+// expected to insert directly into the destination data structure
+// (typically the matcher's suffix map).
+func (s *Store) Stream(emit func(domain []byte), perSource func(id string, count int)) {
 	states := s.States()
-	seen := make(map[string]struct{})
-	counts := make(map[string]int, len(states))
-	var entries []shunt.Entry
-
 	for _, st := range states {
 		if !st.Enabled {
 			continue
@@ -29,21 +25,14 @@ func BuildEntries(s *Store) ([]shunt.Entry, map[string]int) {
 			continue
 		}
 		path := CachePath(s.CacheDir(), st.ID)
-		if _, err := os.Stat(path); err != nil {
-			continue
+		n := 0
+		wrap := func(b []byte) {
+			emit(b)
+			n++
 		}
-		domains, err := Parse(path, preset.Format)
-		if err != nil {
-			continue
-		}
-		for _, d := range domains {
-			if _, ok := seen[d]; ok {
-				continue
-			}
-			seen[d] = struct{}{}
-			entries = append(entries, shunt.Entry{Value: shunt.PrefixDomainSuffix + d})
-			counts[st.ID]++
+		_ = StreamFile(path, preset.Format, wrap)
+		if perSource != nil {
+			perSource(st.ID, n)
 		}
 	}
-	return entries, counts
 }

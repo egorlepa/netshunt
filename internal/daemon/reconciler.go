@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime"
 	"sync"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
@@ -119,12 +120,28 @@ func (r *Reconciler) applyBlocklistLocked() {
 	r.Forwarder.SetBlockResponse(blockResponseFromConfig(r.Config.Blocklist.Response))
 
 	if r.Blocklist == nil || !r.Config.Blocklist.Enabled {
-		r.Forwarder.UpdateBlocklist(nil)
+		// Clear the matcher without allocating any intermediate set.
+		r.Forwarder.Blocklist().ReplaceSuffixes(func(func(string)) {})
 		return
 	}
-	entries, counts := blocklist.BuildEntries(r.Blocklist)
-	r.Forwarder.UpdateBlocklist(entries)
-	r.Logger.Info("blocklist applied", "domains", len(entries), "per_source", counts)
+
+	// Stream-build: each domain is scanned from disk, normalized in place,
+	// and inserted directly into the new matcher's suffix map. No []string
+	// or []shunt.Entry slice is materialised.
+	counts := map[string]int{}
+	total := r.Forwarder.Blocklist().ReplaceSuffixes(func(add func(string)) {
+		r.Blocklist.Stream(
+			func(b []byte) { add(string(b)) },
+			func(id string, c int) { counts[id] = c },
+		)
+	})
+
+	// Force reclamation of the old matcher rules + any transient parse
+	// allocations now, rather than waiting on the GC pacer. On a router the
+	// heap high-water mark matters far more than throughput.
+	runtime.GC()
+
+	r.Logger.Info("blocklist applied", "domains", total, "per_source", counts)
 }
 
 func blockResponseFromConfig(r config.BlocklistResponse) dns.BlockResponse {

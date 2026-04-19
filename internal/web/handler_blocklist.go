@@ -3,7 +3,6 @@ package web
 import (
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
@@ -127,14 +126,11 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request) {
-	states := s.Blocklist.States()
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3) // cap parallel fetches
-
+	// Fetches are run sequentially. On routers, parallel downloads spike
+	// flash writes + memory pressure from simultaneous in-flight tmp files
+	// and HTTP buffers without any real speedup on a single CPU core.
 	var success, failed int
-	var mu sync.Mutex
-
-	for _, st := range states {
+	for _, st := range s.Blocklist.States() {
 		if !st.Enabled {
 			continue
 		}
@@ -142,23 +138,12 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 		if preset == nil {
 			continue
 		}
-		wg.Add(1)
-		go func(p blocklist.Source) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			if _, _, err := s.fetchAndRecord(r, p); err != nil {
-				mu.Lock()
-				failed++
-				mu.Unlock()
-				return
-			}
-			mu.Lock()
-			success++
-			mu.Unlock()
-		}(*preset)
+		if _, _, err := s.fetchAndRecord(r, *preset); err != nil {
+			failed++
+			continue
+		}
+		success++
 	}
-	wg.Wait()
 
 	if err := s.Reconciler.ApplyBlocklist(r.Context()); err != nil {
 		s.Logger.Warn("apply blocklist after update", "error", err)
@@ -193,15 +178,17 @@ func (s *Server) fetchAndRecord(r *http.Request, preset blocklist.Source) (int, 
 		return prev.DomainCount, true, nil
 	}
 
-	domains, err := blocklist.Parse(dest, preset.Format)
-	if err != nil {
+	// Stream-count: visit each domain without building a slice so a large
+	// file (1M lines) doesn't spike memory just to get a count for display.
+	count := 0
+	if err := blocklist.StreamFile(dest, preset.Format, func([]byte) { count++ }); err != nil {
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
 		return 0, false, fmt.Errorf("%s parse: %w", preset.ID, err)
 	}
-	if err := s.Blocklist.RecordFetch(preset.ID, len(domains), res.ETag, res.LastModified); err != nil {
+	if err := s.Blocklist.RecordFetch(preset.ID, count, res.ETag, res.LastModified); err != nil {
 		return 0, false, err
 	}
-	return len(domains), false, nil
+	return count, false, nil
 }
 
 // blocklistSourceViews zips Presets with persisted state in display order.
