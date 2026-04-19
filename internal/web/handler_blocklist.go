@@ -106,7 +106,7 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	count, err := s.fetchAndRecord(r, *preset)
+	count, unchanged, err := s.fetchAndRecord(r, *preset)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,7 +118,11 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 	}
 
 	st, _ := s.Blocklist.State(id)
-	toastTrigger(w, fmt.Sprintf("%s updated (%d domains)", preset.Name, count), "success")
+	msg := fmt.Sprintf("%s updated (%d domains)", preset.Name, count)
+	if unchanged {
+		msg = fmt.Sprintf("%s unchanged (%d domains)", preset.Name, count)
+	}
+	toastTrigger(w, msg, "success")
 	s.render(r, w, templates.BlocklistSourceRow(templates.SourceView{Preset: *preset, State: st}))
 }
 
@@ -143,7 +147,7 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if _, err := s.fetchAndRecord(r, p); err != nil {
+			if _, _, err := s.fetchAndRecord(r, p); err != nil {
 				mu.Lock()
 				failed++
 				mu.Unlock()
@@ -168,23 +172,36 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 	s.render(r, w, templates.BlocklistContent(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.blocklistSourceViews()))
 }
 
-// fetchAndRecord downloads a single source, parses it for domain count, and
-// records the result on the store.
-func (s *Server) fetchAndRecord(r *http.Request, preset blocklist.Source) (int, error) {
+// fetchAndRecord downloads a single source (conditional GET via stored
+// validators) and records the result on the store. Returns the post-fetch
+// domain count, a flag indicating the upstream returned 304 Not Modified, and
+// any fatal error.
+func (s *Server) fetchAndRecord(r *http.Request, preset blocklist.Source) (int, bool, error) {
 	dest := blocklist.CachePath(s.Blocklist.CacheDir(), preset.ID)
-	if err := blocklist.Download(r.Context(), preset, dest); err != nil {
+
+	prev, _ := s.Blocklist.State(preset.ID)
+	res, err := blocklist.Download(r.Context(), preset, dest, prev.ETag, prev.LastModified)
+	if err != nil {
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
-		return 0, fmt.Errorf("%s: %w", preset.ID, err)
+		return 0, false, fmt.Errorf("%s: %w", preset.ID, err)
 	}
+
+	if res.NotModified {
+		if err := s.Blocklist.RecordUnchanged(preset.ID); err != nil {
+			return 0, false, err
+		}
+		return prev.DomainCount, true, nil
+	}
+
 	domains, err := blocklist.Parse(dest, preset.Format)
 	if err != nil {
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
-		return 0, fmt.Errorf("%s parse: %w", preset.ID, err)
+		return 0, false, fmt.Errorf("%s parse: %w", preset.ID, err)
 	}
-	if err := s.Blocklist.RecordFetch(preset.ID, len(domains)); err != nil {
-		return 0, err
+	if err := s.Blocklist.RecordFetch(preset.ID, len(domains), res.ETag, res.LastModified); err != nil {
+		return 0, false, err
 	}
-	return len(domains), nil
+	return len(domains), false, nil
 }
 
 // blocklistSourceViews zips Presets with persisted state in display order.

@@ -17,6 +17,10 @@ type SourceState struct {
 	LastFetched  time.Time `yaml:"last_fetched,omitempty"`
 	DomainCount  int       `yaml:"domain_count,omitempty"`
 	LastError    string    `yaml:"last_error,omitempty"`
+	// ETag and LastModified carry validators returned by upstream so the next
+	// fetch can issue a conditional GET (If-None-Match / If-Modified-Since).
+	ETag         string `yaml:"etag,omitempty"`
+	LastModified string `yaml:"last_modified,omitempty"`
 }
 
 // Meta is the on-disk blocklist metadata file.
@@ -77,13 +81,8 @@ func (s *Store) load() error {
 	return s.saveLocked()
 }
 
-// save writes the current meta atomically to disk.
-func (s *Store) save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.saveLocked()
-}
-
+// saveLocked writes the current meta atomically to disk. Must be called with
+// s.mu held.
 func (s *Store) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return fmt.Errorf("create blocklist dir: %w", err)
@@ -120,50 +119,57 @@ func (s *Store) States() []SourceState {
 	return out
 }
 
-// SetEnabled toggles the enabled flag for a source.
-func (s *Store) SetEnabled(id string, enabled bool) error {
+// mutateSource applies fn to the SourceState with the given id and then
+// persists the meta file. Lock is held across both the mutation and the write
+// so readers never observe in-memory state that isn't yet on disk. Returns
+// an error if id is unknown.
+func (s *Store) mutateSource(id string, fn func(*SourceState)) error {
 	s.mu.Lock()
-	found := false
+	defer s.mu.Unlock()
 	for i := range s.meta.Sources {
 		if s.meta.Sources[i].ID == id {
-			s.meta.Sources[i].Enabled = enabled
-			found = true
-			break
+			fn(&s.meta.Sources[i])
+			return s.saveLocked()
 		}
 	}
-	s.mu.Unlock()
-	if !found {
-		return fmt.Errorf("unknown blocklist source %q", id)
-	}
-	return s.save()
+	return fmt.Errorf("unknown blocklist source %q", id)
 }
 
-// RecordFetch updates the last-fetched timestamp, domain count, and clears any
-// prior error for a source. Call on successful download+parse.
-func (s *Store) RecordFetch(id string, domainCount int) error {
-	s.mu.Lock()
-	for i := range s.meta.Sources {
-		if s.meta.Sources[i].ID == id {
-			s.meta.Sources[i].LastFetched = time.Now().UTC()
-			s.meta.Sources[i].DomainCount = domainCount
-			s.meta.Sources[i].LastError = ""
-		}
-	}
-	s.mu.Unlock()
-	return s.save()
+// SetEnabled toggles the enabled flag for a source.
+func (s *Store) SetEnabled(id string, enabled bool) error {
+	return s.mutateSource(id, func(st *SourceState) {
+		st.Enabled = enabled
+	})
+}
+
+// RecordFetch updates the last-fetched timestamp, domain count, validators,
+// and clears any prior error for a source. Call on a successful 200 fetch.
+func (s *Store) RecordFetch(id string, domainCount int, etag, lastModified string) error {
+	return s.mutateSource(id, func(st *SourceState) {
+		st.LastFetched = time.Now().UTC()
+		st.DomainCount = domainCount
+		st.LastError = ""
+		st.ETag = etag
+		st.LastModified = lastModified
+	})
+}
+
+// RecordUnchanged marks a source as confirmed-fresh (304 response). Keeps the
+// existing DomainCount and validators, refreshes LastFetched, clears any prior
+// error.
+func (s *Store) RecordUnchanged(id string) error {
+	return s.mutateSource(id, func(st *SourceState) {
+		st.LastFetched = time.Now().UTC()
+		st.LastError = ""
+	})
 }
 
 // RecordError stores the fetch error for a source. Keeps the previous
 // DomainCount and LastFetched intact (stale cache still usable).
 func (s *Store) RecordError(id string, errMsg string) error {
-	s.mu.Lock()
-	for i := range s.meta.Sources {
-		if s.meta.Sources[i].ID == id {
-			s.meta.Sources[i].LastError = errMsg
-		}
-	}
-	s.mu.Unlock()
-	return s.save()
+	return s.mutateSource(id, func(st *SourceState) {
+		st.LastError = errMsg
+	})
 }
 
 // CacheDir returns the directory where source caches are stored.

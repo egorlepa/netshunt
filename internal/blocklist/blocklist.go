@@ -82,47 +82,87 @@ func CachePath(dir, id string) string {
 	return filepath.Join(dir, id+".txt")
 }
 
-// Download fetches the source and writes it to destPath atomically.
-func Download(ctx context.Context, src Source, destPath string) error {
+// MaxDownloadBytes caps a single source download to guard against a
+// misbehaving or malicious upstream streaming unbounded data.
+const MaxDownloadBytes = 50 * 1024 * 1024
+
+// DownloadResult reports the outcome of a Download call.
+type DownloadResult struct {
+	// NotModified is true when upstream returned 304; destPath is left untouched.
+	NotModified bool
+	// ETag and LastModified are the validators from the upstream response,
+	// empty if not provided. On NotModified the caller should keep the
+	// previously-stored values.
+	ETag         string
+	LastModified string
+}
+
+// Download fetches src into destPath atomically. If prevETag or prevLastModified
+// are non-empty they are sent as If-None-Match / If-Modified-Since — on a 304
+// response destPath is not touched and the returned DownloadResult has
+// NotModified=true. The response body is capped at MaxDownloadBytes.
+func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModified string) (DownloadResult, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return fmt.Errorf("create directory: %w", err)
+		return DownloadResult{}, fmt.Errorf("create directory: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return DownloadResult{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("User-Agent", "netshunt/blocklist")
+	if prevETag != "" {
+		req.Header.Set("If-None-Match", prevETag)
+	}
+	if prevLastModified != "" {
+		req.Header.Set("If-Modified-Since", prevLastModified)
+	}
 
 	client := &http.Client{Timeout: 2 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download: %w", err)
+		return DownloadResult{}, fmt.Errorf("download: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusNotModified {
+		return DownloadResult{NotModified: true, ETag: prevETag, LastModified: prevLastModified}, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download returned status %d", resp.StatusCode)
+		return DownloadResult{}, fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	tmp := destPath + ".tmp"
-	f, err := os.Create(tmp)
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), filepath.Base(destPath)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return DownloadResult{}, fmt.Errorf("create temp file: %w", err)
 	}
+	tmpName := tmp.Name()
 	defer func() {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 	}()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		return fmt.Errorf("write: %w", err)
+	// Read one extra byte past the cap so we can distinguish "exactly at cap"
+	// from "exceeded cap".
+	limited := io.LimitReader(resp.Body, MaxDownloadBytes+1)
+	written, err := io.Copy(tmp, limited)
+	if err != nil {
+		return DownloadResult{}, fmt.Errorf("write: %w", err)
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close: %w", err)
+	if written > MaxDownloadBytes {
+		return DownloadResult{}, fmt.Errorf("download exceeds %d byte cap", MaxDownloadBytes)
+	}
+	if err := tmp.Close(); err != nil {
+		return DownloadResult{}, fmt.Errorf("close: %w", err)
 	}
 
-	return os.Rename(tmp, destPath)
+	if err := os.Rename(tmpName, destPath); err != nil {
+		return DownloadResult{}, fmt.Errorf("rename: %w", err)
+	}
+	return DownloadResult{
+		ETag:         resp.Header.Get("ETag"),
+		LastModified: resp.Header.Get("Last-Modified"),
+	}, nil
 }
 
 // Parse reads a cache file and returns the domains it contains.
