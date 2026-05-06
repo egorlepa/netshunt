@@ -94,7 +94,7 @@ func (f *Forwarder) Start() error {
 	go func() { errCh <- f.udpServer.ListenAndServe() }()
 	go func() { errCh <- f.tcpServer.ListenAndServe() }()
 
-	// Wait for both to be ready or for an error.
+	// Wait for both to be ready or for	 an error.
 	for i := 0; i < 2; i++ {
 		select {
 		case <-udpReady:
@@ -267,8 +267,8 @@ func blockReply(r *dns.Msg, qname string, kind BlockResponse) *dns.Msg {
 		switch qtype {
 		case dns.TypeA:
 			m.Answer = []dns.RR{&dns.A{
-				Hdr:  dns.Header{Name: fqdn, TTL: blockTTL, Class: dns.ClassINET},
-				A:    rdata.A{Addr: netip.IPv4Unspecified()},
+				Hdr: dns.Header{Name: fqdn, TTL: blockTTL, Class: dns.ClassINET},
+				A:   rdata.A{Addr: netip.IPv4Unspecified()},
 			}}
 		case dns.TypeAAAA:
 			m.Answer = []dns.RR{&dns.AAAA{

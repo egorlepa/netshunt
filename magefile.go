@@ -26,7 +26,7 @@ func Build() error {
 		return err
 	}
 	fmt.Println("Building for host platform...")
-	return goBuild("", "", "")
+	return goBuild("", "", "", nil)
 }
 
 // BuildRouter cross-compiles for aarch64 (Keenetic Giga KN-1012).
@@ -35,7 +35,16 @@ func BuildRouter() error {
 		return err
 	}
 	fmt.Println("Cross-compiling for linux/arm64...")
-	return goBuild("linux", "arm64", "aarch64")
+	return goBuild("linux", "arm64", "aarch64", nil)
+}
+
+// BuildMipsel cross-compiles for mipsel (Keenetic mipsel-based routers).
+func BuildMipsel() error {
+	if err := generate(); err != nil {
+		return err
+	}
+	fmt.Println("Cross-compiling for linux/mipsle (softfloat)...")
+	return goBuild("linux", "mipsle", "mipsel", []string{"GOMIPS=softfloat"})
 }
 
 // Package builds the aarch64 binary and creates an IPK package.
@@ -44,7 +53,16 @@ func Package() error {
 		return err
 	}
 	fmt.Println("Creating IPK package...")
-	return buildIPK()
+	return buildIPK("aarch64", "aarch64-3.10")
+}
+
+// PackageMipsel builds the mipsel binary and creates an IPK package.
+func PackageMipsel() error {
+	if err := BuildMipsel(); err != nil {
+		return err
+	}
+	fmt.Println("Creating IPK package...")
+	return buildIPK("mipsel", "mipsel-3.4")
 }
 
 // Test runs all tests.
@@ -67,7 +85,7 @@ func generate() error {
 	return sh("go", "generate", "./...")
 }
 
-func goBuild(goos, goarch, suffix string) error {
+func goBuild(goos, goarch, suffix string, extraEnv []string) error {
 	output := filepath.Join("dist", binaryName)
 	if suffix != "" {
 		output = filepath.Join("dist", fmt.Sprintf("%s_%s", binaryName, suffix))
@@ -85,6 +103,7 @@ func goBuild(goos, goarch, suffix string) error {
 	if goarch != "" {
 		env = append(env, "GOARCH="+goarch)
 	}
+	env = append(env, extraEnv...)
 
 	cmd := exec.Command("go", "build",
 		"-ldflags", ldflags,
@@ -98,8 +117,8 @@ func goBuild(goos, goarch, suffix string) error {
 	return cmd.Run()
 }
 
-func buildIPK() error {
-	binary := filepath.Join("dist", binaryName+"_aarch64")
+func buildIPK(archSuffix, controlArch string) error {
+	binary := filepath.Join("dist", binaryName+"_"+archSuffix)
 	info, err := os.Stat(binary)
 	if err != nil {
 		return fmt.Errorf("binary not found: %w", err)
@@ -114,13 +133,13 @@ func buildIPK() error {
 	}
 
 	// Build control.tar.gz — package metadata.
-	controlBuf, err := buildControlTar(installedSize, now)
+	controlBuf, err := buildControlTar(installedSize, controlArch, now)
 	if err != nil {
 		return fmt.Errorf("build control.tar.gz: %w", err)
 	}
 
 	// Assemble the IPK (outer tar.gz with debian-binary + control.tar.gz + data.tar.gz).
-	ipkPath := filepath.Join("dist", fmt.Sprintf("netshunt_%s_aarch64.ipk", version))
+	ipkPath := filepath.Join("dist", fmt.Sprintf("netshunt_%s_%s.ipk", version, archSuffix))
 	if err := assembleIPK(ipkPath, controlBuf, dataBuf, now); err != nil {
 		return fmt.Errorf("assemble IPK: %w", err)
 	}
@@ -226,7 +245,7 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 	return buf.Bytes(), installedSize, nil
 }
 
-func buildControlTar(installedSize int64, now time.Time) ([]byte, error) {
+func buildControlTar(installedSize int64, arch string, now time.Time) ([]byte, error) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -251,6 +270,7 @@ func buildControlTar(installedSize int64, now time.Time) ([]byte, error) {
 		return nil, err
 	}
 	control := strings.ReplaceAll(string(tmplData), "{{.Version}}", version)
+	control = strings.ReplaceAll(control, "{{.Architecture}}", arch)
 	control = strings.ReplaceAll(control, "{{.InstalledSize}}", fmt.Sprintf("%d", installedSize))
 	if err := addControlFile("control", []byte(control), 0644); err != nil {
 		return nil, err
