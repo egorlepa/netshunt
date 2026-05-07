@@ -3,8 +3,10 @@ package geosite
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +16,30 @@ import (
 )
 
 const DownloadURL = "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+
+const (
+	downloadAttempts    = 4
+	downloadBackoff     = 2 * time.Second
+	tlsHandshakeTimeout = 30 * time.Second
+	downloadTimeout     = 5 * time.Minute
+)
+
+var downloadClient = &http.Client{
+	Timeout: downloadTimeout,
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	},
+}
 
 // DomainType matches v2fly protobuf Domain.Type enum.
 type DomainType int
@@ -61,12 +87,34 @@ func Download(ctx context.Context, destPath string) error {
 		return fmt.Errorf("create directory: %w", err)
 	}
 
+	tmp := destPath + ".tmp"
+	var lastErr error
+	for attempt := 1; attempt <= downloadAttempts; attempt++ {
+		err := downloadOnce(ctx, tmp)
+		if err == nil {
+			return os.Rename(tmp, destPath)
+		}
+		_ = os.Remove(tmp)
+		lastErr = err
+		if ctx.Err() != nil || !isRetryable(err) || attempt == downloadAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(downloadBackoff * time.Duration(1<<(attempt-1))):
+		}
+	}
+	return lastErr
+}
+
+func downloadOnce(ctx context.Context, tmpPath string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, DownloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
@@ -76,15 +124,11 @@ func Download(ctx context.Context, destPath string) error {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	tmp := destPath + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer func() {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-	}()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return fmt.Errorf("write: %w", err)
@@ -92,8 +136,25 @@ func Download(ctx context.Context, destPath string) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
+	return nil
+}
 
-	return os.Rename(tmp, destPath)
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "TLS handshake") ||
+		strings.Contains(msg, "EOF") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "status 5")
 }
 
 // Parse reads a dlc.dat file and returns the parsed database.
