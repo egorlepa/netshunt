@@ -15,10 +15,20 @@ import (
 	"time"
 )
 
+// DownloadURL is the primary source for the geosite database.
 const DownloadURL = "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
 
+// downloadMirrors are tried in order if the primary fails.
+var downloadMirrors = []string{
+	DownloadURL,
+	"https://cdn.jsdelivr.net/gh/v2fly/domain-list-community@release/dlc.dat",
+	"https://fastly.jsdelivr.net/gh/v2fly/domain-list-community@release/dlc.dat",
+	"https://gcore.jsdelivr.net/gh/v2fly/domain-list-community@release/dlc.dat",
+	"https://raw.githubusercontent.com/v2fly/domain-list-community/release/dlc.dat",
+}
+
 const (
-	downloadAttempts    = 4
+	downloadAttempts    = 2
 	downloadBackoff     = 2 * time.Second
 	tlsHandshakeTimeout = 30 * time.Second
 	downloadTimeout     = 5 * time.Minute
@@ -89,27 +99,32 @@ func Download(ctx context.Context, destPath string) error {
 
 	tmp := destPath + ".tmp"
 	var lastErr error
-	for attempt := 1; attempt <= downloadAttempts; attempt++ {
-		err := downloadOnce(ctx, tmp)
-		if err == nil {
-			return os.Rename(tmp, destPath)
-		}
-		_ = os.Remove(tmp)
-		lastErr = err
-		if ctx.Err() != nil || !isRetryable(err) || attempt == downloadAttempts {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(downloadBackoff * time.Duration(1<<(attempt-1))):
+	for _, url := range downloadMirrors {
+		for attempt := 1; attempt <= downloadAttempts; attempt++ {
+			err := downloadOnce(ctx, url, tmp)
+			if err == nil {
+				return os.Rename(tmp, destPath)
+			}
+			_ = os.Remove(tmp)
+			lastErr = fmt.Errorf("%s: %w", url, err)
+			if ctx.Err() != nil {
+				return lastErr
+			}
+			if !isRetryable(err) || attempt == downloadAttempts {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(downloadBackoff * time.Duration(1<<(attempt-1))):
+			}
 		}
 	}
 	return lastErr
 }
 
-func downloadOnce(ctx context.Context, tmpPath string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, DownloadURL, nil)
+func downloadOnce(ctx context.Context, url, tmpPath string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
