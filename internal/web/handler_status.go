@@ -9,14 +9,8 @@ import (
 )
 
 func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
-	ipset4 := netfilter.NewIPSet(s.Config.IPSet.TableName)
-	ipset4Count, _ := ipset4.Count(ctx)
-
-	var ipset6Count int
-	if s.Config.IPv6 {
-		ipset6 := netfilter.NewIPSet6(s.Config.IPSet.TableName + "6")
-		ipset6Count, _ = ipset6.Count(ctx)
-	}
+	ipset := netfilter.NewIPSet(s.Config.IPSet.TableName)
+	ipsetCount, _ := ipset.Count(ctx)
 
 	shunts, _ := s.Shunts.List()
 	enabledCount, entryCount := 0, 0
@@ -30,14 +24,13 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	trackedDomains, trackedIPs := s.Tracker.Count()
 
 	return templates.DashboardData{
-		IPv6:              s.Config.IPv6,
-		IPSet4Count:       ipset4Count,
-		IPSet6Count:       ipset6Count,
+		IPSetCount:        ipsetCount,
 		ShuntCount:        len(shunts),
 		EnabledShuntCount: enabledCount,
 		EntryCount:        entryCount,
 		TrackedDomains:    trackedDomains,
 		TrackedIPs:        trackedIPs,
+		Routing:           s.Config.Routing,
 		Version:           s.Version,
 	}
 }

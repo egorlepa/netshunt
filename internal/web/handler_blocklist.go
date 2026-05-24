@@ -1,8 +1,12 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/robfig/cron/v3"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
@@ -10,7 +14,7 @@ import (
 )
 
 func (s *Server) handleBlocklistPage(w http.ResponseWriter, r *http.Request) {
-	s.render(r, w, templates.BlocklistPage(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.blocklistSourceViews()))
+	s.render(r, w, templates.BlocklistPage(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.Config.Blocklist.AutoUpdate, s.blocklistSourceViews()))
 }
 
 func (s *Server) handleBlocklistToggleEnabled(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +109,7 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	count, unchanged, err := s.fetchAndRecord(r, *preset)
+	count, unchanged, err := s.fetchAndRecord(r.Context(), *preset)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -126,10 +130,62 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request) {
+	success, failed := s.UpdateAllBlocklistSources(r.Context())
+
+	if failed == 0 {
+		toastTrigger(w, fmt.Sprintf("Updated %d source(s)", success), "success")
+	} else {
+		toastTrigger(w, fmt.Sprintf("Updated %d, %d failed", success, failed), "error")
+	}
+	s.render(r, w, templates.BlocklistContent(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.Config.Blocklist.AutoUpdate, s.blocklistSourceViews()))
+}
+
+func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	enabled := r.FormValue("enabled") != ""
+	schedule := strings.TrimSpace(r.FormValue("schedule"))
+	if schedule == "" {
+		schedule = config.DefaultBlocklistSchedule
+	}
+	if _, err := cron.ParseStandard(schedule); err != nil {
+		errorResponse(w, "invalid cron expression: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg.Blocklist.AutoUpdate.Enabled = enabled
+	cfg.Blocklist.AutoUpdate.Schedule = schedule
+	if err := config.Save(cfg); err != nil {
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	*s.Config = *cfg
+
+	if s.Scheduler != nil {
+		if err := s.Scheduler.Reconfigure(); err != nil {
+			errorResponse(w, "saved, but scheduler reconfigure failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	toastTrigger(w, "Auto-update settings applied", "success")
+	w.WriteHeader(http.StatusOK)
+}
+
+// UpdateAllBlocklistSources fetches every enabled source sequentially and
+// applies the blocklist. Returns success/fail counts. Safe to call from a
+// background goroutine (scheduler) — does not touch the http.Request layer.
+func (s *Server) UpdateAllBlocklistSources(ctx context.Context) (success, failed int) {
 	// Fetches are run sequentially. On routers, parallel downloads spike
 	// flash writes + memory pressure from simultaneous in-flight tmp files
 	// and HTTP buffers without any real speedup on a single CPU core.
-	var success, failed int
 	for _, st := range s.Blocklist.States() {
 		if !st.Enabled {
 			continue
@@ -138,34 +194,28 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 		if preset == nil {
 			continue
 		}
-		if _, _, err := s.fetchAndRecord(r, *preset); err != nil {
+		if _, _, err := s.fetchAndRecord(ctx, *preset); err != nil {
 			failed++
 			continue
 		}
 		success++
 	}
 
-	if err := s.Reconciler.ApplyBlocklist(r.Context()); err != nil {
+	if err := s.Reconciler.ApplyBlocklist(ctx); err != nil {
 		s.Logger.Warn("apply blocklist after update", "error", err)
 	}
-
-	if failed == 0 {
-		toastTrigger(w, fmt.Sprintf("Updated %d source(s)", success), "success")
-	} else {
-		toastTrigger(w, fmt.Sprintf("Updated %d, %d failed", success, failed), "error")
-	}
-	s.render(r, w, templates.BlocklistContent(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.blocklistSourceViews()))
+	return success, failed
 }
 
 // fetchAndRecord downloads a single source (conditional GET via stored
 // validators) and records the result on the store. Returns the post-fetch
 // domain count, a flag indicating the upstream returned 304 Not Modified, and
 // any fatal error.
-func (s *Server) fetchAndRecord(r *http.Request, preset blocklist.Source) (int, bool, error) {
+func (s *Server) fetchAndRecord(ctx context.Context, preset blocklist.Source) (int, bool, error) {
 	dest := blocklist.CachePath(s.Blocklist.CacheDir(), preset.ID)
 
 	prev, _ := s.Blocklist.State(preset.ID)
-	res, err := blocklist.Download(r.Context(), preset, dest, prev.ETag, prev.LastModified)
+	res, err := blocklist.Download(ctx, preset, dest, prev.ETag, prev.LastModified)
 	if err != nil {
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
 		return 0, false, fmt.Errorf("%s: %w", preset.ID, err)

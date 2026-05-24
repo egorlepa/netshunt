@@ -12,8 +12,7 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 - **HTTP API** — full API for scripting and automation
 - **Encrypted DNS** — built-in DNS forwarder → dnscrypt-proxy for DoH/DoT upstream resolution
 - **Automatic IP tracking** — DNS forwarder populates ipset in real-time; tracked IPs persist until the domain is removed or the daemon restarts
-- **IPv6 support (optional)** — dual-stack ipset and ip6tables rules when enabled; disabled by default, AAAA records stripped to prevent bypass
-- **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP
+- **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP. IPv4 only (AAAA records stripped from matched responses to prevent IPv6 bypass)
 - **Keenetic integration** — NDM hooks restore rules on reboots, WAN changes, interface restarts
 - **Proxy-agnostic** — redirects to a local port, any transparent proxy works
 

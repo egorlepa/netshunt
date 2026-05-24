@@ -84,9 +84,12 @@ func ensureDomainInShunt(cfg *config.Config, domain string) {
 func PrintResults(results []healthcheck.Result) bool {
 	allPassed := true
 	for _, r := range results {
-		if r.Passed {
+		switch {
+		case r.Passed:
 			printPass(r.Name + ": " + r.Detail)
-		} else {
+		case r.Warn:
+			printWarn(r.Name + ": " + r.Detail)
+		default:
 			printFail(r.Name + ": " + r.Detail)
 			allPassed = false
 		}

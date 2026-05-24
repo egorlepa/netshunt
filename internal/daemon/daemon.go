@@ -34,14 +34,9 @@ type Daemon struct {
 
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
 func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) (*Daemon, error) {
-	ipset4 := netfilter.NewIPSet(cfg.IPSet.TableName)
-	var ipset6 *netfilter.IPSet
-	if cfg.IPv6 {
-		ipset6 = netfilter.NewIPSet6(cfg.IPSet.TableName + "6")
-	}
-	tracker := dns.NewTracker(ipset4, ipset6, logger)
+	tracker := dns.NewTracker(netfilter.NewIPSet(cfg.IPSet.TableName), logger)
 	upstream := fmt.Sprintf("127.0.0.1:%d", cfg.DNSCrypt.Port)
-	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, cfg.IPv6, tracker, logger)
+	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, tracker, logger)
 
 	blocklistStore, err := blocklist.NewStore(platform.BlocklistFile, platform.BlocklistDir)
 	if err != nil {
@@ -97,11 +92,21 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}()
 
 	webServer.MarkReady()
+
+	// 5. Start auto-update scheduler (blocklist + geosite). Web server gets
+	// a handle so settings changes can live-reconfigure without restart.
+	scheduler := NewScheduler(d.Config, webServer, d.Logger)
+	webServer.SetScheduler(scheduler)
+	if err := scheduler.Start(); err != nil {
+		d.Logger.Warn("scheduler start failed", "error", err)
+	}
+
 	d.Logger.Info("daemon started")
 
 	<-ctx.Done()
 	d.Logger.Info("shutting down")
 
+	scheduler.Stop()
 	d.Forwarder.Stop()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

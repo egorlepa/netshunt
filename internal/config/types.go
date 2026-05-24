@@ -11,17 +11,34 @@ type Config struct {
 	IPSet     IPSetConfig     `yaml:"ipset"`
 	Daemon    DaemonConfig    `yaml:"daemon"`
 	Blocklist BlocklistConfig `yaml:"blocklist"`
+	Geosite   GeositeConfig   `yaml:"geosite"`
 
 	ExcludedNetworks []string `yaml:"excluded_networks"`
-	IPv6             bool     `yaml:"ipv6"`
 	SetupFinished    bool     `yaml:"setup_finished"`
 }
 
 // RoutingConfig describes how matched traffic is forwarded.
 // netshunt does not manage the proxy software itself — the user sets up their own.
 type RoutingConfig struct {
-	// LocalPort is the port the transparent proxy listens on.
+	// LocalPort is the primary transparent proxy port.
 	LocalPort int `yaml:"local_port"`
+	// BackupPort is an optional secondary proxy port. 0 disables failover.
+	BackupPort int `yaml:"backup_port,omitempty"`
+	// UseBackup routes traffic to BackupPort when true and BackupPort > 0.
+	UseBackup bool `yaml:"use_backup,omitempty"`
+}
+
+// ActivePort returns the proxy port currently in use.
+func (r RoutingConfig) ActivePort() int {
+	if r.UseBackup && r.BackupPort > 0 {
+		return r.BackupPort
+	}
+	return r.LocalPort
+}
+
+// BackupConfigured reports whether failover is set up.
+func (r RoutingConfig) BackupConfigured() bool {
+	return r.BackupPort > 0
 }
 
 // NetworkConfig holds network interface settings.
@@ -64,9 +81,31 @@ const (
 
 // BlocklistConfig holds DNS-level blocklist settings.
 type BlocklistConfig struct {
-	Enabled  bool              `yaml:"enabled"`
-	Response BlocklistResponse `yaml:"response"`
+	Enabled    bool              `yaml:"enabled"`
+	Response   BlocklistResponse `yaml:"response"`
+	AutoUpdate AutoUpdateConfig  `yaml:"auto_update,omitempty"`
 }
+
+// GeositeConfig holds geosite database auto-update settings.
+type GeositeConfig struct {
+	AutoUpdate AutoUpdateConfig `yaml:"auto_update,omitempty"`
+}
+
+// AutoUpdateConfig describes a periodic background refresh policy.
+// Schedule is a standard 5-field cron expression (minute hour dom mon dow).
+// Empty Schedule means "use the source default".
+type AutoUpdateConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Schedule string `yaml:"schedule,omitempty"`
+}
+
+// Default cron schedules for periodic refresh jobs. Chosen to fall during
+// off-peak hours so the daily/weekly download + parse doesn't compete with
+// active client traffic.
+const (
+	DefaultBlocklistSchedule = "0 3 * * *" // every day at 03:00
+	DefaultGeositeSchedule   = "0 4 * * 0" // every Sunday at 04:00
+)
 
 // Defaults returns a Config with sensible default values.
 func Defaults() Config {
@@ -91,14 +130,21 @@ func Defaults() Config {
 		Blocklist: BlocklistConfig{
 			Enabled:  false,
 			Response: BlocklistResponseNXDomain,
+			AutoUpdate: AutoUpdateConfig{
+				Enabled:  true,
+				Schedule: DefaultBlocklistSchedule,
+			},
+		},
+		Geosite: GeositeConfig{
+			AutoUpdate: AutoUpdateConfig{
+				Enabled:  true,
+				Schedule: DefaultGeositeSchedule,
+			},
 		},
 		ExcludedNetworks: []string{
 			"10.0.0.0/8",
 			"172.16.0.0/12",
 			"192.168.0.0/16",
-			"fc00::/7",
-			"fe80::/10",
-			"::1/128",
 		},
 	}
 }

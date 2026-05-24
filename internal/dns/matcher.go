@@ -100,31 +100,6 @@ func (m *Matcher) Update(entries []shunt.Entry) {
 	m.rules.Store(r)
 }
 
-// ReplaceSuffixes atomically replaces the rule set with a fresh suffix-only
-// matcher. build is called once and should invoke add for every domain to
-// register. Domains are expected to be already lowercased. Duplicates are
-// silently collapsed by the underlying map. Returns the number of unique
-// suffixes installed.
-//
-// This is the low-memory path used by the blocklist — it avoids building any
-// intermediate slice of entries, so peak heap on a large list (~1M domains)
-// is just the resulting map.
-func (m *Matcher) ReplaceSuffixes(build func(add func(domain string))) int {
-	r := &matcherRules{
-		suffixes: make(map[string]struct{}),
-		exact:    make(map[string]struct{}),
-	}
-	if build != nil {
-		build(func(d string) {
-			if len(d) != 0 {
-				r.suffixes[d] = struct{}{}
-			}
-		})
-	}
-	m.rules.Store(r)
-	return len(r.suffixes)
-}
-
 // Stats returns counts of each rule type.
 func (m *Matcher) Stats() (suffixes, exact, keywords, regexps int) {
 	r := m.rules.Load()

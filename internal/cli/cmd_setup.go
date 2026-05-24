@@ -112,6 +112,25 @@ func newSetupCmd() *cobra.Command {
 			fmt.Println("  Set up your proxy (ss-redir, xray, etc.) separately.")
 			fmt.Println("  netshunt will redirect matched TCP and UDP traffic to the specified port.")
 			cfg.Routing.LocalPort = promptInt(reader, "  Local port your proxy listens on", cfg.Routing.LocalPort)
+			for {
+				backup := prompt(reader, "  Backup proxy port (optional, empty to skip)", fmt.Sprintf("%d", cfg.Routing.BackupPort))
+				if backup == "" || backup == "0" {
+					cfg.Routing.BackupPort = 0
+					cfg.Routing.UseBackup = false
+					break
+				}
+				var n int
+				if _, err := fmt.Sscanf(backup, "%d", &n); err != nil || n < 1 || n > 65535 {
+					fmt.Println("  invalid port — must be 1–65535")
+					continue
+				}
+				if n == cfg.Routing.LocalPort {
+					fmt.Println("  backup port must differ from local port")
+					continue
+				}
+				cfg.Routing.BackupPort = n
+				break
+			}
 			fmt.Println()
 
 			// 5. DNS configuration (informational).
@@ -122,12 +141,6 @@ func newSetupCmd() *cobra.Command {
 			// 6. Network interface.
 			fmt.Println("Network interface:")
 			cfg.Network.EntwareInterface = promptInterface(reader, ctx, cfg.Network.EntwareInterface)
-			fmt.Println()
-
-			// 7. IPv6.
-			fmt.Println("IPv6:")
-			ipv6Answer := prompt(reader, "  Enable IPv6 routing support?", "n")
-			cfg.IPv6 = strings.ToLower(ipv6Answer) == "y"
 			fmt.Println()
 
 			cfg.SetupFinished = true

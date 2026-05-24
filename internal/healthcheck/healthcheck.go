@@ -19,6 +19,9 @@ import (
 type Result struct {
 	Name   string
 	Passed bool
+	// Warn marks a failure as non-critical (e.g., the inactive backup proxy
+	// being unreachable shouldn't fail the overall healthcheck).
+	Warn   bool
 	Detail string
 }
 
@@ -42,11 +45,11 @@ func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []R
 	// 3. DNS forwarder
 	results = append(results, checkForwarder(ctx, cfg))
 
-	// 4. Transparent proxy listening
-	results = append(results, checkProxy(cfg))
+	// 4. Transparent proxy listening (primary + optional backup)
+	results = append(results, checkProxies(cfg)...)
 
 	// 5. Proxy connectivity (route a test request through the proxy via OUTPUT redirect)
-	results = append(results, checkProxyConnectivity(ctx, cfg))
+	results = append(results, checkProxiesConnectivity(ctx, cfg)...)
 
 	// 6. IPSet v4
 	results = append(results, checkIPSet4(ctx, cfg))
@@ -54,22 +57,13 @@ func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []R
 	// 7. IPTables v4
 	results = append(results, checkIPTables4(ctx, cfg))
 
-	if cfg.IPv6 {
-		// 8. IPSet v6
-		results = append(results, checkIPSet6(ctx, cfg))
-
-		// 9. IPTables v6
-		results = append(results, checkIPTables6(ctx, cfg))
-	}
-
 	// 10. Shunts
 	results = append(results, checkShunts(shunts))
 
 	return results
 }
 
-// ProbeDomain resolves a domain (A + AAAA) and checks if the resolved IPs are
-// in the appropriate ipset (v4 or v6).
+// ProbeDomain resolves a domain (A) and checks if the resolved IPs are in the ipset.
 func ProbeDomain(ctx context.Context, cfg *config.Config, domain string) (*ProbeResult, error) {
 	resolver := dns.NewResolver("127.0.0.1:53")
 	ips, err := resolver.ResolveToStrings(ctx, domain)
@@ -77,14 +71,8 @@ func ProbeDomain(ctx context.Context, cfg *config.Config, domain string) (*Probe
 		return nil, fmt.Errorf("resolve %s: %w", domain, err)
 	}
 
-	// Collect entries from ipset tables.
-	ipset4 := netfilter.NewIPSet(cfg.IPSet.TableName)
-	allEntries, _ := ipset4.List(ctx)
-	if cfg.IPv6 {
-		ipset6 := netfilter.NewIPSet6(cfg.IPSet.TableName + "6")
-		entries6, _ := ipset6.List(ctx)
-		allEntries = append(allEntries, entries6...)
-	}
+	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+	allEntries, _ := ipset.List(ctx)
 
 	// Parse ipset entries into nets for CIDR containment checks.
 	// Entries may include metadata like "1.2.3.4 timeout 12345", so extract just the IP/CIDR.
@@ -139,12 +127,50 @@ func checkService(ctx context.Context, svc service.Service) Result {
 	return r
 }
 
-func checkProxy(cfg *config.Config) Result {
-	r := Result{Name: "proxy"}
-	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Routing.LocalPort)
+// proxyTargets returns the proxy ports to probe with display labels.
+// The currently active port is marked as active=true.
+func proxyTargets(cfg *config.Config) []struct {
+	label  string
+	port   int
+	active bool
+} {
+	active := cfg.Routing.ActivePort()
+	targets := []struct {
+		label  string
+		port   int
+		active bool
+	}{
+		{"primary", cfg.Routing.LocalPort, cfg.Routing.LocalPort == active},
+	}
+	if cfg.Routing.BackupPort > 0 {
+		targets = append(targets, struct {
+			label  string
+			port   int
+			active bool
+		}{"backup", cfg.Routing.BackupPort, cfg.Routing.BackupPort == active})
+	}
+	return targets
+}
+
+func checkProxies(cfg *config.Config) []Result {
+	var out []Result
+	for _, t := range proxyTargets(cfg) {
+		out = append(out, checkProxy(t.label, t.port, t.active))
+	}
+	return out
+}
+
+func checkProxy(label string, port int, active bool) Result {
+	suffix := ""
+	if active {
+		suffix = " (active)"
+	}
+	r := Result{Name: fmt.Sprintf("proxy %s%s", label, suffix)}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
 		r.Detail = fmt.Sprintf("nothing listening on %s", addr)
+		r.Warn = !active
 		return r
 	}
 	_ = conn.Close()
@@ -153,14 +179,27 @@ func checkProxy(cfg *config.Config) Result {
 	return r
 }
 
-func checkProxyConnectivity(ctx context.Context, cfg *config.Config) Result {
-	r := Result{Name: "proxy connectivity"}
-	port := fmt.Sprintf("%d", cfg.Routing.LocalPort)
+func checkProxiesConnectivity(ctx context.Context, cfg *config.Config) []Result {
+	var out []Result
+	for _, t := range proxyTargets(cfg) {
+		out = append(out, checkProxyConnectivity(ctx, t.label, t.port, t.active))
+	}
+	return out
+}
+
+func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, active bool) Result {
+	suffix := ""
+	if active {
+		suffix = " (active)"
+	}
+	r := Result{Name: fmt.Sprintf("proxy %s connectivity%s", label, suffix)}
+	port := fmt.Sprintf("%d", proxyPort)
 
 	const testHost = "connectivitycheck.gstatic.com"
 	ips, err := net.DefaultResolver.LookupHost(ctx, testHost)
 	if err != nil || len(ips) == 0 {
 		r.Detail = "cannot resolve test host"
+		r.Warn = !active
 		return r
 	}
 	testIP := ips[0]
@@ -173,6 +212,7 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config) Result {
 	}
 	if err := ipt.AppendRule(ctx, "nat", rule...); err != nil {
 		r.Detail = fmt.Sprintf("cannot add test rule: %v", err)
+		r.Warn = !active
 		return r
 	}
 	defer func() { _ = ipt.DeleteRule(ctx, "nat", rule...) }()
@@ -189,6 +229,7 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config) Result {
 	resp, err := client.Do(req)
 	if err != nil {
 		r.Detail = fmt.Sprintf("proxy not forwarding: %v", err)
+		r.Warn = !active
 		return r
 	}
 	_ = resp.Body.Close()
@@ -198,7 +239,7 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config) Result {
 }
 
 func checkIPSet4(ctx context.Context, cfg *config.Config) Result {
-	r := Result{Name: "ipset v4"}
+	r := Result{Name: "ipset"}
 	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
 	count, err := ipset.Count(ctx)
 	if err != nil {
@@ -210,25 +251,11 @@ func checkIPSet4(ctx context.Context, cfg *config.Config) Result {
 	return r
 }
 
-func checkIPSet6(ctx context.Context, cfg *config.Config) Result {
-	name := cfg.IPSet.TableName + "6"
-	r := Result{Name: "ipset v6"}
-	ipset := netfilter.NewIPSet6(name)
-	count, err := ipset.Count(ctx)
-	if err != nil {
-		r.Detail = fmt.Sprintf("table %q: %v", name, err)
-		return r
-	}
-	r.Passed = true
-	r.Detail = fmt.Sprintf("%d entries in %s", count, name)
-	return r
-}
-
 func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
-	r := Result{Name: "iptables v4"}
+	r := Result{Name: "iptables"}
 	ipt := netfilter.NewIPTables()
 
-	port := fmt.Sprintf("%d", cfg.Routing.LocalPort)
+	port := fmt.Sprintf("%d", cfg.Routing.ActivePort())
 	ipsetName := cfg.IPSet.TableName
 	iface := cfg.Network.EntwareInterface
 
@@ -268,54 +295,6 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 		missing = append(missing, "NSHUNT_UDP chain")
 	} else if !ipt.RuleExists(ctx, "mangle", "NSHUNT_UDP", "-p", "udp",
 		"-m", "set", "--match-set", ipsetName, "dst",
-		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", "0x1/0x1") {
-		missing = append(missing, "udp tproxy")
-	}
-
-	if len(missing) == 0 {
-		r.Passed = true
-		r.Detail = "all rules present"
-	} else {
-		r.Detail = fmt.Sprintf("missing: %s", strings.Join(missing, ", "))
-	}
-	return r
-}
-
-func checkIPTables6(ctx context.Context, cfg *config.Config) Result {
-	r := Result{Name: "iptables v6"}
-	ipt6 := netfilter.NewIP6Tables()
-
-	port := fmt.Sprintf("%d", cfg.Routing.LocalPort)
-	ipset6Name := cfg.IPSet.TableName + "6"
-	iface := cfg.Network.EntwareInterface
-
-	dnsIface := iface
-	if dnsIface == "" {
-		dnsIface = "br0"
-	}
-
-	var missing []string
-
-	if exists, _ := ipt6.ChainExists(ctx, "nat", "NSHUNT6"); !exists {
-		missing = append(missing, "NSHUNT6 chain")
-	}
-
-	if !ipt6.RuleExists(ctx, "nat", "NSHUNT6", "-p", "tcp",
-		"-m", "set", "--match-set", ipset6Name, "dst",
-		"-j", "REDIRECT", "--to-port", port) {
-		missing = append(missing, "tcp redirect")
-	}
-
-	if !ipt6.RuleExists(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "[::1]") {
-		missing = append(missing, "dns dnat")
-	}
-
-	// UDP: mangle TPROXY rules.
-	if exists, _ := ipt6.ChainExists(ctx, "mangle", "NSHUNT6_UDP"); !exists {
-		missing = append(missing, "NSHUNT6_UDP chain")
-	} else if !ipt6.RuleExists(ctx, "mangle", "NSHUNT6_UDP", "-p", "udp",
-		"-m", "set", "--match-set", ipset6Name, "dst",
 		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", "0x1/0x1") {
 		missing = append(missing, "udp tproxy")
 	}

@@ -1,11 +1,14 @@
 package templates
 
-import "github.com/egorlepa/netshunt/internal/geosite"
+import (
+	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/geosite"
+)
 
-templ GeositePage(info geosite.FileInfo, categories []geosite.CategoryInfo, imported map[string]bool) {
+templ GeositePage(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, categories []geosite.CategoryInfo, imported map[string]bool) {
 	@Layout("Geosite", "geosite") {
 		<div id="geosite-content">
-			@GeositeContent(info, categories, imported)
+			@GeositeContent(info, autoUpdate, categories, imported)
 		</div>
 		<script>
 			function filterCategories() {
@@ -24,7 +27,7 @@ templ GeositePage(info geosite.FileInfo, categories []geosite.CategoryInfo, impo
 	}
 }
 
-templ GeositeContent(info geosite.FileInfo, categories []geosite.CategoryInfo, imported map[string]bool) {
+templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, categories []geosite.CategoryInfo, imported map[string]bool) {
 	<div class="flex-between mb-16">
 		<h1>Geosite Database</h1>
 		if info.Downloaded {
@@ -42,6 +45,31 @@ templ GeositeContent(info geosite.FileInfo, categories []geosite.CategoryInfo, i
 			</div>
 		}
 	</div>
+	if info.Downloaded {
+		<div class="card mb-16">
+			<form
+				hx-put="/geosite/auto-update"
+				hx-trigger="change"
+				hx-swap="none"
+				hx-indicator="#geosite-au-spinner"
+			>
+				<label>
+					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
+					Auto-update database
+				</label>
+				<label class="text-muted text-sm ml-8">cron</label>
+				<input
+					type="text"
+					name="schedule"
+					value={ autoUpdateSchedule(autoUpdate, config.DefaultGeositeSchedule) }
+					placeholder={ config.DefaultGeositeSchedule }
+					style="width:140px;font-family:monospace"
+				/>
+				<span class="text-muted text-sm">5-field cron expression</span>
+				<span id="geosite-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
+			</form>
+		</div>
+	}
 	if !info.Downloaded {
 		<div class="card">
 			<p class="text-muted mb-16">No geosite database found. Download the v2fly domain-list-community database to import curated domain categories.</p>

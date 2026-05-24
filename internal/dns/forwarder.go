@@ -33,26 +33,29 @@ const (
 const blockTTL = 60
 
 // Forwarder is a DNS proxy that intercepts responses and tracks matched
-// domains in the ipset. When IPv6 is enabled, both A and AAAA records are
-// tracked. When disabled, AAAA records are stripped from matched responses
-// to prevent IPv6 bypass.
+// domains in the ipset. AAAA records are stripped from matched responses
+// to prevent IPv6 bypass — netshunt routes only IPv4.
 type Forwarder struct {
 	listenAddr string // e.g. ":53"
 	upstream   string // e.g. "127.0.0.1:9153"
-	ipv6       bool
 	matcher    *Matcher
-	blocklist  *Matcher
+	blocklist  *BlocklistMatcher
 	blockResp  atomic.Int32
 	tracker    *Tracker
+	cache      *ResolveCache
 	client     *dns.Client
 	udpServer  *dns.Server
 	tcpServer  *dns.Server
 	logger     *slog.Logger
 }
 
+// resolveCacheCap bounds the number of cached recent resolutions. Worst-case
+// ~4 MB at full capacity. Tuned for home-router workloads.
+const resolveCacheCap = 20_000
+
 // NewForwarder creates a forwarder that listens on listenAddr and forwards
 // queries to upstream.
-func NewForwarder(listenAddr, upstream string, ipv6 bool, tracker *Tracker, logger *slog.Logger) *Forwarder {
+func NewForwarder(listenAddr, upstream string, tracker *Tracker, logger *slog.Logger) *Forwarder {
 	client := dns.NewClient()
 	client.ReadTimeout = 5 * time.Second
 	client.WriteTimeout = 5 * time.Second
@@ -60,10 +63,10 @@ func NewForwarder(listenAddr, upstream string, ipv6 bool, tracker *Tracker, logg
 	return &Forwarder{
 		listenAddr: listenAddr,
 		upstream:   upstream,
-		ipv6:       ipv6,
 		matcher:    NewMatcher(),
-		blocklist:  NewMatcher(),
+		blocklist:  NewBlocklistMatcher(),
 		tracker:    tracker,
+		cache:      NewResolveCache(resolveCacheCap),
 		client:     client,
 		logger:     logger,
 	}
@@ -134,8 +137,8 @@ func (f *Forwarder) Matcher() *Matcher {
 }
 
 // Blocklist returns the blocklist matcher. Callers drive the low-memory
-// streaming build via Blocklist().ReplaceSuffixes(...). Reads are atomic.
-func (f *Forwarder) Blocklist() *Matcher {
+// streaming build via Blocklist().Replace(...). Reads are atomic.
+func (f *Forwarder) Blocklist() *BlocklistMatcher {
 	return f.blocklist
 }
 
@@ -147,6 +150,12 @@ func (f *Forwarder) SetBlockResponse(r BlockResponse) {
 // Tracker returns the forwarder's tracker for external use.
 func (f *Forwarder) TrackerRef() *Tracker {
 	return f.tracker
+}
+
+// ResolveCache returns the forwarder's recent-resolutions cache for the
+// reconciler to seed ipset entries when a new shunt rule is added.
+func (f *Forwarder) ResolveCache() *ResolveCache {
+	return f.cache
 }
 
 func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) {
@@ -189,26 +198,34 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 		f.processMatchedResponse(ctx, qname, resp)
 	}
 
+	// Cache every successful A-resolve regardless of shunt match, so that a
+	// later shunt mutation can retroactively seed the ipset for IPs the
+	// client already cached.
+	f.cacheResolved(qname, resp)
+
 	f.writeMsg(w, resp)
 }
 
-// processMatchedResponse extracts A records for tracking. When IPv6 is
-// enabled, AAAA records are also tracked. When disabled, AAAA records are
-// stripped from the response to prevent IPv6 bypass.
-func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, resp *dns.Msg) {
-	if f.ipv6 {
-		for _, rr := range resp.Answer {
-			switch a := rr.(type) {
-			case *dns.A:
-				f.tracker.Track(ctx, domain, a.Addr.String())
-			case *dns.AAAA:
-				f.tracker.Track(ctx, domain, a.Addr.String())
-			}
-		}
+// cacheResolved stores A records from a successful resolution into the
+// recent-resolves cache. Skips empty / non-success responses.
+func (f *Forwarder) cacheResolved(domain string, resp *dns.Msg) {
+	if resp == nil || resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
 		return
 	}
+	var ips []string
+	for _, rr := range resp.Answer {
+		if a, ok := rr.(*dns.A); ok {
+			ips = append(ips, a.Addr.String())
+		}
+	}
+	if len(ips) > 0 {
+		f.cache.Remember(domain, ips)
+	}
+}
 
-	// IPv6 disabled: track A records, strip AAAA records.
+// processMatchedResponse tracks A records and strips AAAA records from the
+// response so clients can't bypass the proxy via IPv6.
+func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, resp *dns.Msg) {
 	filtered := resp.Answer[:0]
 	for _, rr := range resp.Answer {
 		switch a := rr.(type) {
@@ -217,6 +234,7 @@ func (f *Forwarder) processMatchedResponse(ctx context.Context, domain string, r
 			filtered = append(filtered, rr)
 		case *dns.AAAA:
 			// Strip AAAA records.
+			_ = a
 		default:
 			filtered = append(filtered, rr)
 		}

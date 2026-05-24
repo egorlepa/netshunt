@@ -27,6 +27,13 @@ type Reconciler interface {
 	Reconcile(ctx context.Context) error
 	ApplyMutation(ctx context.Context) error
 	ApplyBlocklist(ctx context.Context) error
+	SwitchProxy(ctx context.Context) error
+}
+
+// Scheduler is the optional interface the web server uses to apply auto-update
+// schedule changes live (without daemon restart). May be nil if not wired up.
+type Scheduler interface {
+	Reconfigure() error
 }
 
 // TrackerStats is the interface the web server uses to read DNS tracker state.
@@ -46,12 +53,19 @@ type Server struct {
 	Blocklist  *blocklist.Store
 	Forwarder  *dns.Forwarder
 	Reconciler Reconciler
+	Scheduler  Scheduler
 	Tracker    TrackerStats
 	Logs       LogReader
 	Logger     *slog.Logger
 	Version    string
 	mux        *http.ServeMux
 	ready      bool
+}
+
+// SetScheduler attaches a Scheduler after construction (the scheduler is
+// built later in the daemon lifecycle than the web server).
+func (s *Server) SetScheduler(sch Scheduler) {
+	s.Scheduler = sch
 }
 
 // MarkReady signals that the daemon has finished initial setup.
@@ -108,6 +122,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /geosite", s.handleGeositePage)
 	s.mux.HandleFunc("POST /geosite/download", s.handleGeositeDownload)
 	s.mux.HandleFunc("POST /geosite/update", s.handleGeositeUpdate)
+	s.mux.HandleFunc("PUT /geosite/auto-update", s.handleGeositeAutoUpdate)
 	s.mux.HandleFunc("POST /geosite/import/{category}", s.handleGeositeImport)
 	s.mux.HandleFunc("DELETE /geosite/import/{category}", s.handleGeositeRemove)
 
@@ -118,6 +133,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /blocklist/sources/{id}/enabled", s.handleBlocklistSourceToggle)
 	s.mux.HandleFunc("POST /blocklist/sources/{id}/update", s.handleBlocklistSourceUpdate)
 	s.mux.HandleFunc("POST /blocklist/update", s.handleBlocklistUpdateAll)
+	s.mux.HandleFunc("PUT /blocklist/auto-update", s.handleBlocklistAutoUpdate)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
@@ -125,6 +141,7 @@ func (s *Server) routes() {
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
 	s.mux.HandleFunc("POST /actions/restart", s.handleActionRestart)
+	s.mux.HandleFunc("POST /actions/switch-proxy", s.handleSwitchProxy)
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {

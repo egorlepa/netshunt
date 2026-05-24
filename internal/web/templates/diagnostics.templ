@@ -93,6 +93,8 @@ templ DiagnosticsResults(results []healthcheck.Result) {
 					<td style="width:24px;text-align:center">
 						if r.Passed {
 							<span class="text-green">✓</span>
+						} else if r.Warn {
+							<span style="color:#d97706">!</span>
 						} else {
 							<span class="text-red">✗</span>
 						}

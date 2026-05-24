@@ -1,14 +1,15 @@
 package templates
 
+import "github.com/egorlepa/netshunt/internal/config"
+
 type DashboardData struct {
-	IPv6              bool
-	IPSet4Count       int
-	IPSet6Count       int
+	IPSetCount        int
 	ShuntCount        int
 	EnabledShuntCount int
 	EntryCount        int
 	TrackedDomains    int
 	TrackedIPs        int
+	Routing           config.RoutingConfig
 	Version           string
 }
 
@@ -38,15 +39,60 @@ templ DashboardContent(data DashboardData) {
 		</div>
 		<table>
 			<tbody>
-				<tr><td class="text-muted">IPSet v4 entries</td><td>{ itoa(data.IPSet4Count) }</td></tr>
-				if data.IPv6 {
-					<tr><td class="text-muted">IPSet v6 entries</td><td>{ itoa(data.IPSet6Count) }</td></tr>
-				}
+				<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
 				<tr><td class="text-muted">Shunts</td><td>{ itoa(data.EnabledShuntCount) } / { itoa(data.ShuntCount) } enabled</td></tr>
 				<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
 				<tr><td class="text-muted">Tracked domains</td><td>{ itoa(data.TrackedDomains) }</td></tr>
 				<tr><td class="text-muted">Tracked IPs</td><td>{ itoa(data.TrackedIPs) }</td></tr>
+				<tr>
+					<td class="text-muted">Active proxy</td>
+					<td>@ProxySwitch(data.Routing)</td>
+				</tr>
 			</tbody>
 		</table>
 	</div>
+}
+
+templ ProxySwitch(r config.RoutingConfig) {
+	<span id="proxy-switch">
+		if !r.BackupConfigured() {
+			<strong>primary</strong> <span class="text-muted">({ itoa(r.LocalPort) })</span>
+			<span class="text-muted text-sm"> — backup not configured</span>
+		} else {
+			<span class="flex gap-8" style="align-items:center">
+				if !r.UseBackup {
+					<strong>primary</strong>
+				} else {
+					<span class="text-muted">primary</span>
+				}
+				<span class="text-muted">({ itoa(r.LocalPort) })</span>
+				<label class="toggle" title="Switch between primary and backup proxy">
+					if r.UseBackup {
+						<input
+							type="checkbox" checked
+							hx-post="/actions/switch-proxy"
+							hx-target="#proxy-switch"
+							hx-swap="outerHTML"
+							hx-disabled-elt="this"
+						/>
+					} else {
+						<input
+							type="checkbox"
+							hx-post="/actions/switch-proxy"
+							hx-target="#proxy-switch"
+							hx-swap="outerHTML"
+							hx-disabled-elt="this"
+						/>
+					}
+					<span class="slider"></span>
+				</label>
+				if r.UseBackup {
+					<strong>backup</strong>
+				} else {
+					<span class="text-muted">backup</span>
+				}
+				<span class="text-muted">({ itoa(r.BackupPort) })</span>
+			</span>
+		}
+	</span>
 }

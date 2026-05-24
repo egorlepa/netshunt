@@ -1,3 +1,5 @@
 dist/
 *.ipk
 CLAUDE.md
+INFRA.md
+**/testdata/hagezi-*.txt

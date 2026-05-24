@@ -10,18 +10,12 @@ import (
 
 // IPSet manages an ipset hash:net table.
 type IPSet struct {
-	Name   string
-	family string // "inet" or "inet6"; empty defaults to inet
+	Name string
 }
 
-// NewIPSet creates an IPSet manager for the given table name (IPv4).
+// NewIPSet creates an IPSet manager for the given table name.
 func NewIPSet(name string) *IPSet {
 	return &IPSet{Name: name}
-}
-
-// NewIPSet6 creates an IPSet manager for IPv6 (hash:net family inet6).
-func NewIPSet6(name string) *IPSet {
-	return &IPSet{Name: name, family: "inet6"}
 }
 
 // EnsureTable creates the ipset table if it doesn't exist.
@@ -30,11 +24,7 @@ func (s *IPSet) EnsureTable(ctx context.Context) error {
 	if err == nil {
 		return nil // already exists
 	}
-	args := []string{"create", s.Name, "hash:net"}
-	if s.family != "" {
-		args = append(args, "family", s.family)
-	}
-	return platform.RunSilent(ctx, "ipset", args...)
+	return platform.RunSilent(ctx, "ipset", "create", s.Name, "hash:net")
 }
 
 // Flush removes all entries from the table.

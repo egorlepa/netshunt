@@ -2,10 +2,12 @@ package web
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/service"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
@@ -36,6 +38,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("routing_local_port"); v != "" {
 		_, _ = fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
+	cfg.Routing.BackupPort = 0
+	if v := r.FormValue("routing_backup_port"); v != "" {
+		_, _ = fmt.Sscanf(v, "%d", &cfg.Routing.BackupPort)
+	}
+	if cfg.Routing.BackupPort <= 0 {
+		cfg.Routing.UseBackup = false
+	}
 
 	// DNS.
 	if v := r.FormValue("dnscrypt_port"); v != "" {
@@ -53,22 +62,29 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Network.
 	cfg.Network.EntwareInterface = r.FormValue("net_interface")
 
-	// Excluded networks.
+	// Excluded networks. Only IPv4 CIDRs accepted.
 	if v := r.FormValue("excluded_networks"); v != "" {
 		var nets []string
 		for _, line := range strings.Split(v, "\n") {
 			line = strings.TrimSpace(line)
-			if line != "" {
-				nets = append(nets, line)
+			if line == "" {
+				continue
 			}
+			_, cidr, err := net.ParseCIDR(line)
+			if err != nil {
+				errorResponse(w, "Invalid CIDR: "+line, http.StatusBadRequest)
+				return
+			}
+			if cidr.IP.To4() == nil {
+				errorResponse(w, "IPv6 networks not supported: "+line, http.StatusBadRequest)
+				return
+			}
+			nets = append(nets, line)
 		}
 		cfg.ExcludedNetworks = nets
 	} else {
 		cfg.ExcludedNetworks = nil
 	}
-
-	// IPv6.
-	cfg.IPv6 = r.FormValue("ipv6") == "on"
 
 	// Daemon.
 	if v := r.FormValue("web_listen"); v != "" {
@@ -111,6 +127,49 @@ func (s *Server) handleActionReconcile(w http.ResponseWriter, r *http.Request) {
 	}
 	toastTrigger(w, "Reconcile complete", "success")
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleSwitchProxy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	cfg, err := config.Load()
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if cfg.Routing.BackupPort <= 0 {
+		errorResponse(w, "Backup port not configured", http.StatusBadRequest)
+		return
+	}
+
+	oldPort := cfg.Routing.ActivePort()
+	cfg.Routing.UseBackup = !cfg.Routing.UseBackup
+	if err := config.Save(cfg); err != nil {
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	*s.Config = *cfg
+
+	if err := s.Reconciler.SwitchProxy(ctx); err != nil {
+		s.Logger.Error("switch proxy failed", "error", err)
+		errorResponse(w, "Switch failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Drop only TCP conntrack entries whose reply source port is the old proxy
+	// port — these are the live connections still flowing through it. Other
+	// traffic on the router (DNS, LAN-LAN, non-shunted) untouched.
+	// --reply-port-src is only available with -p tcp.
+	if err := platform.RunSilent(ctx, "conntrack", "-D", "-p", "tcp", "--reply-port-src", fmt.Sprintf("%d", oldPort)); err != nil {
+		s.Logger.Debug("conntrack flush returned non-zero (likely no matches)", "old_port", oldPort, "error", err)
+	}
+
+	target := "primary"
+	if cfg.Routing.UseBackup {
+		target = "backup"
+	}
+	toastTrigger(w, "Switched to "+target+" proxy ("+fmt.Sprintf("%d", cfg.Routing.ActivePort())+")", "success")
+	s.render(r, w, templates.ProxySwitch(cfg.Routing))
 }
 
 func (s *Server) handleActionRestart(w http.ResponseWriter, r *http.Request) {

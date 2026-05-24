@@ -11,15 +11,15 @@ type SourceView struct {
 	State  blocklist.SourceState
 }
 
-templ BlocklistPage(enabled bool, response config.BlocklistResponse, sources []SourceView) {
+templ BlocklistPage(enabled bool, response config.BlocklistResponse, autoUpdate config.AutoUpdateConfig, sources []SourceView) {
 	@Layout("Blocklist", "blocklist") {
 		<div id="blocklist-content">
-			@BlocklistContent(enabled, response, sources)
+			@BlocklistContent(enabled, response, autoUpdate, sources)
 		</div>
 	}
 }
 
-templ BlocklistContent(enabled bool, response config.BlocklistResponse, sources []SourceView) {
+templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpdate config.AutoUpdateConfig, sources []SourceView) {
 	<div class="flex-between mb-16">
 		<h1>Blocklist</h1>
 		<button
@@ -62,6 +62,29 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, sources 
 					<option value="zero" if response == config.BlocklistResponseZero { selected }>0.0.0.0 / :: sinkhole</option>
 				</select>
 				<span id="blocklist-response-spinner" class="htmx-indicator"><span class="spinner"></span></span>
+			</form>
+		</div>
+		<div class="mt-8">
+			<form
+				hx-put="/blocklist/auto-update"
+				hx-trigger="change"
+				hx-swap="none"
+				hx-indicator="#blocklist-au-spinner"
+			>
+				<label>
+					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
+					Auto-update enabled sources
+				</label>
+				<label class="text-muted text-sm ml-8">cron</label>
+				<input
+					type="text"
+					name="schedule"
+					value={ autoUpdateSchedule(autoUpdate, config.DefaultBlocklistSchedule) }
+					placeholder={ config.DefaultBlocklistSchedule }
+					style="width:140px;font-family:monospace"
+				/>
+				<span class="text-muted text-sm">5-field cron expression</span>
+				<span id="blocklist-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
 			</form>
 		</div>
 	</div>

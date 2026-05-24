@@ -49,13 +49,7 @@ func newHookFsCmd() *cobra.Command {
 				return err
 			}
 			ctx := cmd.Context()
-			if err := netfilter.NewIPSet(cfg.IPSet.TableName).EnsureTable(ctx); err != nil {
-				return err
-			}
-			if cfg.IPv6 {
-				return netfilter.NewIPSet6(cfg.IPSet.TableName + "6").EnsureTable(ctx)
-			}
-			return nil
+			return netfilter.NewIPSet(cfg.IPSet.TableName).EnsureTable(ctx)
 		},
 	}
 }

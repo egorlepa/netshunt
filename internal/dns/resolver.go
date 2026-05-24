@@ -32,11 +32,6 @@ func (r *Resolver) Resolve(ctx context.Context, domain string) ([]net.IP, error)
 	return r.resolve(ctx, domain, dns.TypeA)
 }
 
-// Resolve6 returns all AAAA-record IPv6 addresses for a domain.
-func (r *Resolver) Resolve6(ctx context.Context, domain string) ([]net.IP, error) {
-	return r.resolve(ctx, domain, dns.TypeAAAA)
-}
-
 func (r *Resolver) resolve(ctx context.Context, domain string, qtype uint16) ([]net.IP, error) {
 	if !strings.HasSuffix(domain, ".") {
 		domain = domain + "."
@@ -68,26 +63,17 @@ func (r *Resolver) resolve(ctx context.Context, domain string, qtype uint16) ([]
 			if ip.IsValid() && !ip.IsUnspecified() {
 				ips = append(ips, ip.AsSlice())
 			}
-		case *dns.AAAA:
-			ip := a.Addr
-			if ip.IsValid() && !ip.IsUnspecified() {
-				ips = append(ips, ip.AsSlice())
-			}
 		}
 	}
 	return ips, nil
 }
 
-// ResolveToStrings resolves both A and AAAA records and returns IPs as strings.
+// ResolveToStrings resolves A records and returns IPs as strings.
 func (r *Resolver) ResolveToStrings(ctx context.Context, domain string) ([]string, error) {
-	v4, err := r.Resolve(ctx, domain)
+	ips, err := r.Resolve(ctx, domain)
 	if err != nil {
 		return nil, err
 	}
-
-	v6, _ := r.Resolve6(ctx, domain) // best-effort; don't fail if AAAA is unavailable
-
-	ips := append(v4, v6...)
 	result := make([]string, len(ips))
 	for i, ip := range ips {
 		result[i] = ip.String()

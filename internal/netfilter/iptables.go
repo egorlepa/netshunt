@@ -10,22 +10,15 @@ import (
 
 // IPTables manages iptables rules for traffic redirection.
 // All commands use -w to wait for the xtables lock.
-type IPTables struct {
-	cmd string // "iptables" or "ip6tables"
-}
+type IPTables struct{}
 
-// NewIPTables creates an IPTables manager for IPv4.
+// NewIPTables creates an IPTables manager.
 func NewIPTables() *IPTables {
-	return &IPTables{cmd: "iptables"}
-}
-
-// NewIP6Tables creates an IPTables manager for IPv6.
-func NewIP6Tables() *IPTables {
-	return &IPTables{cmd: "ip6tables"}
+	return &IPTables{}
 }
 
 func (ipt *IPTables) iptables(args ...string) (string, []string) {
-	return ipt.cmd, append([]string{"-w"}, args...)
+	return "iptables", append([]string{"-w"}, args...)
 }
 
 // ChainExists checks if a chain exists in the given table.

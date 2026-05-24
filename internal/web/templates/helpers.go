@@ -6,8 +6,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
+
+func autoUpdateSchedule(au config.AutoUpdateConfig, fallback string) string {
+	if au.Schedule != "" {
+		return au.Schedule
+	}
+	return fallback
+}
 
 // SlugID converts a string to a unique, CSS-safe HTML ID fragment via hex encoding.
 func SlugID(s string) string {
@@ -15,6 +23,13 @@ func SlugID(s string) string {
 }
 
 func itoa(n int) string {
+	return strconv.Itoa(n)
+}
+
+func itoaOrEmpty(n int) string {
+	if n == 0 {
+		return ""
+	}
 	return strconv.Itoa(n)
 }
 
