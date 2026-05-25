@@ -93,7 +93,9 @@ templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, 
 				</div>
 				<div>
 					<span class="text-muted text-sm">Last updated</span>
-					<div>{ info.LastModified.Format("2006-01-02 15:04") }</div>
+					<div>
+						@LocalTime(info.LastModified, "datetime")
+					</div>
 				</div>
 			</div>
 		</div>

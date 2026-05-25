@@ -136,7 +136,7 @@ templ BlocklistSourceRow(sv SourceView) {
 		</td>
 		<td class="text-muted text-sm">
 			if !sv.State.LastFetched.IsZero() {
-				{ sv.State.LastFetched.Format("2006-01-02 15:04") }
+				@LocalTime(sv.State.LastFetched, "datetime")
 			} else {
 				<span class="text-muted">never</span>
 			}

@@ -73,7 +73,7 @@ templ DiagnosticsLogs(entries []platform.LogEntry) {
 		<div class="log-viewer">
 			for _, e := range entries {
 				<div class="log-line" onclick="this.classList.toggle('expanded')">
-					<span class="log-time">{ e.Time.Format("15:04:05") }</span>
+					<span class="log-time">@LocalTime(e.Time, "time")</span>
 					<span class={ logLevelClass(e.Level) }>{ e.Level }</span>
 					<span class="log-msg" title={ e.Msg }>{ e.Msg }</span>
 					if e.Attrs != "" {

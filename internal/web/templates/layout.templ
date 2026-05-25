@@ -27,6 +27,27 @@ templ Layout(title string, activePage string) {
 		</div>
 		<div id="toast"></div>
 		<script>
+			(function() {
+				function pad(n) { return n < 10 ? "0" + n : "" + n; }
+				function fmt(el) {
+					var iso = el.getAttribute("datetime");
+					if (!iso) return;
+					var d = new Date(iso);
+					if (isNaN(d.getTime())) return;
+					var hh = pad(d.getHours()), mm = pad(d.getMinutes()), ss = pad(d.getSeconds());
+					if (el.getAttribute("data-fmt") === "time") {
+						el.textContent = hh + ":" + mm + ":" + ss;
+					} else {
+						el.textContent = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hh + ":" + mm;
+					}
+				}
+				function fmtAll(root) {
+					(root || document).querySelectorAll("time[data-fmt]").forEach(fmt);
+				}
+				window.__fmtLocalTimes = fmtAll;
+				document.addEventListener("DOMContentLoaded", function() { fmtAll(); });
+				document.body.addEventListener("htmx:afterSwap", function(e) { fmtAll(e.target); });
+			})();
 			document.body.addEventListener("showToast", function(e) {
 				var toast = document.getElementById("toast");
 				var d = e.detail;

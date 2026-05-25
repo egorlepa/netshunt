@@ -1,0 +1,26 @@
+package templates
+
+import "time"
+
+// LocalTime renders a UTC timestamp as a <time> element. Browser-side JS in
+// the layout converts it to the viewer's local time. The text content is the
+// UTC fallback used when JS is disabled.
+//
+// fmt: "datetime" -> YYYY-MM-DD HH:MM, "time" -> HH:MM:SS.
+templ LocalTime(t time.Time, fmt string) {
+	if t.IsZero() {
+		<span class="text-muted">—</span>
+	} else {
+		<time datetime={ t.UTC().Format(time.RFC3339) } data-fmt={ fmt }>
+			{ utcFallback(t, fmt) }
+		</time>
+	}
+}
+
+func utcFallback(t time.Time, fmt string) string {
+	u := t.UTC()
+	if fmt == "time" {
+		return u.Format("15:04:05")
+	}
+	return u.Format("2006-01-02 15:04")
+}
