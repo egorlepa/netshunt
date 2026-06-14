@@ -257,7 +257,7 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 
 	port := fmt.Sprintf("%d", cfg.Routing.ActivePort())
 	ipsetName := cfg.IPSet.TableName
-	iface := cfg.Network.EntwareInterface
+	ifaces := cfg.Network.InterceptInterfaces()
 
 	var missing []string
 
@@ -271,23 +271,23 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 		missing = append(missing, "tcp redirect")
 	}
 
-	if iface != "" {
-		if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-i", iface, "-j", "NSHUNT") {
-			missing = append(missing, "prerouting jump")
-		}
-	} else {
+	if len(ifaces) == 0 {
 		if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-j", "NSHUNT") {
 			missing = append(missing, "prerouting jump")
 		}
+	} else {
+		for _, iface := range ifaces {
+			if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-i", iface, "-j", "NSHUNT") {
+				missing = append(missing, "prerouting jump ("+iface+")")
+			}
+		}
 	}
 
-	dnsIface := iface
-	if dnsIface == "" {
-		dnsIface = "br0"
-	}
-	if !ipt.RuleExists(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1") {
-		missing = append(missing, "dns dnat")
+	for _, iface := range cfg.Network.DNSInterfaces() {
+		if !ipt.RuleExists(ctx, "nat", "PREROUTING",
+			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1") {
+			missing = append(missing, "dns dnat ("+iface+")")
+		}
 	}
 
 	// UDP: mangle TPROXY rules.

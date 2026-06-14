@@ -61,6 +61,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Network.
 	cfg.Network.EntwareInterface = r.FormValue("net_interface")
+	var addlIfaces []string
+	for _, line := range strings.Split(r.FormValue("additional_interfaces"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			addlIfaces = append(addlIfaces, line)
+		}
+	}
+	cfg.Network.AdditionalInterfaces = addlIfaces
 
 	// Excluded networks. Only IPv4 CIDRs accepted.
 	if v := r.FormValue("excluded_networks"); v != "" {

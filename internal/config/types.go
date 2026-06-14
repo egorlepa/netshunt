@@ -44,6 +44,33 @@ func (r RoutingConfig) BackupConfigured() bool {
 // NetworkConfig holds network interface settings.
 type NetworkConfig struct {
 	EntwareInterface string `yaml:"entware_interface"`
+	// AdditionalInterfaces are extra ingress interfaces (e.g. a WireGuard TUN
+	// like awg0) that receive the same shunt interception as EntwareInterface,
+	// so remote VPN clients route through the same bypass list.
+	AdditionalInterfaces []string `yaml:"additional_interfaces"`
+}
+
+// InterceptInterfaces returns every ingress interface whose traffic should be
+// intercepted: EntwareInterface (when set) followed by any AdditionalInterfaces. An
+// empty slice means "all interfaces" (PREROUTING jumps added without an -i
+// match), preserving the historical behaviour when entware_interface is unset.
+func (n NetworkConfig) InterceptInterfaces() []string {
+	var ifaces []string
+	if n.EntwareInterface != "" {
+		ifaces = append(ifaces, n.EntwareInterface)
+	}
+	ifaces = append(ifaces, n.AdditionalInterfaces...)
+	return ifaces
+}
+
+// DNSInterfaces is like InterceptInterfaces but falls back to br0 when nothing
+// is configured, since DNS DNAT needs a concrete interface to attach to.
+func (n NetworkConfig) DNSInterfaces() []string {
+	ifaces := n.InterceptInterfaces()
+	if len(ifaces) == 0 {
+		return []string{"br0"}
+	}
+	return ifaces
 }
 
 // DNSConfig holds DNS forwarder settings.

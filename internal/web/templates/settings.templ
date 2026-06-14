@@ -40,6 +40,10 @@ templ SettingsPage(cfg *config.Config) {
 						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
 					</div>
 					<div class="mb-8">
+						<label class="text-muted text-sm">Additional Interfaces <span class="text-muted">(one per line, e.g. awg0 — same shunt as the main interface)</span></label>
+						<textarea name="additional_interfaces" rows="2" style="width:100%">{ joinLines(cfg.Network.AdditionalInterfaces) }</textarea>
+					</div>
+					<div class="mb-8">
 						<label class="text-muted text-sm">IPSet Table Name</label>
 						<input type="text" name="ipset_table" value={ cfg.IPSet.TableName }/>
 					</div>

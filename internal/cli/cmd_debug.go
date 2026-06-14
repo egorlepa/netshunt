@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -80,6 +81,9 @@ func debugConfig(cfg *config.Config) {
 	fmt.Printf("Routing port:      %d\n", cfg.Routing.LocalPort)
 	fmt.Printf("DNSCrypt port:     %d\n", cfg.DNSCrypt.Port)
 	fmt.Printf("Interface:         %s\n", cfg.Network.EntwareInterface)
+	if len(cfg.Network.AdditionalInterfaces) > 0 {
+		fmt.Printf("Add'l interfaces:  %s\n", strings.Join(cfg.Network.AdditionalInterfaces, ", "))
+	}
 	fmt.Printf("Web listen:        %s\n", cfg.Daemon.WebListen)
 	fmt.Printf("Setup finished:    %v\n", cfg.SetupFinished)
 	fmt.Println()

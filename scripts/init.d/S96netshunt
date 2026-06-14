@@ -6,7 +6,6 @@ DAEMON=/opt/bin/netshunt
 case "$1" in
   start)
     echo "Starting netshunt daemon..."
-    $DAEMON update
     start-stop-daemon -S -b -m -p $PIDFILE -x $DAEMON -- daemon
     ;;
   stop)

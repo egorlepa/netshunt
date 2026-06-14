@@ -94,7 +94,14 @@ func newHookIfstateCmd() *cobra.Command {
 				name = id // last-resort fallback
 			}
 
-			if name != cfg.Network.EntwareInterface {
+			managed := false
+			for _, iface := range cfg.Network.InterceptInterfaces() {
+				if name == iface {
+					managed = true
+					break
+				}
+			}
+			if !managed {
 				return nil
 			}
 

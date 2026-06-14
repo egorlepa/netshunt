@@ -14,6 +14,7 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 - **Automatic IP tracking** — DNS forwarder populates ipset in real-time; tracked IPs persist until the domain is removed or the daemon restarts
 - **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP. IPv4 only (AAAA records stripped from matched responses to prevent IPv6 bypass)
 - **Keenetic integration** — NDM hooks restore rules on reboots, WAN changes, interface restarts
+- **Multi-interface / road-warrior** — apply the same shunt routing to extra ingress interfaces (e.g. an AmneziaWG/WireGuard TUN) via `network.additional_interfaces`, so remote VPN clients hit the same bypass list as the LAN
 - **Proxy-agnostic** — redirects to a local port, any transparent proxy works
 
 ## How It Works

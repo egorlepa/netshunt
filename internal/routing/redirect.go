@@ -51,12 +51,12 @@ func (r *Redirect) Name() string { return "redirect" }
 func (r *Redirect) SetupRules(ctx context.Context) error {
 	ipsetName := r.cfg.IPSet.TableName
 	port := fmt.Sprintf("%d", r.cfg.Routing.ActivePort())
-	iface := r.cfg.Network.EntwareInterface
+	ifaces := r.cfg.Network.InterceptInterfaces()
 
 	excluded := filterIPv4Networks(r.cfg.ExcludedNetworks)
 
 	r.logger.Info("setting up redirect rules",
-		"ipset", ipsetName, "port", port, "interface", iface)
+		"ipset", ipsetName, "port", port, "interfaces", ifaces)
 
 	// TCP: NAT REDIRECT.
 	if err := r.ipt.CreateChain(ctx, "nat", redirectChainName); err != nil {
@@ -77,40 +77,40 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 		return fmt.Errorf("tcp redirect rule: %w", err)
 	}
 
-	if iface != "" {
-		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-i", iface, "-j", redirectChainName); err != nil {
+	if len(ifaces) == 0 {
+		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-j", redirectChainName); err != nil {
 			return fmt.Errorf("tcp prerouting jump: %w", err)
 		}
 	} else {
-		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-j", redirectChainName); err != nil {
-			return fmt.Errorf("tcp prerouting jump: %w", err)
+		for _, iface := range ifaces {
+			if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-i", iface, "-j", redirectChainName); err != nil {
+				return fmt.Errorf("tcp prerouting jump (%s): %w", iface, err)
+			}
 		}
 	}
 
 	// UDP: TPROXY via mangle table (best-effort).
-	if err := r.setupUDPTproxy(ctx, ipsetName, port, iface, excluded); err != nil {
+	if err := r.setupUDPTproxy(ctx, ipsetName, port, ifaces, excluded); err != nil {
 		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
 	}
 
 	// DNS DNAT.
-	dnsIface := iface
-	if dnsIface == "" {
-		dnsIface = "br0"
-	}
-	if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-		r.logger.Warn("dns dnat udp rule failed", "error", err)
-	}
-	if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-		r.logger.Warn("dns dnat tcp rule failed", "error", err)
+	for _, iface := range r.cfg.Network.DNSInterfaces() {
+		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
+			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
+			r.logger.Warn("dns dnat udp rule failed", "iface", iface, "error", err)
+		}
+		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
+			"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
+			r.logger.Warn("dns dnat tcp rule failed", "iface", iface, "error", err)
+		}
 	}
 
 	return nil
 }
 
 // setupUDPTproxy sets up TPROXY rules for UDP traffic.
-func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface string, excluded []string) error {
+func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port string, ifaces []string, excluded []string) error {
 	deploy.EnsureTproxyModule(ctx)
 
 	if err := r.ipt.CreateChain(ctx, "mangle", redirectUDPChainName); err != nil {
@@ -133,15 +133,17 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 		return fmt.Errorf("tproxy target not supported: %w", err)
 	}
 
-	if iface != "" {
-		if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-i", iface, "-j", redirectUDPChainName); err != nil {
+	if len(ifaces) == 0 {
+		if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-j", redirectUDPChainName); err != nil {
 			_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
 			return fmt.Errorf("udp prerouting jump: %w", err)
 		}
 	} else {
-		if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-j", redirectUDPChainName); err != nil {
-			_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-			return fmt.Errorf("udp prerouting jump: %w", err)
+		for _, iface := range ifaces {
+			if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-i", iface, "-j", redirectUDPChainName); err != nil {
+				_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
+				return fmt.Errorf("udp prerouting jump (%s): %w", iface, err)
+			}
 		}
 	}
 
@@ -160,12 +162,6 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port, iface st
 func (r *Redirect) TeardownRules(ctx context.Context) error {
 	r.logger.Info("tearing down redirect rules")
 
-	iface := r.cfg.Network.EntwareInterface
-	dnsIface := iface
-	if dnsIface == "" {
-		dnsIface = "br0"
-	}
-
 	// TCP: nat table.
 	_ = r.ipt.RemoveJumpRules(ctx, "nat", "PREROUTING", redirectChainName)
 	_ = r.ipt.DeleteChain(ctx, "nat", redirectChainName)
@@ -179,10 +175,12 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
 
 	// DNS DNAT.
-	_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
-	_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
-		"-i", dnsIface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
+	for _, iface := range r.cfg.Network.DNSInterfaces() {
+		_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
+			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
+		_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
+			"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
+	}
 
 	return nil
 }
