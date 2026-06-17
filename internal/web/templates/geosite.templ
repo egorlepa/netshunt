@@ -23,6 +23,10 @@ templ GeositePage(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, cat
 			document.body.addEventListener('htmx:afterSwap', function() {
 				filterCategories();
 			});
+			// Re-apply the filter on (re)load so a browser-restored search value still
+			// filters the list instead of showing stale text over an unfiltered table.
+			document.addEventListener('DOMContentLoaded', filterCategories);
+			window.addEventListener('pageshow', filterCategories);
 		</script>
 	}
 }
@@ -52,8 +56,9 @@ templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, 
 				hx-trigger="change"
 				hx-swap="none"
 				hx-indicator="#geosite-au-spinner"
+				class="flex gap-8 items-center flex-wrap"
 			>
-				<label>
+				<label class="flex gap-8 items-center">
 					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
 					Auto-update database
 				</label>
@@ -63,7 +68,8 @@ templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, 
 					name="schedule"
 					value={ autoUpdateSchedule(autoUpdate, config.DefaultGeositeSchedule) }
 					placeholder={ config.DefaultGeositeSchedule }
-					style="width:140px;font-family:monospace"
+					class="mono"
+					style="width:140px"
 				/>
 				<span class="text-muted text-sm">5-field cron expression</span>
 				<span id="geosite-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
@@ -103,29 +109,31 @@ templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, 
 			<input type="text" id="geosite-search" placeholder="Search categories..." oninput="filterCategories()"/>
 		</div>
 		<div class="card">
-			<table id="category-table">
-				<thead>
-					<tr>
-						<th>Category</th>
-						<th>Domains</th>
-						<th style="text-align:right">Action</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, cat := range categories {
-						@GeositeCategoryRow(cat, imported[cat.Name])
-					}
-				</tbody>
-			</table>
+			<div class="table-wrap">
+				<table id="category-table" class="responsive-table">
+					<thead>
+						<tr>
+							<th>Category</th>
+							<th>Domains</th>
+							<th style="text-align:right">Action</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, cat := range categories {
+							@GeositeCategoryRow(cat, imported[cat.Name])
+						}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	}
 }
 
 templ GeositeCategoryRow(cat geosite.CategoryInfo, imported bool) {
 	<tr id={ "cat-" + SlugID(cat.Name) } data-name={ cat.Name }>
-		<td>{ cat.Name }</td>
-		<td class="text-muted">{ itoa(cat.DomainCount) }</td>
-		<td style="text-align:right">
+		<td data-col="name">{ cat.Name }</td>
+		<td class="text-muted" data-col="meta">{ itoa(cat.DomainCount) }</td>
+		<td style="text-align:right" data-col="action">
 			if imported {
 				<span class="badge badge-green" style="margin-right:8px">Imported</span>
 				<button

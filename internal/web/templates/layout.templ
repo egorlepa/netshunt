@@ -11,15 +11,22 @@ templ Layout(title string, activePage string) {
 		<script src="/static/htmx.min.js"></script>
 	</head>
 	<body>
+		<div id="nprogress"><div class="bar"></div></div>
 		<nav>
 			<div class="container">
 				<span class="brand">netshunt</span>
-				<a href="/" if activePage == "dashboard" { class="active" }>Dashboard</a>
-				<a href="/shunts" if activePage == "shunts" { class="active" }>Shunts</a>
-				<a href="/geosite" if activePage == "geosite" { class="active" }>Geosite</a>
-				<a href="/blocklist" if activePage == "blocklist" { class="active" }>Blocklist</a>
-				<a href="/diagnostics" if activePage == "diagnostics" { class="active" }>Diagnostics</a>
-				<a href="/settings" if activePage == "settings" { class="active" }>Settings</a>
+				<input type="checkbox" id="nav-toggle"/>
+				<label class="nav-burger" for="nav-toggle" aria-label="Toggle navigation">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+				</label>
+				<div class="nav-links">
+					<a href="/" if activePage == "dashboard" { class="active" }>Dashboard</a>
+					<a href="/shunts" if activePage == "shunts" { class="active" }>Shunts</a>
+					<a href="/geosite" if activePage == "geosite" { class="active" }>Geosite</a>
+					<a href="/blocklist" if activePage == "blocklist" { class="active" }>Blocklist</a>
+					<a href="/diagnostics" if activePage == "diagnostics" { class="active" }>Diagnostics</a>
+					<a href="/settings" if activePage == "settings" { class="active" }>Settings</a>
+				</div>
 			</div>
 		</nav>
 		<div class="container">
@@ -69,6 +76,47 @@ templ Layout(title string, activePage string) {
 				setTimeout(function() { el.classList.add("toast-hide"); }, 2500);
 				setTimeout(function() { el.remove(); }, 3000);
 			});
+			(function() {
+				var np = document.getElementById("nprogress");
+				var bar = np ? np.querySelector(".bar") : null;
+				var active = 0, timer = null;
+				function isPoll(elt) {
+					if (!elt || !elt.getAttribute) return false;
+					var t = elt.getAttribute("hx-trigger") || "";
+					return t.indexOf("every ") !== -1;
+				}
+				function start() {
+					if (!np) return;
+					active++;
+					np.classList.add("active");
+					if (bar) bar.style.width = "8%";
+					clearInterval(timer);
+					var p = 8;
+					timer = setInterval(function() {
+						p += (90 - p) * 0.12;
+						if (bar) bar.style.width = p.toFixed(1) + "%";
+					}, 200);
+				}
+				function done() {
+					if (!np) return;
+					active = Math.max(0, active - 1);
+					if (active > 0) return;
+					clearInterval(timer);
+					if (bar) bar.style.width = "100%";
+					setTimeout(function() {
+						np.classList.remove("active");
+						setTimeout(function() { if (active === 0 && bar) bar.style.width = "0"; }, 250);
+					}, 200);
+				}
+				document.body.addEventListener("htmx:beforeRequest", function(e) {
+					if (isPoll(e.detail.elt)) return;
+					start();
+				});
+				document.body.addEventListener("htmx:afterRequest", function(e) {
+					if (isPoll(e.detail.elt)) return;
+					done();
+				});
+			})();
 		</script>
 	</body>
 	</html>

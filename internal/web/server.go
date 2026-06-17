@@ -17,7 +17,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
-//go:generate templ generate
+//go:generate go tool templ generate
 
 //go:embed static/*
 var staticFS embed.FS
@@ -104,6 +104,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /settings", s.handleSettingsPage)
 	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
 	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
+	s.mux.HandleFunc("GET /diagnostics/run/{i}", s.handleDiagnosticsRunOne)
 	s.mux.HandleFunc("POST /diagnostics/probe", s.handleDiagnosticsProbe)
 	s.mux.HandleFunc("GET /diagnostics/logs", s.handleDiagnosticsLogs)
 

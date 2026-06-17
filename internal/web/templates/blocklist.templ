@@ -70,8 +70,9 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpda
 				hx-trigger="change"
 				hx-swap="none"
 				hx-indicator="#blocklist-au-spinner"
+				class="flex gap-8 items-center flex-wrap"
 			>
-				<label>
+				<label class="flex gap-8 items-center">
 					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
 					Auto-update enabled sources
 				</label>
@@ -81,7 +82,8 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpda
 					name="schedule"
 					value={ autoUpdateSchedule(autoUpdate, config.DefaultBlocklistSchedule) }
 					placeholder={ config.DefaultBlocklistSchedule }
-					style="width:140px;font-family:monospace"
+					class="mono"
+					style="width:140px"
 				/>
 				<span class="text-muted text-sm">5-field cron expression</span>
 				<span id="blocklist-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
@@ -89,28 +91,30 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpda
 		</div>
 	</div>
 	<div class="card">
-		<table id="blocklist-sources">
-			<thead>
-				<tr>
-					<th>Enabled</th>
-					<th>Source</th>
-					<th>Domains</th>
-					<th>Last updated</th>
-					<th style="text-align:right">Action</th>
-				</tr>
-			</thead>
-			<tbody>
-				for _, sv := range sources {
-					@BlocklistSourceRow(sv)
-				}
-			</tbody>
-		</table>
+		<div class="table-wrap">
+			<table id="blocklist-sources">
+				<thead>
+					<tr>
+						<th>Enabled</th>
+						<th>Source</th>
+						<th>Domains</th>
+						<th>Last updated</th>
+						<th style="text-align:right">Action</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, sv := range sources {
+						@BlocklistSourceRow(sv)
+					}
+				</tbody>
+			</table>
+		</div>
 	</div>
 }
 
 templ BlocklistSourceRow(sv SourceView) {
 	<tr id={ "src-" + SlugID(sv.Preset.ID) } data-id={ sv.Preset.ID }>
-		<td>
+		<td data-col="enabled">
 			<input
 				type="checkbox"
 				name="enabled"
@@ -123,18 +127,18 @@ templ BlocklistSourceRow(sv SourceView) {
 			/>
 			<span id={ "toggle-spinner-" + SlugID(sv.Preset.ID) } class="htmx-indicator"><span class="spinner"></span></span>
 		</td>
-		<td>
+		<td data-col="source">
 			<div><strong>{ sv.Preset.Name }</strong></div>
 			<div class="text-muted text-sm">{ sv.Preset.Description }</div>
 		</td>
-		<td class="text-muted">
+		<td class="text-muted" data-col="domains">
 			if sv.State.DomainCount > 0 {
 				{ itoa(sv.State.DomainCount) }
 			} else {
 				<span class="text-muted">—</span>
 			}
 		</td>
-		<td class="text-muted text-sm">
+		<td class="text-muted text-sm" data-col="updated">
 			if !sv.State.LastFetched.IsZero() {
 				@LocalTime(sv.State.LastFetched, "datetime")
 			} else {
@@ -144,7 +148,7 @@ templ BlocklistSourceRow(sv SourceView) {
 				<div class="text-red text-sm">{ sv.State.LastError }</div>
 			}
 		</td>
-		<td style="text-align:right">
+		<td style="text-align:right" data-col="action">
 			<button
 				class="btn btn-sm btn-accent"
 				hx-post={ "/blocklist/sources/" + sv.Preset.ID + "/update" }

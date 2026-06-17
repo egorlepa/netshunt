@@ -30,26 +30,39 @@ templ Dashboard(data DashboardData) {
 
 templ DashboardContent(data DashboardData) {
 	<div class="card">
-		<div class="flex-between mb-8">
+		<div class="flex-between mb-16">
 			<h2>Overview</h2>
 			<button class="btn btn-sm" hx-get="/dashboard-content" hx-target="#dashboard-content" hx-swap="innerHTML">
 				Refresh
 				<span class="htmx-indicator"><span class="spinner"></span></span>
 			</button>
 		</div>
-		<table>
-			<tbody>
-				<tr><td class="text-muted">IPSet entries</td><td>{ itoa(data.IPSetCount) }</td></tr>
-				<tr><td class="text-muted">Shunts</td><td>{ itoa(data.EnabledShuntCount) } / { itoa(data.ShuntCount) } enabled</td></tr>
-				<tr><td class="text-muted">Host entries</td><td>{ itoa(data.EntryCount) }</td></tr>
-				<tr><td class="text-muted">Tracked domains</td><td>{ itoa(data.TrackedDomains) }</td></tr>
-				<tr><td class="text-muted">Tracked IPs</td><td>{ itoa(data.TrackedIPs) }</td></tr>
-				<tr>
-					<td class="text-muted">Active proxy</td>
-					<td>@ProxySwitch(data.Routing)</td>
-				</tr>
-			</tbody>
-		</table>
+		<div class="stat-grid">
+			<div class="stat">
+				<div class="stat-label">IPSet entries</div>
+				<div class="stat-value">{ itoa(data.IPSetCount) }</div>
+			</div>
+			<div class="stat">
+				<div class="stat-label">Shunts enabled</div>
+				<div class="stat-value">{ itoa(data.EnabledShuntCount) } <span class="stat-sub">/ { itoa(data.ShuntCount) }</span></div>
+			</div>
+			<div class="stat">
+				<div class="stat-label">Host entries</div>
+				<div class="stat-value">{ itoa(data.EntryCount) }</div>
+			</div>
+			<div class="stat">
+				<div class="stat-label">Tracked domains</div>
+				<div class="stat-value">{ itoa(data.TrackedDomains) }</div>
+			</div>
+			<div class="stat">
+				<div class="stat-label">Tracked IPs</div>
+				<div class="stat-value">{ itoa(data.TrackedIPs) }</div>
+			</div>
+		</div>
+	</div>
+	<div class="card">
+		<h2 class="mb-16">Active proxy</h2>
+		@ProxySwitch(data.Routing)
 	</div>
 }
 

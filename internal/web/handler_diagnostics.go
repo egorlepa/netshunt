@@ -2,10 +2,11 @@ package web
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
-	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
@@ -18,8 +19,23 @@ func (s *Server) handleDiagnosticsLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
-	results := healthcheck.RunChecks(r.Context(), s.Config, s.Shunts)
-	s.render(r, w, templates.DiagnosticsResults(results))
+	checks := healthcheck.Checks(s.Config, s.Shunts)
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	s.render(r, w, templates.DiagnosticsCheckList(names))
+}
+
+func (s *Server) handleDiagnosticsRunOne(w http.ResponseWriter, r *http.Request) {
+	checks := healthcheck.Checks(s.Config, s.Shunts)
+	i, err := strconv.Atoi(r.PathValue("i"))
+	if err != nil || i < 0 || i >= len(checks) {
+		errorResponse(w, "unknown check", http.StatusNotFound)
+		return
+	}
+	result := checks[i].Run(r.Context())
+	s.render(r, w, templates.DiagnosticsCheckResult(i, result))
 }
 
 func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) {

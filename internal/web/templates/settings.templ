@@ -5,58 +5,58 @@ import "github.com/egorlepa/netshunt/internal/config"
 templ SettingsPage(cfg *config.Config) {
 	@Layout("Settings", "settings") {
 		<h1 class="mb-16">Settings</h1>
-		<form hx-put="/settings" hx-swap="none">
+		<form hx-put="/settings" hx-swap="none" hx-disabled-elt="find button[type='submit']">
 			<div class="card mb-16">
 				<h2>Routing</h2>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Local Port</label>
+				<div class="field">
+					<label>Local Port</label>
 					<input type="number" name="routing_local_port" value={ itoa(cfg.Routing.LocalPort) } min="1" max="65535"/>
 				</div>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Backup Port <span class="text-muted">(optional, enables manual failover)</span></label>
+				<div class="field">
+					<label>Backup Port <span class="text-muted">(optional, enables manual failover)</span></label>
 					<input type="number" name="routing_backup_port" value={ itoaOrEmpty(cfg.Routing.BackupPort) } min="0" max="65535" placeholder="0 = disabled"/>
 				</div>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Excluded Networks <span class="text-muted">(one IPv4 CIDR per line, bypasses tunnel)</span></label>
-					<textarea name="excluded_networks" rows="4" style="width:100%">{ joinLines(cfg.ExcludedNetworks) }</textarea>
+				<div class="field">
+					<label>Excluded Networks <span class="text-muted">(one IPv4 CIDR per line, bypasses tunnel)</span></label>
+					<textarea name="excluded_networks" rows="4">{ joinLines(cfg.ExcludedNetworks) }</textarea>
 				</div>
 			</div>
 			<div class="grid-2 mb-16">
 				<div class="card">
 					<h2>DNS</h2>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Forwarder Listen Address</label>
+					<div class="field">
+						<label>Forwarder Listen Address</label>
 						<input type="text" name="dns_listen_addr" value={ cfg.DNS.ListenAddr }/>
 					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">dnscrypt-proxy Port</label>
+					<div class="field">
+						<label>dnscrypt-proxy Port</label>
 						<input type="number" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) } min="1" max="65535"/>
 					</div>
 				</div>
 				<div class="card">
 					<h2>Network</h2>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Entware Interface</label>
+					<div class="field">
+						<label>Entware Interface</label>
 						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
 					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">Additional Interfaces <span class="text-muted">(one per line, e.g. awg0 — same shunt as the main interface)</span></label>
-						<textarea name="additional_interfaces" rows="2" style="width:100%">{ joinLines(cfg.Network.AdditionalInterfaces) }</textarea>
+					<div class="field">
+						<label>Additional Interfaces <span class="text-muted">(one per line, e.g. awg0 — same shunt as the main interface)</span></label>
+						<textarea name="additional_interfaces" rows="2">{ joinLines(cfg.Network.AdditionalInterfaces) }</textarea>
 					</div>
-					<div class="mb-8">
-						<label class="text-muted text-sm">IPSet Table Name</label>
+					<div class="field">
+						<label>IPSet Table Name</label>
 						<input type="text" name="ipset_table" value={ cfg.IPSet.TableName }/>
 					</div>
 				</div>
 			</div>
 			<div class="card mb-16">
 				<h2>Daemon</h2>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Web Listen Address</label>
+				<div class="field">
+					<label>Web Listen Address</label>
 					<input type="text" name="web_listen" value={ cfg.Daemon.WebListen }/>
 				</div>
-				<div class="mb-8">
-					<label class="text-muted text-sm">Log Level</label>
+				<div class="field">
+					<label>Log Level</label>
 					<select name="log_level">
 						<option value="debug" if cfg.Daemon.LogLevel == "debug" { selected }>debug</option>
 						<option value="info" if cfg.Daemon.LogLevel == "info" { selected }>info</option>

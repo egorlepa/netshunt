@@ -6,13 +6,13 @@ templ ShuntsPage(shunts []shunt.Shunt) {
 	@Layout("Shunts", "shunts") {
 		<div class="flex-between mb-16">
 			<h1>Shunts</h1>
-			<div class="flex gap-8">
+			<div class="flex gap-8 flex-wrap toolbar-actions">
 				<button id="toggle-all-btn" class="btn btn-sm" onclick="toggleAllEntries()">Expand All</button>
 				<a href="/shunts/export" class="btn btn-sm">Export</a>
 				<button class="btn btn-sm" onclick="document.getElementById('import-form').style.display=document.getElementById('import-form').style.display==='none'?'block':'none'">
 					Import
 				</button>
-				<button class="btn btn-accent" onclick="document.getElementById('create-form').style.display='block'">
+				<button class="btn btn-sm btn-accent" onclick="document.getElementById('create-form').style.display='block'">
 					New Shunt
 				</button>
 			</div>
@@ -27,9 +27,12 @@ templ ShuntsPage(shunts []shunt.Shunt) {
 				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
 				class="mt-8"
 			>
-				<textarea name="body" rows="6" style="width:100%" placeholder="Paste shunts YAML here..." required></textarea>
+				<textarea name="body" rows="6" placeholder="Paste shunts YAML here..." required></textarea>
 				<div class="mt-8">
-					<button class="btn btn-accent" type="submit">Import</button>
+					<button class="btn btn-accent" type="submit" hx-disabled-elt="this">
+						Import
+						<span class="htmx-indicator"><span class="spinner"></span></span>
+					</button>
 				</div>
 			</form>
 		</div>
@@ -39,12 +42,16 @@ templ ShuntsPage(shunts []shunt.Shunt) {
 				hx-post="/shunts"
 				hx-target="#shunt-list"
 				hx-swap="innerHTML"
+				hx-disabled-elt="find button[type='submit']"
 				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
-				class="flex gap-8 mt-8"
+				class="flex gap-8 mt-8 stack-sm"
 			>
 				<input type="text" name="name" placeholder="Shunt name" required/>
 				<input type="text" name="description" placeholder="Description (optional)"/>
-				<button class="btn btn-accent" type="submit">Create</button>
+				<button class="btn btn-accent" type="submit">
+					Create
+					<span class="htmx-indicator"><span class="spinner"></span></span>
+				</button>
 			</form>
 		</div>
 		<div id="shunt-list">
@@ -135,19 +142,23 @@ templ ShuntToggle(s shunt.Shunt) {
 
 templ ShuntCard(s shunt.Shunt) {
 	<div class="card" id={ "shunt-" + SlugID(s.Name) }>
-		<div class="flex-between mb-8">
-			<div class="flex gap-8 shunt-header" style="align-items:center;cursor:pointer;user-select:none" data-shunt={ SlugID(s.Name) } onclick="toggleShunt(this.dataset.shunt)">
-				<span class="expand-arrow">&#9654;</span>
-				<h2 style="margin:0">{ s.Name }</h2>
-				if s.Source != "" {
-					<span class="badge badge-yellow">geosite</span>
-				}
-				if s.Description != "" {
-					<span class="text-muted text-sm">{ s.Description }</span>
-				}
-				<span class="text-muted text-sm">({ itoa(len(s.Entries)) } entries)</span>
+		<div class="shunt-head mb-8">
+			<div class="shunt-head-main shunt-header" data-shunt={ SlugID(s.Name) } onclick="toggleShunt(this.dataset.shunt)">
+				<span class="expand-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
+				<div class="shunt-title">
+					<div class="shunt-name-row">
+						<h2>{ s.Name }</h2>
+						if s.Source != "" {
+							<span class="badge badge-yellow">geosite</span>
+						}
+						<span class="entry-count">{ itoa(len(s.Entries)) } entries</span>
+					</div>
+					if s.Description != "" {
+						<div class="shunt-desc text-muted text-sm">{ s.Description }</div>
+					}
+				</div>
 			</div>
-			<div class="flex gap-8" style="align-items:center">
+			<div class="shunt-controls">
 				@ShuntToggle(s)
 				<button
 					class="btn btn-sm btn-danger"
@@ -167,13 +178,18 @@ templ ShuntCard(s shunt.Shunt) {
 					hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
 					hx-target={ "#shunt-" + SlugID(s.Name) }
 					hx-swap="outerHTML"
+					hx-disabled-elt="find textarea, find button[type='submit']"
 					hx-on::after-request="if(event.detail.successful) this.reset()"
 					class="mt-8"
 				>
-					<div class="flex gap-8">
-						<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8&#10;Prefixes: full:example.com  keyword:youtube  regexp:^.*\.google\." required></textarea>
-						<button class="btn btn-sm btn-accent" type="submit">Add</button>
+					<div class="flex gap-8 items-center stack-sm">
+						<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8" required></textarea>
+						<button class="btn btn-sm btn-accent" type="submit">
+							Add
+							<span class="htmx-indicator"><span class="spinner"></span></span>
+						</button>
 					</div>
+					<div class="text-muted text-sm mt-8">Prefixes: <span class="mono">full:</span>, <span class="mono">keyword:</span>, <span class="mono">regexp:</span></div>
 				</form>
 			}
 		</div>

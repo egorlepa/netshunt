@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"fmt"
+
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/platform"
 )
@@ -27,7 +29,8 @@ templ DiagnosticsPage() {
 				hx-post="/diagnostics/probe"
 				hx-target="#probe-results"
 				hx-swap="innerHTML"
-				class="flex gap-8"
+				hx-disabled-elt="find button[type='submit']"
+				class="flex gap-8 stack-sm"
 			>
 				<input type="text" name="domain" value="ifconfig.me" placeholder="example.com" required/>
 				<button class="btn btn-accent" type="submit">
@@ -36,17 +39,24 @@ templ DiagnosticsPage() {
 				</button>
 			</form>
 			<div id="probe-results" class="mt-8" hx-post="/diagnostics/probe" hx-trigger="load" hx-swap="innerHTML" hx-vals='{"domain":"ifconfig.me"}'>
-				<p class="text-muted text-sm">Running probe...</p>
+				<p class="mb-8"><strong>ifconfig.me</strong></p>
+				<div class="check-list">
+					<div class="check-row">
+						<span class="check-icon check-pending"><span class="spinner"></span></span>
+						<span class="check-name">resolving…</span>
+						<span class="check-detail text-muted">checking ipset</span>
+					</div>
+				</div>
 			</div>
 		</div>
 		<div class="card mb-16">
 			<h2 class="mb-8">Maintenance</h2>
-			<div class="flex gap-8">
-				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none">
+			<div class="flex gap-8 flex-wrap">
+				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none" hx-disabled-elt="this">
 					Force Reconcile
 					<span class="htmx-indicator"><span class="spinner"></span></span>
 				</button>
-				<button class="btn btn-accent" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnscrypt-proxy?">
+				<button class="btn btn-accent" hx-post="/actions/restart" hx-swap="none" hx-confirm="Restart dnscrypt-proxy?" hx-disabled-elt="this">
 					Restart dnscrypt-proxy
 					<span class="htmx-indicator"><span class="spinner"></span></span>
 				</button>
@@ -85,56 +95,72 @@ templ DiagnosticsLogs(entries []platform.LogEntry) {
 	}
 }
 
-templ DiagnosticsResults(results []healthcheck.Result) {
-	<table style="width:100%">
-		<tbody>
-			for _, r := range results {
-				<tr>
-					<td style="width:24px;text-align:center">
-						if r.Passed {
-							<span class="text-green">✓</span>
-						} else if r.Warn {
-							<span style="color:#d97706">!</span>
-						} else {
-							<span class="text-red">✗</span>
-						}
-					</td>
-					<td><strong>{ r.Name }</strong></td>
-					<td class="text-muted">{ r.Detail }</td>
-				</tr>
+// DiagnosticsCheckList renders one placeholder row per check with a spinner.
+// Each row then fetches its own result via htmx, so the list appears instantly
+// and fills in ✓/✗ as each check completes.
+templ DiagnosticsCheckList(names []string) {
+	<div class="check-list">
+		for i, name := range names {
+			<div
+				class="check-row"
+				id={ fmt.Sprintf("check-%d", i) }
+				hx-get={ fmt.Sprintf("/diagnostics/run/%d", i) }
+				hx-trigger="load"
+				hx-swap="outerHTML"
+			>
+				<span class="check-icon check-pending"><span class="spinner"></span></span>
+				<span class="check-name">{ name }</span>
+				<span class="check-detail text-muted">checking…</span>
+			</div>
+		}
+	</div>
+}
+
+templ DiagnosticsCheckResult(i int, r healthcheck.Result) {
+	<div class="check-row" id={ fmt.Sprintf("check-%d", i) }>
+		<span class="check-icon">
+			if r.Passed {
+				<span class="text-green">✓</span>
+			} else if r.Warn {
+				<span class="text-yellow">!</span>
+			} else {
+				<span class="text-red">✗</span>
 			}
-		</tbody>
-	</table>
+		</span>
+		<span class="check-name"><strong>{ r.Name }</strong></span>
+		<span class="check-detail text-muted" title={ r.Detail }>{ r.Detail }</span>
+	</div>
 }
 
 templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
 	<p class="mb-8"><strong>{ probe.Domain }</strong></p>
 	if len(probe.IPs) == 0 {
-		<p><span class="text-red">✗</span> no IPs resolved</p>
+		<div class="check-row">
+			<span class="check-icon"><span class="text-red">✗</span></span>
+			<span class="check-detail">no IPs resolved</span>
+		</div>
 	} else {
-		<table>
-			<tbody>
-				for _, ip := range probe.IPs {
-					<tr>
-						<td style="width:24px;text-align:center">
-							if probe.InIPSet[ip] {
-								<span class="text-green">✓</span>
-							} else {
-								<span class="text-red">✗</span>
-							}
-						</td>
-						<td>{ ip }</td>
-						<td class="text-muted">
-							if probe.InIPSet[ip] {
-								in ipset
-							} else {
-								not in ipset
-							}
-						</td>
-					</tr>
-				}
-			</tbody>
-		</table>
+		<div class="check-list">
+			for _, ip := range probe.IPs {
+				<div class="check-row">
+					<span class="check-icon">
+						if probe.InIPSet[ip] {
+							<span class="text-green">✓</span>
+						} else {
+							<span class="text-red">✗</span>
+						}
+					</span>
+					<span class="check-name mono">{ ip }</span>
+					<span class="check-detail text-muted">
+						if probe.InIPSet[ip] {
+							in ipset
+						} else {
+							not in ipset
+						}
+					</span>
+				</div>
+			}
+		</div>
 	}
 }
 

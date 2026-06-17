@@ -32,35 +32,66 @@ type ProbeResult struct {
 	InIPSet map[string]bool // IP -> found in ipset
 }
 
-// RunChecks performs all health checks and returns the results.
-func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []Result {
-	var results []Result
+// Check is a single named health check that can be run on demand. Exposing the
+// checks as descriptors (rather than only running them all at once) lets the web
+// UI render placeholders immediately and fill each result in as it completes.
+type Check struct {
+	Name string
+	Run  func(ctx context.Context) Result
+}
+
+// Checks returns the ordered list of health checks without running them. The
+// Name matches the Name the check's Result will carry, so placeholders and
+// final rows stay consistent.
+func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
+	var checks []Check
+	add := func(name string, fn func(ctx context.Context) Result) {
+		checks = append(checks, Check{Name: name, Run: fn})
+	}
 
 	// 1. dnscrypt-proxy
-	results = append(results, checkService(ctx, service.DNSCrypt))
-
+	add(service.DNSCrypt.Name, func(ctx context.Context) Result { return checkService(ctx, service.DNSCrypt) })
 	// 2. Daemon
-	results = append(results, checkService(ctx, service.Daemon))
-
+	add(service.Daemon.Name, func(ctx context.Context) Result { return checkService(ctx, service.Daemon) })
 	// 3. DNS forwarder
-	results = append(results, checkForwarder(ctx, cfg))
-
+	add("dns forwarder", func(ctx context.Context) Result { return checkForwarder(ctx, cfg) })
 	// 4. Transparent proxy listening (primary + optional backup)
-	results = append(results, checkProxies(cfg)...)
-
+	for _, t := range proxyTargets(cfg) {
+		t := t
+		add(fmt.Sprintf("proxy %s%s", t.label, activeSuffix(t.active)),
+			func(ctx context.Context) Result { return checkProxy(t.label, t.port, t.active) })
+	}
 	// 5. Proxy connectivity (route a test request through the proxy via OUTPUT redirect)
-	results = append(results, checkProxiesConnectivity(ctx, cfg)...)
-
+	for _, t := range proxyTargets(cfg) {
+		t := t
+		add(fmt.Sprintf("proxy %s connectivity%s", t.label, activeSuffix(t.active)),
+			func(ctx context.Context) Result { return checkProxyConnectivity(ctx, t.label, t.port, t.active) })
+	}
 	// 6. IPSet v4
-	results = append(results, checkIPSet4(ctx, cfg))
-
+	add("ipset", func(ctx context.Context) Result { return checkIPSet4(ctx, cfg) })
 	// 7. IPTables v4
-	results = append(results, checkIPTables4(ctx, cfg))
-
+	add("iptables", func(ctx context.Context) Result { return checkIPTables4(ctx, cfg) })
 	// 10. Shunts
-	results = append(results, checkShunts(shunts))
+	add("shunts", func(ctx context.Context) Result { return checkShunts(shunts) })
 
+	return checks
+}
+
+// RunChecks performs all health checks sequentially and returns the results.
+func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []Result {
+	checks := Checks(cfg, shunts)
+	results := make([]Result, 0, len(checks))
+	for _, c := range checks {
+		results = append(results, c.Run(ctx))
+	}
 	return results
+}
+
+func activeSuffix(active bool) string {
+	if active {
+		return " (active)"
+	}
+	return ""
 }
 
 // ProbeDomain resolves a domain (A) and checks if the resolved IPs are in the ipset.
@@ -152,20 +183,8 @@ func proxyTargets(cfg *config.Config) []struct {
 	return targets
 }
 
-func checkProxies(cfg *config.Config) []Result {
-	var out []Result
-	for _, t := range proxyTargets(cfg) {
-		out = append(out, checkProxy(t.label, t.port, t.active))
-	}
-	return out
-}
-
 func checkProxy(label string, port int, active bool) Result {
-	suffix := ""
-	if active {
-		suffix = " (active)"
-	}
-	r := Result{Name: fmt.Sprintf("proxy %s%s", label, suffix)}
+	r := Result{Name: fmt.Sprintf("proxy %s%s", label, activeSuffix(active))}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
@@ -179,20 +198,8 @@ func checkProxy(label string, port int, active bool) Result {
 	return r
 }
 
-func checkProxiesConnectivity(ctx context.Context, cfg *config.Config) []Result {
-	var out []Result
-	for _, t := range proxyTargets(cfg) {
-		out = append(out, checkProxyConnectivity(ctx, t.label, t.port, t.active))
-	}
-	return out
-}
-
 func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, active bool) Result {
-	suffix := ""
-	if active {
-		suffix = " (active)"
-	}
-	r := Result{Name: fmt.Sprintf("proxy %s connectivity%s", label, suffix)}
+	r := Result{Name: fmt.Sprintf("proxy %s connectivity%s", label, activeSuffix(active))}
 	port := fmt.Sprintf("%d", proxyPort)
 
 	const testHost = "connectivitycheck.gstatic.com"
