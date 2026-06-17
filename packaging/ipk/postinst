@@ -24,4 +24,12 @@ fi
 
 echo ""
 echo "netshunt installed successfully."
-echo "Run 'netshunt setup' to configure."
+
+# On an upgrade the prerm of the old package stops the daemon, but nothing
+# starts it again. If the system was already configured, bring it back up so an
+# upgrade does not leave the tunnel down. Fresh installs are started by `setup`.
+if [ -f /opt/etc/netshunt/config.yaml ] && [ -x /opt/etc/init.d/S96netshunt ]; then
+    /opt/etc/init.d/S96netshunt restart
+else
+    echo "Run 'netshunt setup' to configure."
+fi
