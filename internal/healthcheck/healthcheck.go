@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egorlepa/netshunt/internal/config"
@@ -198,6 +199,15 @@ func checkProxy(label string, port int, active bool) Result {
 	return r
 }
 
+// connectivityMu serializes proxy connectivity checks. Each check installs a
+// temporary REDIRECT rule in the global nat OUTPUT chain for the same test host
+// and port, differing only by --to-port. The web UI runs checks concurrently
+// (parallel htmx requests), so without this lock the primary and backup checks'
+// rules coexist and iptables matches whichever was appended first — making both
+// requests traverse the same proxy and producing bogus results. Holding the lock
+// for the rule's lifetime guarantees at most one test rule exists at a time.
+var connectivityMu sync.Mutex
+
 func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, active bool) Result {
 	r := Result{Name: fmt.Sprintf("proxy %s connectivity%s", label, activeSuffix(active))}
 	port := fmt.Sprintf("%d", proxyPort)
@@ -212,6 +222,10 @@ func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, ac
 	testIP := ips[0]
 
 	// Temporary OUTPUT rule so the transparent proxy sees SO_ORIGINAL_DST.
+	// Serialized so primary/backup checks never have overlapping rules.
+	connectivityMu.Lock()
+	defer connectivityMu.Unlock()
+
 	ipt := netfilter.NewIPTables()
 	rule := []string{
 		"OUTPUT", "-d", testIP, "-p", "tcp", "--dport", "80",
