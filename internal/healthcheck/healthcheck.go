@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/egorlepa/netshunt/internal/config"
@@ -66,7 +68,7 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 	for _, t := range proxyTargets(cfg) {
 		t := t
 		add(fmt.Sprintf("proxy %s connectivity%s", t.label, activeSuffix(t.active)),
-			func(ctx context.Context) Result { return checkProxyConnectivity(ctx, t.label, t.port, t.active) })
+			func(ctx context.Context) Result { return checkProxyConnectivity(ctx, cfg, t.label, t.port, t.active) })
 	}
 	// 6. IPSet v4
 	add("ipset", func(ctx context.Context) Result { return checkIPSet4(ctx, cfg) })
@@ -199,36 +201,67 @@ func checkProxy(label string, port int, active bool) Result {
 	return r
 }
 
-// connectivityMu serializes proxy connectivity checks. Each check installs a
-// temporary REDIRECT rule in the global nat OUTPUT chain for the same test host
-// and port, differing only by --to-port. The web UI runs checks concurrently
-// (parallel htmx requests), so without this lock the primary and backup checks'
-// rules coexist and iptables matches whichever was appended first — making both
-// requests traverse the same proxy and producing bogus results. Holding the lock
-// for the rule's lifetime guarantees at most one test rule exists at a time.
-var connectivityMu sync.Mutex
+// connectivityProbes are well-known HTTP (port 80) captive-portal endpoints that
+// return a small fixed response. Each connectivity check fans a request out to
+// all of them through the proxy: a single probe to one host is too flaky to
+// distinguish "proxy is down" from "that one host hiccuped", so we report the
+// success ratio instead and flag partial failures as instability.
+var connectivityProbes = []struct {
+	name string
+	host string
+	path string
+	want int
+}{
+	{"gstatic", "connectivitycheck.gstatic.com", "/generate_204", 204},
+	{"google", "www.google.com", "/generate_204", 204},
+	{"cloudflare", "cp.cloudflare.com", "/generate_204", 204},
+	{"firefox", "detectportal.firefox.com", "/success.txt", 200},
+	{"msft", "www.msftconnecttest.com", "/connecttest.txt", 200},
+}
 
-func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, active bool) Result {
+// connectivityMarkBase namespaces the fwmark applied to connectivity-check
+// sockets. It is well clear of the TPROXY fwmark (0x1), so check traffic never
+// matches the transparent-proxy policy route.
+const connectivityMarkBase = 0x6e730000 // "ns"
+
+var connectivityMarkSeq atomic.Uint32
+
+// nextConnectivityMark returns a process-unique fwmark for a connectivity check.
+// Matching the REDIRECT rule on this mark (rather than the destination) keeps
+// concurrent primary/backup checks fully isolated: each check only redirects its
+// own marked sockets, so the checks no longer race over a shared OUTPUT rule and
+// can run in parallel without affecting each other or normal routing.
+func nextConnectivityMark() int {
+	return connectivityMarkBase | int(connectivityMarkSeq.Add(1)&0xffff)
+}
+
+// markDialer returns a dialer that tags every connection it opens with fwmark.
+func markDialer(mark int, timeout time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout: timeout,
+		Control: func(_, _ string, c syscall.RawConn) error {
+			var serr error
+			if err := c.Control(func(fd uintptr) {
+				serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, mark)
+			}); err != nil {
+				return err
+			}
+			return serr
+		},
+	}
+}
+
+func checkProxyConnectivity(ctx context.Context, cfg *config.Config, label string, proxyPort int, active bool) Result {
 	r := Result{Name: fmt.Sprintf("proxy %s connectivity%s", label, activeSuffix(active))}
 	port := fmt.Sprintf("%d", proxyPort)
+	mark := nextConnectivityMark()
 
-	const testHost = "connectivitycheck.gstatic.com"
-	ips, err := net.DefaultResolver.LookupHost(ctx, testHost)
-	if err != nil || len(ips) == 0 {
-		r.Detail = "cannot resolve test host"
-		r.Warn = !active
-		return r
-	}
-	testIP := ips[0]
-
-	// Temporary OUTPUT rule so the transparent proxy sees SO_ORIGINAL_DST.
-	// Serialized so primary/backup checks never have overlapping rules.
-	connectivityMu.Lock()
-	defer connectivityMu.Unlock()
-
+	// Redirect only this check's marked tcp/80 sockets to the proxy so it sees
+	// SO_ORIGINAL_DST. Matching on fwmark keeps concurrent checks isolated.
 	ipt := netfilter.NewIPTables()
 	rule := []string{
-		"OUTPUT", "-d", testIP, "-p", "tcp", "--dport", "80",
+		"OUTPUT", "-p", "tcp", "--dport", "80",
+		"-m", "mark", "--mark", fmt.Sprintf("%#x", mark),
 		"-j", "REDIRECT", "--to-port", port,
 	}
 	if err := ipt.AppendRule(ctx, "nat", rule...); err != nil {
@@ -240,22 +273,89 @@ func checkProxyConnectivity(ctx context.Context, label string, proxyPort int, ac
 
 	client := &http.Client{
 		Timeout: 5 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
+		Transport: &http.Transport{
+			DialContext:       markDialer(mark, 5*time.Second).DialContext,
+			DisableKeepAlives: true,
 		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	url := fmt.Sprintf("http://%s/generate_204", testIP)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Host = testHost
-	resp, err := client.Do(req)
-	if err != nil {
-		r.Detail = fmt.Sprintf("proxy not forwarding: %v", err)
+
+	// Resolve probe hosts via the netshunt forwarder directly: /etc/resolv.conf
+	// has no nameserver, so the Go stub resolver falls back to [::1]:53 (refused)
+	// and happy-eyeballs IPv6, which is exactly the flakiness we want to avoid.
+	// Dialing the resolved IPv4 literal (Host header preserved) keeps the test
+	// purely IPv4 and isolates it from system DNS quirks.
+	resolver := dns.NewResolver(cfg.DNS.ListenAddr)
+
+	// Probe every endpoint in parallel; all share the marked redirect.
+	oks := make([]bool, len(connectivityProbes))
+	errs := make([]string, len(connectivityProbes))
+	var wg sync.WaitGroup
+	for i, p := range connectivityProbes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Resolve with one retry to ride over transient forwarder blips so a
+			// DNS hiccup isn't misreported as a proxy failure.
+			var ips []net.IP
+			var err error
+			for attempt := 0; attempt < 3; attempt++ {
+				if attempt > 0 {
+					time.Sleep(250 * time.Millisecond)
+				}
+				ips, err = resolver.Resolve(ctx, p.host)
+				if err == nil && len(ips) > 0 {
+					break
+				}
+			}
+			if err != nil || len(ips) == 0 {
+				if err != nil {
+					errs[i] = "resolve: " + err.Error()
+				} else {
+					errs[i] = "resolve: no A records"
+				}
+				return
+			}
+			url := fmt.Sprintf("http://%s%s", ips[0].String(), p.path)
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			req.Host = p.host
+			resp, err := client.Do(req)
+			if err != nil {
+				errs[i] = err.Error()
+				return
+			}
+			_ = resp.Body.Close()
+			oks[i] = resp.StatusCode == p.want
+			if !oks[i] {
+				errs[i] = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			}
+		}()
+	}
+	wg.Wait()
+
+	ok := 0
+	var failed []string
+	for i, p := range connectivityProbes {
+		if oks[i] {
+			ok++
+		} else {
+			failed = append(failed, p.name)
+		}
+	}
+	total := len(connectivityProbes)
+
+	switch ok {
+	case total:
+		r.Passed = true
+		r.Detail = fmt.Sprintf("%d/%d via proxy", ok, total)
+	case 0:
+		r.Detail = fmt.Sprintf("0/%d reachable via proxy (%s: %s)", total, connectivityProbes[0].name, errs[0])
 		r.Warn = !active
-		return r
+	default:
+		// Partial success: the proxy works but is unstable — flag it.
+		r.Warn = true
+		r.Detail = fmt.Sprintf("%d/%d via proxy (flaky: %s)", ok, total, strings.Join(failed, ", "))
 	}
-	_ = resp.Body.Close()
-	r.Passed = true
-	r.Detail = fmt.Sprintf("HTTP %d via proxy", resp.StatusCode)
 	return r
 }
 
