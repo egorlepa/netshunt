@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -152,7 +153,11 @@ func newHookWanCmd() *cobra.Command {
 			}
 
 			apiURL := fmt.Sprintf("http://127.0.0.1%s/actions/reconcile", cfg.Daemon.WebListen)
-			resp, err := http.Post(apiURL, "", nil)
+			// The daemon finishes the reconcile even if we give up waiting:
+			// the request context is detached server-side. The timeout only
+			// keeps a wedged daemon from hanging the NDM hook forever.
+			client := &http.Client{Timeout: 5 * time.Minute}
+			resp, err := client.Post(apiURL, "", nil)
 			if err != nil {
 				hookLogger().Warn("daemon not reachable, skipping reconcile", "error", err)
 				return nil

@@ -154,8 +154,15 @@ func (s *Server) routes() {
 	})
 }
 
-// ServeHTTP implements http.Handler.
+// ServeHTTP implements http.Handler. Mutating requests run on a context the
+// client cannot cancel: a closed tab or an htmx timeout must not stop an
+// ipset/iptables sequence halfway (e.g. after TeardownRules, before the rules
+// are back). No deadline either, for the same reason; the slow parts carry
+// their own (download clients), the rest are short process spawns.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		r = r.WithContext(context.WithoutCancel(r.Context()))
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
