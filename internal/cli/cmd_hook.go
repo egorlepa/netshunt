@@ -42,7 +42,7 @@ func hookLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
-// hook fs start — create ipset table on filesystem mount.
+// hook fs start - create ipset table on filesystem mount.
 func newHookFsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "fs <start|stop>",
@@ -62,7 +62,7 @@ func newHookFsCmd() *cobra.Command {
 	}
 }
 
-// hook netfilter — iptables rules need to be (re)applied.
+// hook netfilter - iptables rules need to be (re)applied.
 func newHookNetfilterCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "netfilter <type> <table>",
@@ -86,9 +86,45 @@ func newHookNetfilterCmd() *cobra.Command {
 	}
 }
 
-// hook ifstate — interface state change.
+// ifstateEvent is one NDM ifstatechanged call.
+type ifstateEvent struct {
+	id, systemName, connected, link, up string
+}
+
+// name returns the Linux interface name. NDM sets system_name in the
+// environment; the script passes it as --system-name.
+func (e ifstateEvent) name() string {
+	for _, n := range []string{e.systemName, os.Getenv("system_name"), os.Getenv("SYSTEM_NAME"), e.id} {
+		if n != "" {
+			return n
+		}
+	}
+	return ""
+}
+
+// shouldReconcile reports whether the event needs the rules converged: an
+// up/connected event on an interface netshunt intercepts. Link down does
+// nothing: rules with -i on an absent interface match no packets, and
+// removing them would only open a window when it comes back.
+func (e ifstateEvent) shouldReconcile(cfg *config.Config) bool {
+	if e.link == "down" {
+		return false
+	}
+	if e.link != "up" && e.connected != "yes" && e.up != "up" {
+		return false
+	}
+	name := e.name()
+	for _, iface := range cfg.Network.InterceptInterfaces() {
+		if name == iface {
+			return true
+		}
+	}
+	return false
+}
+
+// hook ifstate - interface state change.
 func newHookIfstateCmd() *cobra.Command {
-	var id, systemName, connected, link, up string
+	var ev ifstateEvent
 
 	cmd := &cobra.Command{
 		Use:   "ifstate",
@@ -98,54 +134,24 @@ func newHookIfstateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			// NDM passes the Linux system name as --system-name (or SYSTEM_NAME env).
-			name := systemName
-			if name == "" {
-				name = os.Getenv("SYSTEM_NAME")
-			}
-			if name == "" {
-				name = id // last-resort fallback
-			}
-
-			managed := false
-			for _, iface := range cfg.Network.InterceptInterfaces() {
-				if name == iface {
-					managed = true
-					break
-				}
-			}
-			if !managed {
+			if !ev.shouldReconcile(cfg) {
 				return nil
 			}
-
 			logger := hookLogger()
-			mode := routing.New(config.NewLive(cfg), logger)
-
-			if connected == "yes" && link == "up" {
-				logger.Info("interface up, setting up rules", "system-name", name)
-				return mode.Reconcile(cmd.Context())
-			}
-
-			if link == "down" {
-				logger.Info("interface down, tearing down rules", "system-name", name)
-				return mode.TeardownRules(cmd.Context())
-			}
-
-			_ = up // available for future use
-			return nil
+			logger.Info("managed interface up, reconciling rules", "system-name", ev.name())
+			return routing.New(config.NewLive(cfg), logger).Reconcile(cmd.Context())
 		},
 	}
 
-	cmd.Flags().StringVar(&id, "id", "", "Keenetic logical interface id")
-	cmd.Flags().StringVar(&systemName, "system-name", "", "Linux interface name (e.g., br0)")
-	cmd.Flags().StringVar(&connected, "connected", "", "connection state")
-	cmd.Flags().StringVar(&link, "link", "", "link state")
-	cmd.Flags().StringVar(&up, "up", "", "up state")
+	cmd.Flags().StringVar(&ev.id, "id", "", "Keenetic logical interface id")
+	cmd.Flags().StringVar(&ev.systemName, "system-name", "", "Linux interface name (e.g., br0)")
+	cmd.Flags().StringVar(&ev.connected, "connected", "", "connection state")
+	cmd.Flags().StringVar(&ev.link, "link", "", "link state")
+	cmd.Flags().StringVar(&ev.up, "up", "", "up state")
 	return cmd
 }
 
-// hook wan — WAN connectivity event. Delegates reconcile to the daemon via HTTP API.
+// hook wan - WAN connectivity event. Delegates reconcile to the daemon via HTTP API.
 func newHookWanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "wan <start|stop>",

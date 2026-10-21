@@ -2,7 +2,7 @@ package deploy
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,9 +72,19 @@ var ndmHooks = []ndmHook{
 	{"wan.d", "internet-up"},
 }
 
-// InstallNDMHooks copies NDM hook scripts to /opt/etc/ndm/.
-// It reads scripts from the embedded locations (installed by IPK at /opt/etc/netshunt/ndm/)
-// or falls back to generating minimal scripts.
+// ndmScripts holds the NDM hook scripts. The IPK ships the same files
+// (magefile reads them from this directory), so the package's postinst and
+// `netshunt install-hooks` install identical hooks.
+//
+//go:embed ndm
+var ndmScripts embed.FS
+
+// NDMScript returns the embedded hook script for subdir/name.
+func NDMScript(subdir, name string) ([]byte, error) {
+	return ndmScripts.ReadFile("ndm/" + subdir + "/" + name)
+}
+
+// InstallNDMHooks writes the embedded NDM hook scripts to /opt/etc/ndm/.
 func InstallNDMHooks() (int, error) {
 	installed := 0
 	for _, h := range ndmHooks {
@@ -82,23 +92,12 @@ func InstallNDMHooks() (int, error) {
 		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return installed, fmt.Errorf("create %s: %w", destDir, err)
 		}
-
-		dest := filepath.Join(destDir, h.name)
-
-		// Try to copy from the IPK-installed source first.
-		src := filepath.Join(platform.ConfigDir, "ndm", h.subdir, h.name)
-		if data, err := os.ReadFile(src); err == nil {
-			if err := os.WriteFile(dest, data, 0o755); err != nil {
-				return installed, fmt.Errorf("write %s: %w", dest, err)
-			}
-			installed++
-			continue
+		data, err := NDMScript(h.subdir, h.name)
+		if err != nil {
+			return installed, err
 		}
-
-		// Generate a minimal hook script.
-		script := fmt.Sprintf("#!/bin/sh\n[ -x %s ] && %s hook %s \"$@\"\n",
-			platform.BinaryPath, platform.BinaryPath, hookEvent(h))
-		if err := os.WriteFile(dest, []byte(script), 0o755); err != nil {
+		dest := filepath.Join(destDir, h.name)
+		if err := os.WriteFile(dest, data, 0o755); err != nil {
 			return installed, fmt.Errorf("write %s: %w", dest, err)
 		}
 		installed++
@@ -174,20 +173,5 @@ func UninstallNDMHooks() {
 	for _, h := range ndmHooks {
 		dest := filepath.Join(platform.NDMDir, h.subdir, h.name)
 		_ = os.Remove(dest)
-	}
-}
-
-func hookEvent(h ndmHook) string {
-	switch h.subdir {
-	case "fs.d":
-		return "fs"
-	case "netfilter.d":
-		return "netfilter"
-	case "ifstatechanged.d":
-		return "ifstate"
-	case "wan.d":
-		return "wan"
-	default:
-		return h.subdir
 	}
 }
