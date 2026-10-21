@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"io"
+
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
@@ -19,7 +21,16 @@ func newDaemonCmd() *cobra.Command {
 				return err
 			}
 
-			logger, logBuf := platform.NewLogger(cfg.Daemon.LogLevel)
+			var logOut []io.Writer
+			fileLog, logErr := platform.OpenFileLog(platform.LogFile)
+			if logErr == nil {
+				defer fileLog.Close()
+				logOut = append(logOut, fileLog)
+			}
+			logger, logBuf := platform.NewLogger(cfg.Daemon.LogLevel, logOut...)
+			if logErr != nil {
+				logger.Warn("log file unavailable, logging to web UI buffer only", "path", platform.LogFile, "error", logErr)
+			}
 			shunts := shunt.NewDefaultStore()
 			d, err := daemon.New(cfg, shunts, logger, logBuf, version)
 			if err != nil {

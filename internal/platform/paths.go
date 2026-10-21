@@ -18,6 +18,7 @@ const (
 
 	// Daemon.
 	PidFile       = "/var/run/netshunt.pid"
+	LogFile       = OptDir + "/var/log/netshunt.log"
 	DefaultListen = ":8080"
 
 	// NDM directories.

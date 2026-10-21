@@ -2,14 +2,15 @@ package platform
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 )
 
-// NewLogger creates a structured logger that writes to stderr and to an
-// in-memory ring buffer. The buffer can be used to expose recent log entries
-// via the web UI.
-func NewLogger(level string) (*slog.Logger, *LogBuffer) {
+// NewLogger creates a structured logger that writes to stderr, to any extra
+// writers (e.g. a FileLog) and to an in-memory ring buffer. The buffer can be
+// used to expose recent log entries via the web UI.
+func NewLogger(level string, extra ...io.Writer) (*slog.Logger, *LogBuffer) {
 	var lvl slog.Level
 	switch level {
 	case "debug":
@@ -22,11 +23,11 @@ func NewLogger(level string) (*slog.Logger, *LogBuffer) {
 		lvl = slog.LevelInfo
 	}
 	buf := &LogBuffer{}
-	stderr := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})
-	return slog.New(&multiHandler{
-		level:    lvl,
-		handlers: []slog.Handler{stderr, buf.Handler(lvl)},
-	}), buf
+	handlers := []slog.Handler{buf.Handler(lvl)}
+	for _, w := range append([]io.Writer{os.Stderr}, extra...) {
+		handlers = append(handlers, slog.NewTextHandler(w, &slog.HandlerOptions{Level: lvl}))
+	}
+	return slog.New(&multiHandler{level: lvl, handlers: handlers}), buf
 }
 
 // multiHandler fans log records out to multiple slog.Handler implementations.
