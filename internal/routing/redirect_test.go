@@ -39,7 +39,7 @@ func newFakeNet() *fakeNet {
 	}
 }
 
-var errNoChain = errors.New("iptables: No chain/target/match by that name.")
+var errNoChain = errors.New("iptables: No chain/target/match by that name")
 
 // routerForm prints a canonical rule like iptables -S does.
 func routerForm(key string) string {
