@@ -183,3 +183,8 @@ func (c *ResolveCache) Len() int {
 	defer c.mu.Unlock()
 	return c.order.Len()
 }
+
+// Cap returns the entry capacity.
+func (c *ResolveCache) Cap() int {
+	return c.cap
+}

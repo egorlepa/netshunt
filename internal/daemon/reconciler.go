@@ -114,6 +114,8 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			r.Logger.Info("ipset repaired", "readded", added, "removed", removed)
 		}
 	}
+	cache := r.Forwarder.ResolveCache()
+	r.Logger.Info("resolve cache", "entries", cache.Len(), "capacity", cache.Cap())
 
 	// Always converge iptables, also with an unchanged config: this is the
 	// repair for rules NDM may have flushed. Nothing is torn down first, so
