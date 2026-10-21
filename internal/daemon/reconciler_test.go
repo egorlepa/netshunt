@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -275,7 +276,7 @@ func TestMutationDisableEqualsRemoval(t *testing.T) {
 
 func TestMutationGeositeSyncDropsDomains(t *testing.T) {
 	h := newHarness(t)
-	err := h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example", "domain:b.example", "full:c.example"})
+	_, err := h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example", "domain:b.example", "full:c.example"})
 	h.do(err)
 	h.mutate()
 	h.resolve("x.a.example", "198.51.100.1")
@@ -283,7 +284,7 @@ func TestMutationGeositeSyncDropsDomains(t *testing.T) {
 	h.resolve("c.example", "198.51.100.3")
 	h.want("198.51.100.1", "198.51.100.2", "198.51.100.3")
 
-	err = h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example"})
+	_, err = h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example"})
 	h.do(err)
 	h.mutate()
 	h.want("198.51.100.1")
@@ -427,4 +428,22 @@ func TestRoutingReconcileOnlyOnFullReconcile(t *testing.T) {
 	if h.mode.reconciles != 4 || h.mode.teardowns != 0 {
 		t.Fatalf("SwitchProxy: reconciles=%d teardowns=%d", h.mode.reconciles, h.mode.teardowns)
 	}
+}
+
+func TestInvalidEntryWarnedOnceWithShuntName(t *testing.T) {
+	h := newHarness(t)
+	var buf strings.Builder
+	h.r.Logger = slog.New(slog.NewTextHandler(&buf, nil))
+	h.create("bad", true, "regexp:(", "ok.example", "2001:db8::1")
+	h.mutate()
+	h.mutate()
+	out := buf.String()
+	if n := strings.Count(out, "shunt entry not applied"); n != 2 {
+		t.Fatalf("%d warnings, want 2 (regexp and IPv6, once each):\n%s", n, out)
+	}
+	if !strings.Contains(out, "shunt=bad") || !strings.Contains(out, `value=regexp:(`) {
+		t.Fatalf("warning lacks shunt/value:\n%s", out)
+	}
+	h.resolve("www.ok.example", "198.51.100.1")
+	h.want("198.51.100.1")
 }

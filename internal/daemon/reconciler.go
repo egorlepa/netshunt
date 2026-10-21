@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
@@ -46,6 +48,10 @@ type Reconciler struct {
 	// set when a mutation stopped before its seeding finished, because the
 	// next one would otherwise consider those domains already matched.
 	seedAll bool
+
+	// lastRejected is the set of entries the matcher refused on the previous
+	// run, so the warning is logged when it changes, not on every mutation.
+	lastRejected string
 
 	// bootstrapped flips to true after the first Reconcile. The first run
 	// flushes the kernel ipset to clear any stale entries left by a previous
@@ -227,7 +233,13 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 	// (a) previous rules, (b) new rules first, so a DNS answer that arrives
 	// during the sweep is already judged by them.
 	prev := r.Forwarder.Matcher().Snapshot()
-	r.Forwarder.UpdateMatcher(entries)
+	rejected := r.Forwarder.UpdateMatcher(entries)
+	for _, e := range entries {
+		if !e.IsDomain() && !e.Valid() { // IPv6 statics, skipped by staticEntries
+			rejected = append(rejected, e)
+		}
+	}
+	r.warnRejected(rejected)
 	matcher := r.Forwarder.Matcher()
 
 	// (c) Sweep: a tracked domain the new rules do not match loses its IPs.
@@ -293,6 +305,27 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 	return nil
 }
 
+// warnRejected logs the entries the matcher could not apply (present in
+// shunts.yaml from before validation, or hand-edited), once per change.
+func (r *Reconciler) warnRejected(rejected []shunt.Entry) {
+	var b strings.Builder
+	for _, e := range rejected {
+		b.WriteString(e.Shunt + "\x00" + e.Value + "\x00")
+	}
+	if b.String() == r.lastRejected {
+		return
+	}
+	r.lastRejected = b.String()
+	for _, e := range rejected {
+		reason := "cannot be applied"
+		var ie *shunt.InvalidEntryError
+		if errors.As(shunt.Validate(e.Value), &ie) {
+			reason = ie.Reason
+		}
+		r.Logger.Warn("shunt entry not applied", "shunt", e.Shunt, "value", e.Value, "reason", reason)
+	}
+}
+
 // staticEntries returns the IPv4 IP/CIDR entry values. IPv6 entries are
 // skipped with a warning (unsupported). Domain entries are handled by the DNS
 // forwarder at query time.
@@ -302,8 +335,7 @@ func (r *Reconciler) staticEntries(entries []shunt.Entry) []string {
 		switch e.Type() {
 		case shunt.EntryIP, shunt.EntryCIDR:
 			if isIPv6Entry(e.Value) {
-				r.Logger.Warn("skipping IPv6 entry (unsupported)", "entry", e.Value)
-				continue
+				continue // reported by warnRejected
 			}
 			out = append(out, e.Value)
 		}

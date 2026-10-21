@@ -1,6 +1,7 @@
 package shunt
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -113,8 +114,12 @@ func (s *Store) Delete(name string) error {
 	return fmt.Errorf("shunt %q not found", name)
 }
 
-// AddEntry adds an entry to a shunt. Deduplicates by value.
+// AddEntry adds an entry to a shunt. Deduplicates by value. An entry that
+// fails Validate is rejected with an *InvalidEntryError.
 func (s *Store) AddEntry(shuntName, value string) error {
+	if err := Validate(value); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -131,6 +136,57 @@ func (s *Store) AddEntry(shuntName, value string) error {
 		}
 	}
 	return fmt.Errorf("shunt %q not found", shuntName)
+}
+
+// BulkResult is the outcome of AddEntries.
+type BulkResult struct {
+	Added      int
+	Duplicates int
+	Rejected   []*InvalidEntryError
+}
+
+// AddEntries adds every non-blank value to a shunt in one load/save. Values
+// failing Validate are collected in Rejected, duplicates counted.
+func (s *Store) AddEntries(shuntName string, values []string) (BulkResult, error) {
+	var res BulkResult
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	shunts, err := s.load()
+	if err != nil {
+		return res, err
+	}
+	idx := -1
+	for i := range shunts {
+		if shunts[i].Name == shuntName {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return res, fmt.Errorf("shunt %q not found", shuntName)
+	}
+	for _, v := range values {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		if err := Validate(v); err != nil {
+			var ie *InvalidEntryError
+			if errors.As(err, &ie) {
+				res.Rejected = append(res.Rejected, ie)
+			}
+			continue
+		}
+		if shunts[idx].AddEntry(v) {
+			res.Added++
+		} else {
+			res.Duplicates++
+		}
+	}
+	if res.Added == 0 {
+		return res, nil
+	}
+	return res, s.save(shunts)
 }
 
 // RemoveEntry removes an entry from a shunt.
@@ -193,6 +249,7 @@ func (s *Store) EnabledEntries() ([]Entry, error) {
 				continue
 			}
 			seen[key] = true
+			e.Shunt = sh.Name
 			entries = append(entries, e)
 		}
 	}
@@ -218,11 +275,34 @@ func (s *Store) ExportAll() ([]byte, error) {
 }
 
 // ImportShunts imports shunts from YAML bytes. Merges with existing shunts
-// (overwrites shunts with the same name).
+// (overwrites shunts with the same name). Entry values are normalised; if
+// any entry fails Validate nothing is imported and the error lists them.
 func (s *Store) ImportShunts(data []byte) error {
 	var imported shuntsFile
 	if err := yaml.Unmarshal(data, &imported); err != nil {
 		return fmt.Errorf("parse import data: %w", err)
+	}
+	var bad []string
+	for i := range imported.Shunts {
+		sh := &imported.Shunts[i]
+		for j := range sh.Entries {
+			if err := Validate(sh.Entries[j].Value); err != nil {
+				var ie *InvalidEntryError
+				if errors.As(err, &ie) {
+					bad = append(bad, fmt.Sprintf("%s: %q (%s)", sh.Name, ie.Value, ie.Reason))
+				}
+				continue
+			}
+			sh.Entries[j].Value = normalizeEntry(sh.Entries[j].Value)
+		}
+	}
+	if len(bad) > 0 {
+		more := ""
+		if len(bad) > 5 {
+			more = fmt.Sprintf(" and %d more", len(bad)-5)
+			bad = bad[:5]
+		}
+		return fmt.Errorf("import rejected, invalid entries: %s%s", strings.Join(bad, "; "), more)
 	}
 
 	s.mu.Lock()
@@ -268,30 +348,39 @@ func (s *Store) EnsureDefaultShunt() error {
 	return s.save(shunts)
 }
 
-// SyncGeositeShunt creates or fully replaces a shunt's entries from geosite data.
-func (s *Store) SyncGeositeShunt(name, source string, domains []string) error {
+// SyncGeositeShunt creates or fully replaces a shunt's entries from geosite
+// data. Entries failing Validate (e.g. a regexp RE2 cannot compile) are
+// left out and returned in skipped; they do not fail the sync.
+func (s *Store) SyncGeositeShunt(name, source string, domains []string) (skipped []*InvalidEntryError, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	shunts, err := s.load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	entries := make([]Entry, len(domains))
-	for i, d := range domains {
-		entries[i] = Entry{Value: d}
+	entries := make([]Entry, 0, len(domains))
+	for _, d := range domains {
+		if err := Validate(d); err != nil {
+			var ie *InvalidEntryError
+			if errors.As(err, &ie) {
+				skipped = append(skipped, ie)
+			}
+			continue
+		}
+		entries = append(entries, Entry{Value: normalizeEntry(d)})
 	}
 
 	for i := range shunts {
 		if shunts[i].Name == name {
 			// Existing shunt with same name must be a geosite shunt.
 			if shunts[i].Source == "" {
-				return fmt.Errorf("shunt %q already exists and is not a geosite shunt", name)
+				return nil, fmt.Errorf("shunt %q already exists and is not a geosite shunt", name)
 			}
 			shunts[i].Source = source
 			shunts[i].Entries = entries
-			return s.save(shunts)
+			return skipped, s.save(shunts)
 		}
 	}
 
@@ -301,7 +390,7 @@ func (s *Store) SyncGeositeShunt(name, source string, domains []string) error {
 		Source:  source,
 		Entries: entries,
 	})
-	return s.save(shunts)
+	return skipped, s.save(shunts)
 }
 
 // GeositeShunts returns all shunts that have a geosite source.

@@ -194,3 +194,20 @@ func TestMatcherNormalisesRuleValues(t *testing.T) {
 		t.Error("full: rule matched the parent domain")
 	}
 }
+
+func TestMatcherUpdateReportsRejected(t *testing.T) {
+	m := NewMatcher()
+	rej := m.Update([]shunt.Entry{
+		{Value: "good.com", Shunt: "s"},
+		{Value: "regexp:(", Shunt: "s"},
+		{Value: "bad domain", Shunt: "s"},
+		{Value: "1.2.3.4", Shunt: "s"},
+		{Value: "2001:db8::1", Shunt: "s"},
+	})
+	if len(rej) != 2 || rej[0].Value != "regexp:(" || rej[1].Value != "bad domain" || rej[0].Shunt != "s" {
+		t.Fatalf("rejected = %+v", rej)
+	}
+	if !m.Match("www.good.com") {
+		t.Fatal("valid rule dropped")
+	}
+}

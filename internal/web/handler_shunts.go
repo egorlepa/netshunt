@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -93,13 +94,18 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value := r.FormValue("value")
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		errorResponse(w, "value is required", http.StatusBadRequest)
 		return
 	}
 
 	if err := s.Shunts.AddEntry(name, value); err != nil {
-		errorResponse(w, err.Error(), http.StatusConflict)
+		code := http.StatusConflict
+		var ie *shunt.InvalidEntryError
+		if errors.As(err, &ie) {
+			code = http.StatusBadRequest
+		}
+		errorResponse(w, err.Error(), code)
 		return
 	}
 
@@ -132,25 +138,29 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var added, skipped int
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if err := s.Shunts.AddEntry(name, line); err == nil {
-			added++
-		} else {
-			skipped++
-		}
+	res, err := s.Shunts.AddEntries(name, strings.Split(raw, "\n"))
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusNotFound)
+		return
 	}
 
-	s.triggerMutation(r.Context())
-	msg := fmt.Sprintf("%d entries added", added)
-	if skipped > 0 {
-		msg += fmt.Sprintf(", %d skipped", skipped)
+	if res.Added > 0 {
+		s.triggerMutation(r.Context())
 	}
-	toastTrigger(w, msg, "success")
+	msg := fmt.Sprintf("%d entries added", res.Added)
+	if res.Duplicates > 0 {
+		msg += fmt.Sprintf(", %d already present", res.Duplicates)
+	}
+	typ := "success"
+	if len(res.Rejected) > 0 {
+		typ = "error"
+		var bad []string
+		for _, e := range res.Rejected {
+			bad = append(bad, fmt.Sprintf("%q (%s)", e.Value, e.Reason))
+		}
+		msg += fmt.Sprintf(", %d rejected: %s", len(res.Rejected), strings.Join(bad, "; "))
+	}
+	toastTrigger(w, msg, typ)
 	s.renderShuntCard(w, r, name)
 }
 

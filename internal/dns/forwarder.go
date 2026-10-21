@@ -209,9 +209,10 @@ func (f *Forwarder) Stop() {
 	closeClients(*f.upstreams.Load())
 }
 
-// UpdateMatcher replaces the domain matching rules.
-func (f *Forwarder) UpdateMatcher(entries []shunt.Entry) {
-	f.matcher.Update(entries)
+// UpdateMatcher replaces the domain matching rules and returns the domain
+// entries that could not be applied.
+func (f *Forwarder) UpdateMatcher(entries []shunt.Entry) []shunt.Entry {
+	return f.matcher.Update(entries)
 }
 
 // Matcher returns the forwarder's matcher for external use.

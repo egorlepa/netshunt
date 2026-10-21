@@ -98,18 +98,36 @@ func (m *Matcher) Snapshot() *Matcher {
 }
 
 // Update replaces all matching rules from the given entries.
-// Only domain-type entries are used; IP/CIDR entries are ignored.
-func (m *Matcher) Update(entries []shunt.Entry) {
+// Only domain-type entries are used; IP/CIDR entries are ignored. Domain
+// entries that cannot be applied (a regexp that does not compile, a domain
+// or keyword with characters no DNS name has) are skipped and returned.
+func (m *Matcher) Update(entries []shunt.Entry) (rejected []shunt.Entry) {
 	r := &matcherRules{
 		suffixes: make(map[string]struct{}),
 		exact:    make(map[string]struct{}),
 	}
 
-	for _, e := range entries {
+	for _, orig := range entries {
+		if !orig.IsDomain() {
+			continue
+		}
 		// Normalised like the store does on add, so a value hand-typed in
 		// YAML with upper case or a URL still keys on the lowercase query
 		// name the forwarder and tracker use.
-		e = shunt.Entry{Value: shunt.NormalizeEntry(e.Value)}
+		e := shunt.Entry{Value: shunt.NormalizeEntry(orig.Value)}
+		if e.Type() == shunt.EntryDomainRegexp {
+			re, err := regexp.Compile(e.DomainValue())
+			if err != nil || e.DomainValue() == "" {
+				rejected = append(rejected, orig)
+				continue
+			}
+			r.regexps = append(r.regexps, re)
+			continue
+		}
+		if shunt.Validate(e.Value) != nil {
+			rejected = append(rejected, orig)
+			continue
+		}
 		switch e.Type() {
 		case shunt.EntryDomainSuffix:
 			r.suffixes[strings.ToLower(e.DomainValue())] = struct{}{}
@@ -117,14 +135,11 @@ func (m *Matcher) Update(entries []shunt.Entry) {
 			r.exact[strings.ToLower(e.DomainValue())] = struct{}{}
 		case shunt.EntryDomainKeyword:
 			r.keywords = append(r.keywords, strings.ToLower(e.DomainValue()))
-		case shunt.EntryDomainRegexp:
-			if re, err := regexp.Compile(e.DomainValue()); err == nil {
-				r.regexps = append(r.regexps, re)
-			}
 		}
 	}
 
 	m.rules.Store(r)
+	return rejected
 }
 
 // Stats returns counts of each rule type.

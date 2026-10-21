@@ -12,6 +12,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/geosite"
 	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
@@ -107,15 +108,25 @@ func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 			s.Logger.Warn("geosite category missing in update", "category", category)
 			continue
 		}
-		if err := s.Shunts.SyncGeositeShunt(sh.Name, sh.Source, domains); err != nil {
+		skipped, err := s.Shunts.SyncGeositeShunt(sh.Name, sh.Source, domains)
+		if err != nil {
 			s.Logger.Error("failed to sync geosite shunt", "name", sh.Name, "error", err)
 			continue
 		}
+		s.warnGeositeSkipped(sh.Name, skipped)
 		updated++
 	}
 
 	s.triggerMutation(ctx)
 	return updated, nil
+}
+
+// warnGeositeSkipped logs geosite entries left out of a sync because they
+// cannot be applied (e.g. a regexp RE2 does not compile).
+func (s *Server) warnGeositeSkipped(name string, skipped []*shunt.InvalidEntryError) {
+	for _, e := range skipped {
+		s.Logger.Warn("geosite entry skipped", "shunt", name, "value", e.Value, "reason", e.Reason)
+	}
 }
 
 func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
@@ -138,13 +149,19 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	source := "geosite:" + strings.ToLower(category)
-	if err := s.Shunts.SyncGeositeShunt(category, source, domains); err != nil {
+	skipped, err := s.Shunts.SyncGeositeShunt(category, source, domains)
+	if err != nil {
 		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
+	s.warnGeositeSkipped(category, skipped)
 
 	s.triggerMutation(r.Context())
-	toastTrigger(w, fmt.Sprintf("Imported %s (%d domains)", category, len(domains)), "success")
+	msg := fmt.Sprintf("Imported %s (%d domains)", category, len(domains)-len(skipped))
+	if len(skipped) > 0 {
+		msg += fmt.Sprintf(", %d invalid skipped", len(skipped))
+	}
+	toastTrigger(w, msg, "success")
 	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
 	s.render(r, w, templates.GeositeCategoryRow(cat, true))
 }

@@ -204,6 +204,9 @@ templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readO
 			for _, e := range sortedEntries(entries) {
 				<li class="entry-item">
 					<span>{ e.Value }</span>
+					if !readOnly && !e.Valid() {
+						<span class="badge badge-red" title="Invalid entry, ignored by the DNS matcher and ipset">not applied</span>
+					}
 					if !readOnly {
 						<button
 							class="btn btn-sm btn-danger"

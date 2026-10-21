@@ -2,6 +2,7 @@ package shunt
 
 import (
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,9 @@ const (
 // Entry is a single host entry (domain, IP, or CIDR).
 type Entry struct {
 	Value string `yaml:"value"`
+	// Shunt is the name of the shunt the entry came from, set by
+	// EnabledEntries for diagnostics. Not persisted.
+	Shunt string `yaml:"-"`
 }
 
 // Type returns the detected type of this entry.
@@ -153,10 +157,14 @@ func normalizeDomain(s string) string {
 		s = s[:i]
 	}
 
-	// Strip port.
-	if host, _, err := net.SplitHostPort(s); err == nil {
-		s = host
+	// Strip a numeric port (not "Full:example.com", which is a typo the
+	// validator must see).
+	if host, port, err := net.SplitHostPort(s); err == nil {
+		if _, perr := strconv.Atoi(port); perr == nil {
+			s = host
+		}
 	}
 
-	return strings.ToLower(strings.TrimSpace(s))
+	// A trailing dot (fully qualified form) names the same domain.
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s)), ".")
 }
