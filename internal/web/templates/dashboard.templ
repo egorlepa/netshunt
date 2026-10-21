@@ -9,6 +9,7 @@ type DashboardData struct {
 	EntryCount        int
 	TrackedDomains    int
 	TrackedIPs        int
+	BlocklistProblems []string
 	Routing           config.RoutingConfig
 	Version           string
 }
@@ -29,6 +30,17 @@ templ Dashboard(data DashboardData) {
 }
 
 templ DashboardContent(data DashboardData) {
+	if len(data.BlocklistProblems) > 0 {
+		<div class="card">
+			<div class="flex-between mb-16">
+				<h2>Blocklist needs attention</h2>
+				<a class="btn btn-sm" href="/blocklist">Open blocklist</a>
+			</div>
+			for _, p := range data.BlocklistProblems {
+				<div class="text-red text-sm">{ p }</div>
+			}
+		</div>
+	}
 	<div class="card">
 		<div class="flex-between mb-16">
 			<h2>Overview</h2>

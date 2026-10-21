@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // collectStream runs the streaming parser over input and copies each emitted
@@ -199,6 +200,62 @@ func TestDownloadExceedsSizeCap(t *testing.T) {
 	// dest must not exist — failed download should not leave a partial file.
 	if _, statErr := os.Stat(dest); statErr == nil {
 		t.Errorf("dest should not exist after cap failure")
+	}
+}
+
+func TestDownloadFallsBackToMirror(t *testing.T) {
+	gone := httptest.NewServer(http.NotFoundHandler())
+	defer gone.Close()
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ads.example.com\n"))
+	}))
+	defer mirror.Close()
+
+	dest := filepath.Join(t.TempDir(), "test.txt")
+	src := Source{URL: gone.URL, Mirrors: []string{mirror.URL}, Format: FormatDomains}
+	if _, err := Download(context.Background(), src, dest, "", ""); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	data, _ := os.ReadFile(dest)
+	if string(data) != "ads.example.com\n" {
+		t.Errorf("dest content = %q", data)
+	}
+}
+
+func TestDownloadAllMirrorsFail(t *testing.T) {
+	gone := httptest.NewServer(http.NotFoundHandler())
+	defer gone.Close()
+
+	dest := filepath.Join(t.TempDir(), "test.txt")
+	src := Source{URL: gone.URL + "/a", Mirrors: []string{gone.URL + "/b"}, Format: FormatDomains}
+	_, err := Download(context.Background(), src, dest, "", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	for _, want := range []string{"/a: download returned status 404", "/b: download returned status 404"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+func TestSourceStateProblem(t *testing.T) {
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		st   SourceState
+		want string
+	}{
+		{"disabled", SourceState{LastError: "boom"}, ""},
+		{"fresh", SourceState{Enabled: true, LastFetched: now.Add(-time.Hour)}, ""},
+		{"never", SourceState{Enabled: true}, "never updated"},
+		{"failed", SourceState{Enabled: true, LastFetched: now.Add(-time.Hour), LastError: "boom"}, "last update failed: boom"},
+		{"stale", SourceState{Enabled: true, LastFetched: now.Add(-81 * 24 * time.Hour), LastError: "boom"}, "not updated for 81 days: boom"},
+	}
+	for _, c := range cases {
+		if got := c.st.Problem(now); got != c.want {
+			t.Errorf("%s: Problem() = %q, want %q", c.name, got, c.want)
+		}
 	}
 }
 

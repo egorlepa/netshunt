@@ -12,11 +12,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -38,8 +40,10 @@ type Source struct {
 	Name        string
 	Description string
 	URL         string
-	Format      Format
-	DefaultOn   bool
+	// Mirrors are tried in order when URL fails (network error or non-200).
+	Mirrors   []string
+	Format    Format
+	DefaultOn bool
 }
 
 // Presets is the built-in list of supported blocklist sources.
@@ -51,19 +55,34 @@ var Presets = []Source{
 	{
 		ID:          "hagezi-light",
 		Name:        "Hagezi Light",
-		Description: "Router-friendly default: ads, tracking, telemetry, phishing. Low false-positive rate, ~130k entries.",
-		URL:         "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt",
+		Description: "Router-friendly default: ads, tracking, telemetry, phishing. Low false-positive rate, ~70k entries.",
+		URL:         hageziRaw + "light-onlydomains.txt",
+		Mirrors:     hageziMirrors("light-onlydomains.txt"),
 		Format:      FormatDomains,
 		DefaultOn:   true,
 	},
 	{
 		ID:          "hagezi-pro",
 		Name:        "Hagezi Multi PRO",
-		Description: "Heavier coverage: ads, tracking, telemetry, phishing, malware, scam, fake, cryptojacking. ~410k entries — needs RAM headroom.",
-		URL:         "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt",
+		Description: "Heavier coverage: ads, tracking, telemetry, phishing, malware, scam, fake, cryptojacking. ~210k entries, needs RAM headroom.",
+		URL:         hageziRaw + "pro-onlydomains.txt",
+		Mirrors:     hageziMirrors("pro-onlydomains.txt"),
 		Format:      FormatDomains,
 		DefaultOn:   false,
 	},
+}
+
+// Hagezi dropped the domains/ lists; wildcard/*-onlydomains.txt hold the
+// root domains only, which is exactly what the suffix matcher wants (one
+// entry covers all subdomains). jsDelivr serves the same repo at the latest
+// tag for when raw.githubusercontent.com is unreachable.
+const hageziRaw = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/"
+
+func hageziMirrors(file string) []string {
+	return []string{
+		"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/" + file,
+		"https://fastly.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/" + file,
+	}
 }
 
 // PresetByID returns the preset with the given id, or nil if not found.
@@ -97,7 +116,8 @@ type DownloadResult struct {
 	LastModified string
 }
 
-// Download fetches src into destPath atomically. If prevETag or prevLastModified
+// Download fetches src into destPath atomically, trying src.URL and then
+// each of src.Mirrors until one succeeds. If prevETag or prevLastModified
 // are non-empty they are sent as If-None-Match / If-Modified-Since — on a 304
 // response destPath is not touched and the returned DownloadResult has
 // NotModified=true. The response body is capped at MaxDownloadBytes and
@@ -107,7 +127,22 @@ func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModif
 		return DownloadResult{}, fmt.Errorf("create directory: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
+	var errs []string
+	for _, url := range append([]string{src.URL}, src.Mirrors...) {
+		res, err := downloadOnce(ctx, url, destPath, prevETag, prevLastModified)
+		if err == nil {
+			return res, nil
+		}
+		errs = append(errs, fmt.Sprintf("%s: %v", url, err))
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return DownloadResult{}, errors.New(strings.Join(errs, "; "))
+}
+
+func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified string) (DownloadResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("create request: %w", err)
 	}

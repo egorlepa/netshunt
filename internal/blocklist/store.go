@@ -174,3 +174,48 @@ func (s *Store) RecordError(id string, errMsg string) error {
 
 // CacheDir returns the directory where source caches are stored.
 func (s *Store) CacheDir() string { return s.cacheDir }
+
+// StaleAfter is how long an enabled source may go without a successful fetch
+// before it is reported. Auto-update runs daily, so three days means updates
+// are broken rather than one run missed.
+const StaleAfter = 72 * time.Hour
+
+// Problem describes why an enabled source needs attention, or returns "" when
+// it is fresh. Disabled sources never have a problem.
+func (st SourceState) Problem(now time.Time) string {
+	if !st.Enabled {
+		return ""
+	}
+	var p string
+	switch {
+	case st.LastFetched.IsZero():
+		p = "never updated"
+	case now.Sub(st.LastFetched) > StaleAfter:
+		p = fmt.Sprintf("not updated for %d days", int(now.Sub(st.LastFetched).Hours()/24))
+	}
+	if st.LastError != "" {
+		if p == "" {
+			p = "last update failed"
+		}
+		p += ": " + st.LastError
+	}
+	return p
+}
+
+// ReadStates loads source states from the metadata file without creating or
+// rewriting it, for readers outside the daemon (healthcheck CLI). A missing
+// file yields no states.
+func ReadStates(path string) ([]SourceState, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read blocklist meta: %w", err)
+	}
+	var m Meta
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse blocklist meta: %w", err)
+	}
+	return m.Sources, nil
+}

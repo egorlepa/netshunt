@@ -11,9 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/service"
 	"github.com/egorlepa/netshunt/internal/shunt"
@@ -77,6 +79,8 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 	add("iptables", func(ctx context.Context) Result { return checkIPTables4(ctx, cfg) })
 	// 10. Shunts
 	add("shunts", func(ctx context.Context) Result { return checkShunts(shunts) })
+	// 11. Blocklist freshness
+	add("blocklist", func(ctx context.Context) Result { return checkBlocklist(cfg) })
 
 	return checks
 }
@@ -465,5 +469,48 @@ func checkShunts(shunts *shunt.Store) Result {
 
 	r.Passed = true
 	r.Detail = fmt.Sprintf("%d enabled, %d entries", enabled, entries)
+	return r
+}
+
+// checkBlocklist reports enabled sources that failed to update or went stale.
+// A stale blocklist still blocks, so this is a warning, not a failure.
+func checkBlocklist(cfg *config.Config) Result {
+	r := Result{Name: "blocklist"}
+	if !cfg.Blocklist.Enabled {
+		r.Passed = true
+		r.Detail = "disabled"
+		return r
+	}
+	states, err := blocklist.ReadStates(platform.BlocklistFile)
+	if err != nil {
+		r.Detail = err.Error()
+		r.Warn = true
+		return r
+	}
+
+	now := time.Now()
+	enabled := 0
+	var problems []string
+	for _, st := range states {
+		if !st.Enabled || blocklist.PresetByID(st.ID) == nil {
+			continue
+		}
+		enabled++
+		if p := st.Problem(now); p != "" {
+			problems = append(problems, st.ID+": "+p)
+		}
+	}
+
+	switch {
+	case len(problems) > 0:
+		r.Warn = true
+		r.Detail = strings.Join(problems, "; ")
+	case enabled == 0:
+		r.Warn = true
+		r.Detail = "enabled, but no sources selected"
+	default:
+		r.Passed = true
+		r.Detail = fmt.Sprintf("%d source(s) up to date", enabled)
+	}
 	return r
 }

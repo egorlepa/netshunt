@@ -195,6 +195,7 @@ func (s *Server) UpdateAllBlocklistSources(ctx context.Context) (success, failed
 			continue
 		}
 		if _, _, err := s.fetchAndRecord(ctx, *preset); err != nil {
+			s.Logger.Warn("blocklist source update failed", "error", err)
 			failed++
 			continue
 		}
