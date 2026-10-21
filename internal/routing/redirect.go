@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/deploy"
@@ -17,6 +18,11 @@ const (
 	redirectUDPChainName = "NSHUNT_UDP"
 	fwmark               = "0x1"
 	routeTable           = "100"
+	// rulePref is the policy-rule priority. It must stay clear of the
+	// priorities Keenetic NDM manages itself (it owns 100/101 among others
+	// and deletes by number when it rebuilds them), and below main (32766)
+	// so marked packets hit table 100 first.
+	rulePref = "32000"
 )
 
 // Redirect implements Mode using NAT REDIRECT (TCP) and TPROXY (UDP)
@@ -149,15 +155,38 @@ func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port string, i
 		}
 	}
 
-	// Policy routing for TPROXY-marked packets.
-	if err := platform.RunSilent(ctx, "ip", "rule", "add", "fwmark", fwmark, "table", routeTable); err != nil {
-		r.logger.Warn("ip rule add failed (may already exist)", "error", err)
+	// Policy routing for TPROXY-marked packets. "ip rule add" is not
+	// idempotent and this path also runs from the NDM netfilter hook without
+	// a teardown, so check first and pin the priority so teardown can
+	// remove exactly this rule.
+	if !r.policyRuleExists(ctx) {
+		if err := platform.RunSilent(ctx, "ip", "rule", "add", "pref", rulePref, "fwmark", fwmark, "table", routeTable); err != nil {
+			return fmt.Errorf("ip rule add: %w", err)
+		}
 	}
 	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", routeTable); err != nil {
 		return fmt.Errorf("ip route replace: %w", err)
 	}
 
 	return nil
+}
+
+// policyRuleExists reports whether the fwmark policy rule is already
+// installed at rulePref. "ip rule show" prints one rule per line as
+// "<pref>:\tfrom all fwmark 0x1 lookup 100".
+func (r *Redirect) policyRuleExists(ctx context.Context) bool {
+	out, err := platform.Run(ctx, "ip", "rule", "show")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, rulePref+":") &&
+			strings.Contains(line, "fwmark "+fwmark+" ") &&
+			strings.Contains(line, "lookup "+routeTable) {
+			return true
+		}
+	}
+	return false
 }
 
 // TeardownRules removes TCP/UDP redirect chains, policy routing, and DNS DNAT rules.
@@ -173,7 +202,7 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
 
 	// Policy routing for TPROXY.
-	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", fwmark, "table", routeTable)
+	_ = platform.RunSilent(ctx, "ip", "rule", "del", "pref", rulePref, "fwmark", fwmark, "table", routeTable)
 	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
 
 	// DNS interception.
