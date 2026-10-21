@@ -13,7 +13,6 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
-	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
@@ -21,11 +20,17 @@ import (
 // Reconciler performs state reconciliation between shunt entries, the DNS
 // forwarder matcher, the kernel ipset, and iptables rules.
 //
-// Full reconcile: flush ipset, reload matcher, repopulate IP/CIDR entries,
-// setup iptables. DNS-resolved IPs repopulate naturally as queries flow in.
+// The kernel ipset is owned by the DNS tracker: both DNS-resolved IPs and
+// static IP/CIDR entries go through it, so one reference count decides when a
+// member leaves the set.
 //
-// Mutation reconcile: update matcher (diff removed domains via tracker),
-// ensure ipset table, populate IP/CIDRs.
+// Full reconcile: reload matcher, re-seed every matched cached domain, sync
+// static entries, then a repair pass diffs the kernel ipset against the
+// tracker (one `ipset list`), rebuild iptables. The cold first run flushes
+// the ipset instead of repairing it.
+//
+// Mutation reconcile: update matcher (diff removed domains via tracker), seed
+// newly matched cached domains, sync static entries.
 type Reconciler struct {
 	mu        sync.Mutex
 	Config    *config.Live
@@ -36,14 +41,13 @@ type Reconciler struct {
 	Blocklist *blocklist.Store
 	Logger    *slog.Logger
 
-	// lastDomains/lastIPCIDRs track entries from the previous mutation reconcile
-	// so we can detect additions and removals.
+	// lastDomains tracks domain entries from the previous mutation reconcile
+	// so we can detect removals.
 	lastDomains map[string]struct{}
-	lastIPCIDRs map[string]struct{}
 
 	// bootstrapped flips to true after the first Reconcile. The first run
 	// flushes the kernel ipset to clear any stale entries left by a previous
-	// daemon process — subsequent runs trust the in-memory tracker as source
+	// daemon process - subsequent runs trust the in-memory tracker as source
 	// of truth and never flush (no leak window).
 	bootstrapped bool
 }
@@ -59,14 +63,14 @@ func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forward
 		Blocklist:   blocklistStore,
 		Logger:      logger,
 		lastDomains: make(map[string]struct{}),
-		lastIPCIDRs: make(map[string]struct{}),
 	}
 }
 
-// Reconcile reapplies the full state: matcher, ipset diff, iptables rebuild,
-// blocklist. The kernel ipset is flushed only on the very first call (cold
-// start) to clear stale entries from a previous daemon process; subsequent
-// reconciles preserve the in-memory tracker and avoid the leak window.
+// Reconcile reapplies the full state: matcher, full re-seed, static entries,
+// ipset repair pass, iptables rebuild, blocklist. The kernel ipset is flushed
+// only on the very first call (cold start) to clear stale entries from a
+// previous daemon process; subsequent reconciles preserve the in-memory
+// tracker and instead diff the kernel ipset against it (Tracker.Repair).
 func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -77,13 +81,31 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("ensure ipset table: %w", err)
 	}
 
+	tracker := r.Forwarder.TrackerRef()
+	// The cold run flushes the kernel ipset, so the repair pass after it would
+	// be a no-op; it is still needed if that flush failed.
+	needRepair := r.bootstrapped
 	if !r.bootstrapped {
-		r.Forwarder.TrackerRef().Flush(ctx)
+		if err := tracker.Flush(ctx); err != nil {
+			needRepair = true
+		}
 		r.bootstrapped = true
 	}
 
 	if err := r.applyMutationLocked(ctx, true); err != nil {
 		return err
+	}
+
+	// Repair pass: the only place that heals external interference with the
+	// kernel ipset (manual flush, failed del). Not run on ApplyMutation.
+	if needRepair {
+		added, removed, err := tracker.Repair(ctx)
+		switch {
+		case err != nil:
+			r.Logger.Warn("ipset repair failed", "error", err)
+		case added > 0 || removed > 0:
+			r.Logger.Info("ipset repaired", "readded", added, "removed", removed)
+		}
 	}
 
 	_ = r.Mode.TeardownRules(ctx)
@@ -99,7 +121,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 // SwitchProxy rebuilds only the iptables rules so they target
 // cfg.Routing.ActivePort(). Skips ipset flush and matcher updates so DNS-resolved
-// IPs stay in the set — otherwise a brief window after the switch would leak
+// IPs stay in the set - otherwise a brief window after the switch would leak
 // traffic directly (real IP) until the next DNS query repopulates the ipset.
 func (r *Reconciler) SwitchProxy(ctx context.Context) error {
 	r.mu.Lock()
@@ -113,7 +135,7 @@ func (r *Reconciler) SwitchProxy(ctx context.Context) error {
 }
 
 // ApplyBlocklist rebuilds the forwarder's blocklist matcher from the store
-// and re-applies the configured response kind. Cheap — just file reads.
+// and re-applies the configured response kind. Cheap - just file reads.
 func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -233,53 +255,18 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) err
 		}
 	}
 
-	r.populateIPSet(ctx, entries)
-
-	// Diff IP/CIDR entries:
-	// - Added: flush conntrack so existing direct connections reopen through proxy.
-	// - Removed: drop from ipset + flush conntrack so live proxied connections
-	//   reopen and go direct.
-	newIPCIDRs := ipCIDRSet(entries)
-	for v := range newIPCIDRs {
-		if _, ok := r.lastIPCIDRs[v]; ok {
-			continue
-		}
-		r.flushConntrackForEntry(ctx, v)
-	}
-	for v := range r.lastIPCIDRs {
-		if _, ok := newIPCIDRs[v]; ok {
-			continue
-		}
-		if err := r.IPSet.Del(ctx, v); err != nil {
-			r.Logger.Warn("ipset del failed", "entry", v, "error", err)
-		}
-		r.flushConntrackForEntry(ctx, v)
-	}
-	r.lastIPCIDRs = newIPCIDRs
+	// Static IP/CIDR entries share the tracker's reference count with
+	// DNS-tracked IPs: SetStatic adds/removes only what changes kernel
+	// membership and flushes conntrack for exactly those members.
+	tracker.SetStatic(ctx, r.staticEntries(entries))
 	return nil
 }
 
-// flushConntrackForEntry drops conntrack entries whose orig-dst falls within
-// the given IP or CIDR. Best-effort; logged at debug on failure (commonly
-// "no matches" exit code).
-func (r *Reconciler) flushConntrackForEntry(ctx context.Context, value string) {
-	if _, ipnet, err := net.ParseCIDR(value); err == nil {
-		mask := net.IP(ipnet.Mask).String()
-		err := platform.RunSilent(ctx, "conntrack", "-D", "--orig-dst", ipnet.IP.String(), "--mask-dst", mask)
-		if err != nil {
-			r.Logger.Debug("conntrack flush returned non-zero (likely no matches)", "cidr", value, "error", err)
-		}
-		return
-	}
-	if err := platform.RunSilent(ctx, "conntrack", "-D", "--orig-dst", value); err != nil {
-		r.Logger.Debug("conntrack flush returned non-zero (likely no matches)", "ip", value, "error", err)
-	}
-}
-
-// populateIPSet adds direct IPv4 IP/CIDR entries to the ipset.
-// IPv6 entries are skipped with a warning (unsupported). Domain entries are
-// handled by the DNS forwarder at query time.
-func (r *Reconciler) populateIPSet(ctx context.Context, entries []shunt.Entry) {
+// staticEntries returns the IPv4 IP/CIDR entry values. IPv6 entries are
+// skipped with a warning (unsupported). Domain entries are handled by the DNS
+// forwarder at query time.
+func (r *Reconciler) staticEntries(entries []shunt.Entry) []string {
+	var out []string
 	for _, e := range entries {
 		switch e.Type() {
 		case shunt.EntryIP, shunt.EntryCIDR:
@@ -287,11 +274,10 @@ func (r *Reconciler) populateIPSet(ctx context.Context, entries []shunt.Entry) {
 				r.Logger.Warn("skipping IPv6 entry (unsupported)", "entry", e.Value)
 				continue
 			}
-			if err := r.IPSet.Add(ctx, e.Value); err != nil {
-				r.Logger.Warn("failed to add to ipset", "entry", e.Value, "error", err)
-			}
+			out = append(out, e.Value)
 		}
 	}
+	return out
 }
 
 // isIPv6Entry reports whether the given IP or CIDR string is IPv6.
@@ -310,20 +296,6 @@ func domainSet(entries []shunt.Entry) map[string]struct{} {
 	for _, e := range entries {
 		if e.IsDomain() {
 			set[e.DomainValue()] = struct{}{}
-		}
-	}
-	return set
-}
-
-func ipCIDRSet(entries []shunt.Entry) map[string]struct{} {
-	set := make(map[string]struct{})
-	for _, e := range entries {
-		switch e.Type() {
-		case shunt.EntryIP, shunt.EntryCIDR:
-			if isIPv6Entry(e.Value) {
-				continue
-			}
-			set[e.Value] = struct{}{}
 		}
 	}
 	return set
