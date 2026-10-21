@@ -29,8 +29,8 @@ templ SettingsPage(cfg *config.Config) {
 						<input type="text" name="dns_listen_addr" value={ cfg.DNS.ListenAddr }/>
 					</div>
 					<div class="field">
-						<label>dnscrypt-proxy Port</label>
-						<input type="number" name="dnscrypt_port" value={ itoa(cfg.DNSCrypt.Port) } min="1" max="65535"/>
+						<label>DNS Upstreams <span class="text-muted">(DNS-over-HTTPS, one per line: URL with an IP host, then the TLS name; empty = defaults)</span></label>
+						<textarea name="dns_upstreams" rows="3" placeholder={ config.FormatDNSUpstreams(config.DefaultDNSUpstreams()) }>{ config.FormatDNSUpstreams(cfg.DNS.Upstreams) }</textarea>
 					</div>
 				</div>
 				<div class="card">

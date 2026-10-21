@@ -142,7 +142,6 @@ func (s *Server) routes() {
 
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
-	s.mux.HandleFunc("POST /actions/restart", s.handleActionRestart)
 	s.mux.HandleFunc("POST /actions/switch-proxy", s.handleSwitchProxy)
 
 	// Readiness probe.
