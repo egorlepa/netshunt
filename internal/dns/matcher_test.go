@@ -167,3 +167,17 @@ func TestMatcherInvalidRegexp(t *testing.T) {
 		t.Errorf("expected 0 regexps, got %d", r)
 	}
 }
+
+func TestMatcherSnapshot(t *testing.T) {
+	m := NewMatcher()
+	m.Update([]shunt.Entry{{Value: "example.com"}})
+	snap := m.Snapshot()
+	m.Update([]shunt.Entry{{Value: "google.com"}})
+
+	if !snap.Match("example.com") || snap.Match("google.com") {
+		t.Error("snapshot changed after Update")
+	}
+	if m.Match("example.com") || !m.Match("google.com") {
+		t.Error("matcher did not take the new rules")
+	}
+}

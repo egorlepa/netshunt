@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
@@ -81,7 +82,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		r.bootstrapped = true
 	}
 
-	if err := r.applyMutationLocked(ctx); err != nil {
+	if err := r.applyMutationLocked(ctx, true); err != nil {
 		return err
 	}
 
@@ -167,12 +168,13 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 	if err := r.IPSet.EnsureTable(ctx); err != nil {
 		return fmt.Errorf("ensure ipset table: %w", err)
 	}
-	return r.applyMutationLocked(ctx)
+	return r.applyMutationLocked(ctx, false)
 }
 
 // applyMutationLocked is the body of ApplyMutation, callable from Reconcile
-// which already holds r.mu and has ensured the ipset table.
-func (r *Reconciler) applyMutationLocked(ctx context.Context) error {
+// which already holds r.mu and has ensured the ipset table. fullSeed re-seeds
+// every cached domain the rules match, not only the newly matched ones.
+func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) error {
 	entries, err := r.Shunts.EnabledEntries()
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
@@ -180,32 +182,55 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context) error {
 
 	// Diff and remove stale domains from tracker.
 	newDomains := domainSet(entries)
+	removed := make(map[string]struct{})
 	for domain := range r.lastDomains {
 		if _, ok := newDomains[domain]; !ok {
 			r.Forwarder.TrackerRef().RemoveDomain(ctx, domain)
+			removed[domain] = struct{}{}
 		}
 	}
 
 	// Update matcher and snapshot.
+	prev := r.Forwarder.Matcher().Snapshot()
 	r.Forwarder.UpdateMatcher(entries)
 	r.lastDomains = newDomains
 
 	// Seed from the resolve cache: for every domain the forwarder has recently
-	// resolved that matches a (possibly newly-added) shunt rule, push its IPs
-	// into the tracker. Track() handles ipset.Add + first-seen conntrack flush,
-	// so the client's next request hits a live REDIRECT even if its browser/OS
-	// DNS cache is still warm with the pre-shunt IP.
+	// resolved that matches a newly-added shunt rule, push its IPs into the
+	// tracker. Track() handles ipset.Add + first-seen conntrack flush, so the
+	// client's next request hits a live REDIRECT even if its browser/OS DNS
+	// cache is still warm with the pre-shunt IP.
+	//
+	// On a shunt mutation, domains the previous rules already matched were
+	// tracked at query time, so only the difference is seeded: Track() execs
+	// ipset per IP, and re-seeding the whole cache took about a minute on the
+	// router. A removed domain that another rule still matches lost its IPs in
+	// RemoveDomain above and is seeded back. A full Reconcile (startup, WAN
+	// hook, settings) still re-seeds everything as a repair pass. The pairs
+	// are collected first and tracked outside Range, which holds the cache
+	// lock that every DNS response needs.
 	matcher := r.Forwarder.Matcher()
 	tracker := r.Forwarder.TrackerRef()
+	type seed struct {
+		domain string
+		ips    []string
+	}
+	var seeds []seed
 	r.Forwarder.ResolveCache().Range(func(domain string, ips []string) bool {
 		if !matcher.Match(domain) {
 			return true
 		}
-		for _, ip := range ips {
-			tracker.Track(ctx, domain, ip)
+		_, wasRemoved := removed[domain]
+		if fullSeed || wasRemoved || !prev.Match(domain) {
+			seeds = append(seeds, seed{domain, slices.Clone(ips)})
 		}
 		return true
 	})
+	for _, s := range seeds {
+		for _, ip := range s.ips {
+			tracker.Track(ctx, s.domain, ip)
+		}
+	}
 
 	r.populateIPSet(ctx, entries)
 

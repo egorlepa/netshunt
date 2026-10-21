@@ -74,6 +74,14 @@ func (m *Matcher) Match(domain string) bool {
 	return false
 }
 
+// Snapshot returns a Matcher frozen on the current rules. Later Update calls
+// on m do not affect it.
+func (m *Matcher) Snapshot() *Matcher {
+	s := &Matcher{}
+	s.rules.Store(m.rules.Load())
+	return s
+}
+
 // Update replaces all matching rules from the given entries.
 // Only domain-type entries are used; IP/CIDR entries are ignored.
 func (m *Matcher) Update(entries []shunt.Entry) {
