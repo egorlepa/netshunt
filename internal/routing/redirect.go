@@ -158,9 +158,11 @@ func (r *Redirect) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("sync nat PREROUTING: %w", err)
 	}
 
-	// UDP: TPROXY via mangle (best effort, as TPROXY may be unavailable).
+	// UDP: TPROXY via mangle. Mandatory: UDP to a shunted address must
+	// never go direct because TPROXY could not be installed, so a failure
+	// here fails the whole Reconcile (the TCP rules above stay converged).
 	if err := r.syncUDP(ctx, d); err != nil {
-		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
+		return fmt.Errorf("udp tproxy: %w", err)
 	}
 	return nil
 }
@@ -356,10 +358,28 @@ func (r *Redirect) ensureTproxyModule(ctx context.Context) {
 }
 
 // policyRuleExists reports whether the fwmark policy rule is already
-// installed at rulePref. "ip rule show" prints one rule per line as
-// "<pref>:\tfrom all fwmark 0x1 lookup 100".
+// installed at rulePref.
 func (r *Redirect) policyRuleExists(ctx context.Context) bool {
-	out, err := r.run.Run(ctx, "ip", "rule", "show")
+	return policyRuleExists(ctx, r.run)
+}
+
+// localRouteExists reports whether table 100 routes everything to lo.
+func (r *Redirect) localRouteExists(ctx context.Context) bool {
+	return localRouteExists(ctx, r.run)
+}
+
+// TproxyRoutePresent reports whether the policy rule and the local route
+// that deliver TPROXY-marked packets to the proxy socket are installed.
+// Shared with the healthcheck.
+func TproxyRoutePresent(ctx context.Context, run platform.Runner) bool {
+	run = platform.OrDefault(run)
+	return policyRuleExists(ctx, run) && localRouteExists(ctx, run)
+}
+
+// policyRuleExists: "ip rule show" prints one rule per line as
+// "<pref>:\tfrom all fwmark 0x1 lookup 100".
+func policyRuleExists(ctx context.Context, run platform.Runner) bool {
+	out, err := run.Run(ctx, "ip", "rule", "show")
 	if err != nil {
 		return false
 	}
@@ -373,10 +393,10 @@ func (r *Redirect) policyRuleExists(ctx context.Context) bool {
 	return false
 }
 
-// localRouteExists reports whether table 100 routes everything to lo
+// localRouteExists: table 100 routes everything to lo
 // ("local default dev lo scope host").
-func (r *Redirect) localRouteExists(ctx context.Context) bool {
-	out, err := r.run.Run(ctx, "ip", "route", "show", "table", routeTable)
+func localRouteExists(ctx context.Context, run platform.Runner) bool {
+	out, err := run.Run(ctx, "ip", "route", "show", "table", routeTable)
 	if err != nil {
 		return false
 	}

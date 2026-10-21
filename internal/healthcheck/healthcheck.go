@@ -81,7 +81,7 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 	// 6. IPSet v4
 	add("ipset", func(ctx context.Context) Result { return checkIPSet4(ctx, cfg) })
 	// 7. IPTables v4
-	add("iptables", func(ctx context.Context) Result { return checkIPTables4(ctx, cfg) })
+	add("iptables", func(ctx context.Context) Result { return checkIPTables4(ctx, cfg, platform.DefaultRunner) })
 	// 10. Shunts
 	add("shunts", func(ctx context.Context) Result { return checkShunts(shunts) })
 	// 11. Blocklist freshness
@@ -423,9 +423,12 @@ func checkIPSet4(ctx context.Context, cfg *config.Config) Result {
 	return r
 }
 
-func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
+// checkIPTables4 lists every rule Mode.Reconcile installs that is missing.
+// The UDP side (TPROXY rule, mangle jumps, policy route) is required, not
+// optional: without it UDP to shunted addresses would go direct.
+func checkIPTables4(ctx context.Context, cfg *config.Config, run platform.Runner) Result {
 	r := Result{Name: "iptables"}
-	ipt := netfilter.NewIPTables()
+	ipt := &netfilter.IPTables{Runner: run}
 
 	port := fmt.Sprintf("%d", cfg.Routing.ActivePort())
 	ipsetName := cfg.IPSet.TableName
@@ -443,17 +446,22 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 		missing = append(missing, "tcp redirect")
 	}
 
-	if len(ifaces) == 0 {
-		if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-j", "NSHUNT") {
-			missing = append(missing, "prerouting jump")
+	// jumps checks one PREROUTING jump per intercepted interface (or the
+	// unconditional one when there are none).
+	jumps := func(table, chain, label string) {
+		if len(ifaces) == 0 {
+			if !ipt.RuleExists(ctx, table, "PREROUTING", "-j", chain) {
+				missing = append(missing, label)
+			}
+			return
 		}
-	} else {
 		for _, iface := range ifaces {
-			if !ipt.RuleExists(ctx, "nat", "PREROUTING", "-i", iface, "-j", "NSHUNT") {
-				missing = append(missing, "prerouting jump ("+iface+")")
+			if !ipt.RuleExists(ctx, table, "PREROUTING", "-i", iface, "-j", chain) {
+				missing = append(missing, label+" ("+iface+")")
 			}
 		}
 	}
+	jumps("nat", "NSHUNT", "prerouting jump")
 
 	for _, iface := range cfg.Network.DNSInterfaces() {
 		if !ipt.RuleExists(ctx, "nat", routing.DNSRedirectRule(iface, "udp")...) {
@@ -468,6 +476,10 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 		"-m", "set", "--match-set", ipsetName, "dst",
 		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", "0x1/0x1") {
 		missing = append(missing, "udp tproxy")
+	}
+	jumps("mangle", "NSHUNT_UDP", "mangle prerouting jump")
+	if !routing.TproxyRoutePresent(ctx, run) {
+		missing = append(missing, "tproxy policy route")
 	}
 
 	if len(missing) == 0 {

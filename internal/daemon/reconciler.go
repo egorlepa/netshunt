@@ -121,12 +121,15 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// repair for rules NDM may have flushed. Nothing is torn down first, so
 	// there is no window without redirect or DNS interception, and with
 	// nothing to fix it only reads.
-	if err := r.Mode.Reconcile(ctx); err != nil {
-		return fmt.Errorf("reconcile rules: %w", err)
-	}
+	// A failure (e.g. TPROXY unavailable) fails the reconcile; the blocklist
+	// does not depend on the rules and is applied either way.
+	modeErr := r.Mode.Reconcile(ctx)
 
 	r.applyBlocklistLocked()
 
+	if modeErr != nil {
+		return fmt.Errorf("reconcile rules: %w", modeErr)
+	}
 	r.Logger.Info("reconcile complete")
 	return nil
 }

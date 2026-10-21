@@ -84,6 +84,7 @@ type fakeMode struct {
 	mu         sync.Mutex
 	reconciles int
 	teardowns  int
+	err        error // returned by Reconcile
 }
 
 func (m *fakeMode) Name() string { return "fake" }
@@ -91,7 +92,7 @@ func (m *fakeMode) Reconcile(context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reconciles++
-	return nil
+	return m.err
 }
 func (m *fakeMode) TeardownRules(context.Context) error {
 	m.mu.Lock()
@@ -540,4 +541,17 @@ func TestMutationCNAMEQnameRuleEndToEnd(t *testing.T) {
 	h.do(h.store.RemoveEntry("a", "cloudfront.net"))
 	h.mutate()
 	h.want()
+}
+
+// A routing failure (e.g. TPROXY unavailable) fails the full reconcile; the
+// ipset side is still converged.
+func TestReconcileRoutingErrorPropagates(t *testing.T) {
+	h := newHarness(t)
+	h.create("a", true, "198.51.100.7")
+	h.mode.err = errors.New("udp tproxy: scripted")
+	err := h.r.Reconcile(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "udp tproxy") {
+		t.Fatalf("Reconcile error = %v", err)
+	}
+	h.want("198.51.100.7")
 }

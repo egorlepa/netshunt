@@ -646,12 +646,24 @@ func TestReconcilePolicyRoute(t *testing.T) {
 	}
 }
 
-func TestReconcileTproxyFailureKeepsTCP(t *testing.T) {
+// TPROXY is mandatory: a failure to install it fails Reconcile, but only
+// after the TCP rules are converged, so a partial setup is as good as it
+// can be.
+func TestReconcileTproxyFailureIsErrorAfterTCPConverged(t *testing.T) {
 	e := newEnv(t)
+	e.net.seed("nat", foreignOnly(routerNat)...)
+	e.net.seed("mangle", foreignOnly(routerMangle)...)
 	e.net.failIf = "-j TPROXY"
-	m := e.reconcile(t)
-	if got := e.net.save("nat", "NSHUNT"); len(got) != 4 {
-		t.Fatalf("nat chain incomplete: %v", got)
+	err := e.r.Reconcile(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "tproxy") {
+		t.Fatalf("Reconcile error = %v, want a tproxy error", err)
+	}
+	m := e.net.takeMutating()
+	if got, want := e.net.save("nat", "NSHUNT"), ourLines(routerNat, "NSHUNT"); !slices.Equal(got, want) {
+		t.Fatalf("NSHUNT = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("nat", "PREROUTING"), linesOf(routerNat, "PREROUTING"); !slices.Equal(got, want) {
+		t.Errorf("nat PREROUTING = %v\nwant %v", got, want)
 	}
 	for _, l := range e.net.save("mangle", "PREROUTING") {
 		if strings.Contains(l, "NSHUNT_UDP") {
@@ -660,6 +672,16 @@ func TestReconcileTproxyFailureKeepsTCP(t *testing.T) {
 	}
 	if countPrefix(m, "modprobe") != 1 {
 		t.Errorf("module load attempts: %v", m)
+	}
+
+	// Once TPROXY works, the next run completes the UDP side.
+	e.net.failIf = ""
+	e.reconcile(t)
+	if got, want := e.net.save("mangle", "NSHUNT_UDP"), ourLines(routerMangle, "NSHUNT_UDP"); !slices.Equal(got, want) {
+		t.Fatalf("NSHUNT_UDP = %v\nwant %v", got, want)
+	}
+	if !e.net.ipRule || !e.net.ipRoute {
+		t.Error("policy rule/route missing")
 	}
 }
 
