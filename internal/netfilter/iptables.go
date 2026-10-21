@@ -108,3 +108,22 @@ func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, ta
 	}
 	return nil
 }
+
+// ListRules returns the rule specs of a chain as printed by `iptables -S`,
+// without the leading "-A <chain>", so each one can be passed to DeleteRule.
+func (ipt *IPTables) ListRules(ctx context.Context, table, chain string) ([][]string, error) {
+	cmd, args := ipt.iptables("-t", table, "-S", chain)
+	out, err := platform.Run(ctx, cmd, args...)
+	if err != nil {
+		return nil, err
+	}
+	var rules [][]string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "-A" {
+			continue
+		}
+		rules = append(rules, fields[2:])
+	}
+	return rules, nil
+}

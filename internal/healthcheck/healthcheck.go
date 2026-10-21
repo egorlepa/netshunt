@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -229,7 +230,46 @@ var connectivityProbes = []struct {
 // matches the transparent-proxy policy route.
 const connectivityMarkBase = 0x6e730000 // "ns"
 
+// connectivityMarkMask selects the namespace bits of connectivityMarkBase.
+const connectivityMarkMask = 0xffff0000
+
 var connectivityMarkSeq atomic.Uint32
+
+// RemoveStaleConnectivityRules deletes connectivity-check REDIRECT rules left in
+// nat OUTPUT by a previous process (a check killed mid-flight). Run it at daemon
+// startup, before any check can add its own rule.
+func RemoveStaleConnectivityRules(ctx context.Context) (int, error) {
+	ipt := netfilter.NewIPTables()
+	rules, err := ipt.ListRules(ctx, "nat", "OUTPUT")
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, rule := range rules {
+		if !isConnectivityRule(rule) {
+			continue
+		}
+		if err := ipt.DeleteRule(ctx, "nat", append([]string{"OUTPUT"}, rule...)...); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+// isConnectivityRule reports whether an `iptables -S` rule spec matches a mark
+// in the connectivity-check namespace.
+func isConnectivityRule(rule []string) bool {
+	for i := 0; i+1 < len(rule); i++ {
+		if rule[i] != "--mark" {
+			continue
+		}
+		v, _, _ := strings.Cut(rule[i+1], "/")
+		mark, err := strconv.ParseUint(v, 0, 32)
+		return err == nil && mark&connectivityMarkMask == connectivityMarkBase
+	}
+	return false
+}
 
 // nextConnectivityMark returns a process-unique fwmark for a connectivity check.
 // Matching the REDIRECT rule on this mark (rather than the destination) keeps
@@ -274,7 +314,9 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config, label strin
 		r.Warn = !active
 		return r
 	}
-	defer func() { _ = ipt.DeleteRule(ctx, "nat", rule...) }()
+	// Delete even when the request is gone: a closed diagnostics tab cancels
+	// ctx, and with a unique mark per check every skipped delete leaks a rule.
+	defer func() { _ = ipt.DeleteRule(context.WithoutCancel(ctx), "nat", rule...) }()
 
 	client := &http.Client{
 		Timeout: 5 * time.Second,

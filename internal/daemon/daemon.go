@@ -13,6 +13,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
@@ -66,6 +67,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Setup signal handling.
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	if n, err := healthcheck.RemoveStaleConnectivityRules(ctx); err != nil {
+		d.Logger.Warn("failed to remove stale healthcheck rules", "error", err)
+	} else if n > 0 {
+		d.Logger.Info("removed stale healthcheck rules", "count", n)
+	}
 
 	// 1. Initial reconcile — populates matcher + ipset before DNS starts.
 	if err := d.Reconciler.Reconcile(ctx); err != nil {
