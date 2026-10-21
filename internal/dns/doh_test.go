@@ -343,3 +343,17 @@ func waitFor(t *testing.T, cond func() bool, what string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestProbeUpstream(t *testing.T) {
+	s := newDoHServer(t, answerA(60, "192.0.2.1"))
+	pool := x509.NewCertPool()
+	pool.AddCert(s.Certificate())
+	rtt, err := ProbeUpstream(context.Background(), s.upstream(), withRootCAs(pool))
+	if err != nil || rtt <= 0 {
+		t.Fatalf("rtt = %v, err = %v", rtt, err)
+	}
+	bad := newDoHServer(t, rcodeOnly(dns.RcodeServerFailure))
+	if _, err := ProbeUpstream(context.Background(), bad.upstream(), withRootCAs(pool)); !errors.Is(err, ErrBadRcode) {
+		t.Errorf("SERVFAIL probe err = %v", err)
+	}
+}

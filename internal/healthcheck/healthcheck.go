@@ -56,8 +56,12 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 		checks = append(checks, Check{Name: name, Run: fn})
 	}
 
-	// 1. dnscrypt-proxy
-	add(service.DNSCrypt.Name, func(ctx context.Context) Result { return checkService(ctx, service.DNSCrypt) })
+	// 1. DoH upstreams, each queried directly.
+	add("dns upstreams", func(ctx context.Context) Result {
+		return checkDNSUpstreams(ctx, dns.ConfigUpstreams(cfg.DNS), func(ctx context.Context, u dns.Upstream) (time.Duration, error) {
+			return dns.ProbeUpstream(ctx, u)
+		})
+	})
 	// 2. Daemon
 	add(service.Daemon.Name, func(ctx context.Context) Result { return checkService(ctx, service.Daemon) })
 	// 3. DNS forwarder
@@ -485,6 +489,49 @@ func checkForwarder(ctx context.Context, cfg *config.Config) Result {
 	}
 	r.Passed = true
 	r.Detail = fmt.Sprintf("responding on %s", cfg.DNS.ListenAddr)
+	return r
+}
+
+// upstreamProbe queries one upstream; dns.ProbeUpstream in production.
+type upstreamProbe func(ctx context.Context, u dns.Upstream) (time.Duration, error)
+
+// checkDNSUpstreams probes every upstream concurrently: all answering
+// passes, some answering warns, none answering fails.
+func checkDNSUpstreams(ctx context.Context, ups []dns.Upstream, probe upstreamProbe) Result {
+	r := Result{Name: "dns upstreams"}
+	type outcome struct {
+		rtt time.Duration
+		err error
+	}
+	outcomes := make([]outcome, len(ups))
+	var wg sync.WaitGroup
+	for i, u := range ups {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rtt, err := probe(ctx, u)
+			outcomes[i] = outcome{rtt, err}
+		}()
+	}
+	wg.Wait()
+
+	ok := 0
+	parts := make([]string, len(ups))
+	for i, o := range outcomes {
+		if o.err != nil {
+			parts[i] = fmt.Sprintf("%s: %v", ups[i].SNI, o.err)
+			continue
+		}
+		ok++
+		parts[i] = fmt.Sprintf("%s %dms", ups[i].SNI, o.rtt.Milliseconds())
+	}
+	r.Detail = fmt.Sprintf("%d/%d answering: %s", ok, len(ups), strings.Join(parts, ", "))
+	switch {
+	case len(ups) > 0 && ok == len(ups):
+		r.Passed = true
+	case ok > 0:
+		r.Warn = true
+	}
 	return r
 }
 

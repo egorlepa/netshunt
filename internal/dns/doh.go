@@ -294,3 +294,29 @@ func exchangeAll(ctx context.Context, clients []*DoHClient, q *dns.Msg, logger *
 	}
 	return nil, nil, errs
 }
+
+// probeName is the A query used by ProbeUpstream.
+const probeName = "example.com."
+
+// ProbeUpstream sends one A query directly to u (no fan-out, no cache) and
+// returns the round-trip time of a valid answer. Each probe uses its own
+// short-lived connection.
+func ProbeUpstream(ctx context.Context, u Upstream, opts ...DoHOption) (time.Duration, error) {
+	c, err := NewDoHClient(u, opts...)
+	if err != nil {
+		return 0, err
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
+	defer cancel()
+
+	q := dns.NewMsg(probeName, dns.TypeA) // random ID
+	if err := q.Pack(); err != nil {
+		return 0, err
+	}
+	start := time.Now()
+	if _, err := c.Exchange(ctx, q); err != nil {
+		return 0, err
+	}
+	return time.Since(start), nil
+}
