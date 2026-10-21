@@ -71,18 +71,6 @@ mage package
 mage test
 ```
 
-## Documentation
-
-Full documentation is available in the [Wiki](https://github.com/egorlepa/netshunt/wiki):
-
-- [Prerequisites](https://github.com/egorlepa/netshunt/wiki/Prerequisites) — router requirements, proxy setup
-- [Installation](https://github.com/egorlepa/netshunt/wiki/Installation) — IPK install, manual install
-- [Setup](https://github.com/egorlepa/netshunt/wiki/Setup) — interactive setup wizard walkthrough
-- [CLI Reference](https://github.com/egorlepa/netshunt/wiki/CLI-Reference) — all commands, flags, examples
-- [Configuration](https://github.com/egorlepa/netshunt/wiki/Configuration) — config.yaml and shunts.yaml schema
-- [Architecture](https://github.com/egorlepa/netshunt/wiki/Architecture) — system design and internals
-- [Troubleshooting](https://github.com/egorlepa/netshunt/wiki/Troubleshooting) — common issues and diagnostics
-
 ## License
 
 MIT
