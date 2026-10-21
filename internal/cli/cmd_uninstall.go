@@ -42,7 +42,7 @@ func newUninstallCmd() *cobra.Command {
 			// 3. Remove iptables rules.
 			fmt.Println("Removing iptables rules...")
 			logger, _ := platform.NewLogger("error")
-			mode := routing.New(cfg, logger)
+			mode := routing.New(config.NewLive(cfg), logger)
 			if err := mode.TeardownRules(ctx); err != nil {
 				fmt.Printf("  Warning: %v\n", err)
 			}

@@ -107,7 +107,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update the server's config reference.
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	// Apply changes: restart dnscrypt-proxy and reconcile routing rules.
 	if service.DNSCrypt.IsInstalled() {
@@ -155,7 +155,7 @@ func (s *Server) handleSwitchProxy(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	if err := s.Reconciler.SwitchProxy(ctx); err != nil {
 		s.Logger.Error("switch proxy failed", "error", err)

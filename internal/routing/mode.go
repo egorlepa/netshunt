@@ -23,6 +23,6 @@ type Mode interface {
 }
 
 // New returns a Mode for the configured routing mode.
-func New(cfg *config.Config, logger *slog.Logger) Mode {
+func New(cfg *config.Live, logger *slog.Logger) Mode {
 	return NewRedirect(cfg, logger)
 }

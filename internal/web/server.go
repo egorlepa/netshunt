@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/a-h/templ"
 
@@ -48,7 +49,7 @@ type LogReader interface {
 
 // Server is the web UI HTTP server.
 type Server struct {
-	Config     *config.Config
+	Config     *config.Live
 	Shunts     *shunt.Store
 	Blocklist  *blocklist.Store
 	Forwarder  *dns.Forwarder
@@ -59,7 +60,7 @@ type Server struct {
 	Logger     *slog.Logger
 	Version    string
 	mux        *http.ServeMux
-	ready      bool
+	ready      atomic.Bool
 }
 
 // SetScheduler attaches a Scheduler after construction (the scheduler is
@@ -70,11 +71,11 @@ func (s *Server) SetScheduler(sch Scheduler) {
 
 // MarkReady signals that the daemon has finished initial setup.
 func (s *Server) MarkReady() {
-	s.ready = true
+	s.ready.Store(true)
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Config, shunts *shunt.Store, blocklistStore *blocklist.Store, forwarder *dns.Forwarder, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
+func NewServer(cfg *config.Live, shunts *shunt.Store, blocklistStore *blocklist.Store, forwarder *dns.Forwarder, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
 		Shunts:     shunts,
@@ -146,7 +147,7 @@ func (s *Server) routes() {
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
-		if !s.ready {
+		if !s.ready.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}

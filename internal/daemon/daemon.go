@@ -24,7 +24,7 @@ import (
 // Daemon is the long-lived process that runs the DNS forwarder, reconciles
 // routing state, and serves the web UI.
 type Daemon struct {
-	Config     *config.Config
+	Config     *config.Live
 	Shunts     *shunt.Store
 	Blocklist  *blocklist.Store
 	Reconciler *Reconciler
@@ -45,11 +45,12 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 		return nil, fmt.Errorf("init blocklist store: %w", err)
 	}
 
+	live := config.NewLive(cfg)
 	return &Daemon{
-		Config:     cfg,
+		Config:     live,
 		Shunts:     shunts,
 		Blocklist:  blocklistStore,
-		Reconciler: NewReconciler(cfg, shunts, forwarder, blocklistStore, logger),
+		Reconciler: NewReconciler(live, shunts, forwarder, blocklistStore, logger),
 		Forwarder:  forwarder,
 		Logger:     logger,
 		LogBuf:     logBuf,
@@ -95,12 +96,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// 4. Start web server.
 	webServer := web.NewServer(d.Config, d.Shunts, d.Blocklist, d.Forwarder, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
 	httpServer := &http.Server{
-		Addr:    d.Config.Daemon.WebListen,
+		Addr:    d.Config.Load().Daemon.WebListen,
 		Handler: webServer,
 	}
 
 	go func() {
-		d.Logger.Info("web UI started", "listen", d.Config.Daemon.WebListen)
+		d.Logger.Info("web UI started", "listen", d.Config.Load().Daemon.WebListen)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			d.Logger.Error("web server error", "error", err)
 		}

@@ -67,7 +67,7 @@ func newHookNetfilterCmd() *cobra.Command {
 				return err
 			}
 			logger := hookLogger()
-			mode := routing.New(cfg, logger)
+			mode := routing.New(config.NewLive(cfg), logger)
 			return mode.SetupRules(cmd.Context())
 		},
 	}
@@ -107,7 +107,7 @@ func newHookIfstateCmd() *cobra.Command {
 			}
 
 			logger := hookLogger()
-			mode := routing.New(cfg, logger)
+			mode := routing.New(config.NewLive(cfg), logger)
 
 			if connected == "yes" && link == "up" {
 				logger.Info("interface up, setting up rules", "system-name", name)

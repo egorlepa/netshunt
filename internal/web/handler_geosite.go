@@ -17,7 +17,7 @@ import (
 
 func (s *Server) handleGeositePage(w http.ResponseWriter, r *http.Request) {
 	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositePage(info, s.Config.Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositePage(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
 }
 
 func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +28,7 @@ func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
 
 	toastTrigger(w, "Database downloaded", "success")
 	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositeContent(info, s.Config.Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositeContent(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
 }
 
 func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +39,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	toastTrigger(w, fmt.Sprintf("Database updated, %d shunts refreshed", updated), "success")
 	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositeContent(info, s.Config.Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositeContent(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
 }
 
 func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request)
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	if s.Scheduler != nil {
 		if err := s.Scheduler.Reconfigure(); err != nil {

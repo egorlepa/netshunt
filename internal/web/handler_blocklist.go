@@ -14,7 +14,8 @@ import (
 )
 
 func (s *Server) handleBlocklistPage(w http.ResponseWriter, r *http.Request) {
-	s.render(r, w, templates.BlocklistPage(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.Config.Blocklist.AutoUpdate, s.blocklistSourceViews()))
+	bl := s.Config.Load().Blocklist
+	s.render(r, w, templates.BlocklistPage(bl.Enabled, bl.Response, bl.AutoUpdate, s.blocklistSourceViews()))
 }
 
 func (s *Server) handleBlocklistToggleEnabled(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,7 @@ func (s *Server) handleBlocklistToggleEnabled(w http.ResponseWriter, r *http.Req
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	if err := s.Reconciler.ApplyBlocklist(r.Context()); err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
@@ -71,7 +72,7 @@ func (s *Server) handleBlocklistResponse(w http.ResponseWriter, r *http.Request)
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	if err := s.Reconciler.ApplyBlocklist(r.Context()); err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
@@ -137,7 +138,8 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 	} else {
 		toastTrigger(w, fmt.Sprintf("Updated %d, %d failed", success, failed), "error")
 	}
-	s.render(r, w, templates.BlocklistContent(s.Config.Blocklist.Enabled, s.Config.Blocklist.Response, s.Config.Blocklist.AutoUpdate, s.blocklistSourceViews()))
+	bl := s.Config.Load().Blocklist
+	s.render(r, w, templates.BlocklistContent(bl.Enabled, bl.Response, bl.AutoUpdate, s.blocklistSourceViews()))
 }
 
 func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +168,7 @@ func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Reques
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	*s.Config = *cfg
+	s.Config.Store(cfg)
 
 	if s.Scheduler != nil {
 		if err := s.Scheduler.Reconfigure(); err != nil {

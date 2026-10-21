@@ -28,7 +28,7 @@ import (
 // ensure ipset table, populate IP/CIDRs.
 type Reconciler struct {
 	mu        sync.Mutex
-	Config    *config.Config
+	Config    *config.Live
 	Shunts    *shunt.Store
 	IPSet     *netfilter.IPSet
 	Forwarder *dns.Forwarder
@@ -49,11 +49,11 @@ type Reconciler struct {
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
-func NewReconciler(cfg *config.Config, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, logger *slog.Logger) *Reconciler {
+func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		Config:      cfg,
 		Shunts:      shunts,
-		IPSet:       netfilter.NewIPSet(cfg.IPSet.TableName),
+		IPSet:       netfilter.NewIPSet(cfg.Load().IPSet.TableName),
 		Forwarder:   forwarder,
 		Mode:        routing.New(cfg, logger),
 		Blocklist:   blocklistStore,
@@ -122,9 +122,10 @@ func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {
 }
 
 func (r *Reconciler) applyBlocklistLocked() {
-	r.Forwarder.SetBlockResponse(blockResponseFromConfig(r.Config.Blocklist.Response))
+	cfg := r.Config.Load()
+	r.Forwarder.SetBlockResponse(blockResponseFromConfig(cfg.Blocklist.Response))
 
-	if r.Blocklist == nil || !r.Config.Blocklist.Enabled {
+	if r.Blocklist == nil || !cfg.Blocklist.Enabled {
 		// Clear the matcher.
 		r.Forwarder.Blocklist().Replace(nil)
 		return

@@ -10,7 +10,8 @@ import (
 )
 
 func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
-	ipset := netfilter.NewIPSet(s.Config.IPSet.TableName)
+	cfg := s.Config.Load()
+	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
 	ipsetCount, _ := ipset.Count(ctx)
 
 	shunts, _ := s.Shunts.List()
@@ -25,7 +26,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	trackedDomains, trackedIPs := s.Tracker.Count()
 
 	var blocklistProblems []string
-	if s.Config.Blocklist.Enabled {
+	if cfg.Blocklist.Enabled {
 		now := time.Now()
 		for _, sv := range s.blocklistSourceViews() {
 			if p := sv.State.Problem(now); p != "" {
@@ -42,7 +43,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 		TrackedDomains:    trackedDomains,
 		TrackedIPs:        trackedIPs,
 		BlocklistProblems: blocklistProblems,
-		Routing:           s.Config.Routing,
+		Routing:           cfg.Routing,
 		Version:           s.Version,
 	}
 }

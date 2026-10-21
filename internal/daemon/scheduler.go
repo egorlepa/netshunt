@@ -22,7 +22,7 @@ type UpdateJobs interface {
 // Scheduler runs periodic blocklist + geosite refreshes. Per-job mutex
 // prevents overlapping runs if a previous tick is still in flight.
 type Scheduler struct {
-	cfg    *config.Config
+	cfg    *config.Live
 	jobs   UpdateJobs
 	logger *slog.Logger
 
@@ -35,7 +35,7 @@ type Scheduler struct {
 
 // NewScheduler creates a Scheduler bound to the given config + job runner.
 // Use Start/Stop to control lifecycle.
-func NewScheduler(cfg *config.Config, jobs UpdateJobs, logger *slog.Logger) *Scheduler {
+func NewScheduler(cfg *config.Live, jobs UpdateJobs, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		cfg:    cfg,
 		jobs:   jobs,
@@ -55,7 +55,7 @@ func (s *Scheduler) Start() error {
 }
 
 // Reconfigure stops the current cron, rebuilds it from the latest config
-// (read fresh from s.cfg), and restarts. Safe to call any time; in-flight
+// (a fresh s.cfg snapshot), and restarts. Safe to call any time; in-flight
 // jobs are allowed to finish first.
 func (s *Scheduler) Reconfigure() error {
 	s.mu.Lock()
@@ -68,11 +68,12 @@ func (s *Scheduler) Reconfigure() error {
 
 // rebuildLocked must be called with s.mu held.
 func (s *Scheduler) rebuildLocked() error {
-	blSched := s.cfg.Blocklist.AutoUpdate.Schedule
+	cfg := s.cfg.Load()
+	blSched := cfg.Blocklist.AutoUpdate.Schedule
 	if blSched == "" {
 		blSched = config.DefaultBlocklistSchedule
 	}
-	gsSched := s.cfg.Geosite.AutoUpdate.Schedule
+	gsSched := cfg.Geosite.AutoUpdate.Schedule
 	if gsSched == "" {
 		gsSched = config.DefaultGeositeSchedule
 	}
@@ -88,9 +89,9 @@ func (s *Scheduler) rebuildLocked() error {
 	s.cron = c
 
 	s.logger.Info("scheduler running",
-		"blocklist_enabled", s.cfg.Blocklist.AutoUpdate.Enabled,
+		"blocklist_enabled", cfg.Blocklist.AutoUpdate.Enabled,
 		"blocklist_schedule", blSched,
-		"geosite_enabled", s.cfg.Geosite.AutoUpdate.Enabled,
+		"geosite_enabled", cfg.Geosite.AutoUpdate.Enabled,
 		"geosite_schedule", gsSched,
 	)
 	return nil
@@ -113,7 +114,7 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) runBlocklist() {
-	if !s.cfg.Blocklist.AutoUpdate.Enabled {
+	if !s.cfg.Load().Blocklist.AutoUpdate.Enabled {
 		return
 	}
 	if !s.blMu.TryLock() {
@@ -132,7 +133,7 @@ func (s *Scheduler) runBlocklist() {
 }
 
 func (s *Scheduler) runGeosite() {
-	if !s.cfg.Geosite.AutoUpdate.Enabled {
+	if !s.cfg.Load().Geosite.AutoUpdate.Enabled {
 		return
 	}
 	if !s.gsMu.TryLock() {

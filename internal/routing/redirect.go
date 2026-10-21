@@ -37,13 +37,13 @@ const (
 //  3. UDP: iptables PREROUTING (mangle) TPROXY to cfg.Routing.ActivePort()
 //  4. Transparent proxy forwards traffic through the tunnel
 type Redirect struct {
-	cfg    *config.Config
+	cfg    *config.Live
 	ipt    *netfilter.IPTables
 	logger *slog.Logger
 }
 
 // NewRedirect creates a Redirect traffic mode handler.
-func NewRedirect(cfg *config.Config, logger *slog.Logger) *Redirect {
+func NewRedirect(cfg *config.Live, logger *slog.Logger) *Redirect {
 	return &Redirect{
 		cfg:    cfg,
 		ipt:    netfilter.NewIPTables(),
@@ -55,11 +55,12 @@ func (r *Redirect) Name() string { return "redirect" }
 
 // SetupRules creates iptables rules for TCP (NAT REDIRECT) and UDP (TPROXY).
 func (r *Redirect) SetupRules(ctx context.Context) error {
-	ipsetName := r.cfg.IPSet.TableName
-	port := fmt.Sprintf("%d", r.cfg.Routing.ActivePort())
-	ifaces := r.cfg.Network.InterceptInterfaces()
+	cfg := r.cfg.Load()
+	ipsetName := cfg.IPSet.TableName
+	port := fmt.Sprintf("%d", cfg.Routing.ActivePort())
+	ifaces := cfg.Network.InterceptInterfaces()
 
-	excluded := filterIPv4Networks(r.cfg.ExcludedNetworks)
+	excluded := filterIPv4Networks(cfg.ExcludedNetworks)
 
 	r.logger.Info("setting up redirect rules",
 		"ipset", ipsetName, "port", port, "interfaces", ifaces)
@@ -106,7 +107,7 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 	// 127.0.0.1 does not work here: packets that arrive on br0 with a
 	// loopback destination are dropped before they reach the forwarder, so
 	// clients with a hard-coded resolver got no answer at all.
-	for _, iface := range r.cfg.Network.DNSInterfaces() {
+	for _, iface := range cfg.Network.DNSInterfaces() {
 		for _, proto := range []string{"udp", "tcp"} {
 			if err := r.ipt.AppendRule(ctx, "nat", DNSRedirectRule(iface, proto)...); err != nil {
 				r.logger.Warn("dns redirect rule failed", "iface", iface, "proto", proto, "error", err)
@@ -191,6 +192,7 @@ func (r *Redirect) policyRuleExists(ctx context.Context) bool {
 
 // TeardownRules removes TCP/UDP redirect chains, policy routing, and DNS DNAT rules.
 func (r *Redirect) TeardownRules(ctx context.Context) error {
+	cfg := r.cfg.Load()
 	r.logger.Info("tearing down redirect rules")
 
 	// TCP: nat table.
@@ -206,7 +208,7 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
 
 	// DNS interception.
-	for _, iface := range r.cfg.Network.DNSInterfaces() {
+	for _, iface := range cfg.Network.DNSInterfaces() {
 		for _, proto := range []string{"udp", "tcp"} {
 			_ = r.ipt.DeleteRule(ctx, "nat", DNSRedirectRule(iface, proto)...)
 		}
@@ -217,7 +219,7 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 
 // IsActive checks if something is listening on the configured local port.
 func (r *Redirect) IsActive(ctx context.Context) (bool, error) {
-	port := fmt.Sprintf(":%d", r.cfg.Routing.ActivePort())
+	port := fmt.Sprintf(":%d", r.cfg.Load().Routing.ActivePort())
 	ok, err := netfilter.CheckListeningPort(ctx, port)
 	if err != nil {
 		return false, nil

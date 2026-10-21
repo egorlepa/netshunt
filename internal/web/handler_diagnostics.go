@@ -19,7 +19,7 @@ func (s *Server) handleDiagnosticsLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
-	checks := healthcheck.Checks(s.Config, s.Shunts)
+	checks := healthcheck.Checks(s.Config.Load(), s.Shunts)
 	names := make([]string, len(checks))
 	for i, c := range checks {
 		names[i] = c.Name
@@ -28,7 +28,7 @@ func (s *Server) handleDiagnosticsRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiagnosticsRunOne(w http.ResponseWriter, r *http.Request) {
-	checks := healthcheck.Checks(s.Config, s.Shunts)
+	checks := healthcheck.Checks(s.Config.Load(), s.Shunts)
 	i, err := strconv.Atoi(r.PathValue("i"))
 	if err != nil || i < 0 || i >= len(checks) {
 		errorResponse(w, "unknown check", http.StatusNotFound)
@@ -56,7 +56,7 @@ func (s *Server) handleDiagnosticsProbe(w http.ResponseWriter, r *http.Request) 
 		_ = s.Reconciler.ApplyMutation(r.Context())
 	}
 
-	probe, err := healthcheck.ProbeDomain(r.Context(), s.Config, domain)
+	probe, err := healthcheck.ProbeDomain(r.Context(), s.Config.Load(), domain)
 	if err != nil {
 		s.render(r, w, templates.DiagnosticsProbeError(domain, err.Error()))
 		return
