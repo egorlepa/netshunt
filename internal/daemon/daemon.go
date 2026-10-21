@@ -37,8 +37,16 @@ type Daemon struct {
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
 func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) (*Daemon, error) {
 	tracker := dns.NewTracker(netfilter.NewIPSet(cfg.IPSet.TableName), logger)
-	upstream := fmt.Sprintf("127.0.0.1:%d", cfg.DNSCrypt.Port)
-	forwarder := dns.NewForwarder(cfg.DNS.ListenAddr, upstream, tracker, logger)
+	forwarder, err := dns.NewForwarder(cfg.DNS.ListenAddr, dns.ConfigUpstreams(cfg.DNS), tracker, logger)
+	if err != nil {
+		// A hand-edited config with a bad upstream must not leave the LAN
+		// without DNS: fall back to the defaults.
+		logger.Error("invalid dns upstreams, using defaults", "error", err)
+		forwarder, err = dns.NewForwarder(cfg.DNS.ListenAddr, dns.ConfigUpstreams(config.DNSConfig{}), tracker, logger)
+		if err != nil {
+			return nil, fmt.Errorf("init dns forwarder: %w", err)
+		}
+	}
 
 	blocklistStore, err := blocklist.NewStore(platform.BlocklistFile, platform.BlocklistDir)
 	if err != nil {

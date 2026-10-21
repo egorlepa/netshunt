@@ -9,8 +9,8 @@ import (
 func TestMatcherSuffix(t *testing.T) {
 	m := NewMatcher()
 	m.Update([]shunt.Entry{
-		{Value: "example.com"},           // bare → suffix
-		{Value: "domain:google.com"},     // explicit suffix
+		{Value: "example.com"},       // bare → suffix
+		{Value: "domain:google.com"}, // explicit suffix
 	})
 
 	tests := []struct {
