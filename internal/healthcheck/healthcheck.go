@@ -424,8 +424,8 @@ func checkIPSet4(ctx context.Context, cfg *config.Config) Result {
 }
 
 // checkIPTables4 lists every rule Mode.Reconcile installs that is missing.
-// The UDP side (TPROXY rule, mangle jumps, policy route) is required, not
-// optional: without it UDP to shunted addresses would go direct.
+// The UDP side (TPROXY rule, mangle jumps, policy route) and the kill switch
+// are required, not optional: without them shunted traffic could go direct.
 func checkIPTables4(ctx context.Context, cfg *config.Config, run platform.Runner) Result {
 	r := Result{Name: "iptables"}
 	ipt := &netfilter.IPTables{Runner: run}
@@ -478,6 +478,19 @@ func checkIPTables4(ctx context.Context, cfg *config.Config, run platform.Runner
 		missing = append(missing, "udp tproxy")
 	}
 	jumps("mangle", "NSHUNT_UDP", "mangle prerouting jump")
+
+	// Kill switch: its DROP rule, and the jump as FORWARD rule 1 (a jump
+	// further down lets NDM's ACCEPTs leak shunted traffic).
+	if exists, _ := ipt.ChainExists(ctx, "filter", routing.KillSwitchChain); !exists {
+		missing = append(missing, routing.KillSwitchChain+" chain")
+	} else if !ipt.RuleExists(ctx, "filter", routing.KillSwitchChain,
+		"-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP") {
+		missing = append(missing, "kill switch drop")
+	}
+	if fwd, err := ipt.ListRules(ctx, "filter", "FORWARD"); err != nil || len(fwd) == 0 ||
+		strings.Join(fwd[0], " ") != "-j "+routing.KillSwitchChain {
+		missing = append(missing, "kill switch jump (FORWARD rule 1)")
+	}
 	if !routing.TproxyRoutePresent(ctx, run) {
 		missing = append(missing, "tproxy policy route")
 	}

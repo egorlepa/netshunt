@@ -34,8 +34,8 @@ type fakeNet struct {
 
 func newFakeNet() *fakeNet {
 	return &fakeNet{
-		chains:  map[string][]string{"nat/PREROUTING": nil, "mangle/PREROUTING": nil},
-		builtin: map[string]bool{"nat/PREROUTING": true, "mangle/PREROUTING": true},
+		chains:  map[string][]string{"nat/PREROUTING": nil, "mangle/PREROUTING": nil, "filter/FORWARD": nil},
+		builtin: map[string]bool{"nat/PREROUTING": true, "mangle/PREROUTING": true, "filter/FORWARD": true},
 	}
 }
 
@@ -316,10 +316,27 @@ var routerMangle = []string{
 	"-A NSHUNT_UDP -p udp -m set --match-set bypass dst -j TPROXY --on-port 1081 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1",
 }
 
+// routerFilter is the filter table with the kill switch in place: our jump
+// first, then the AmneziaWG ACCEPTs and NDM's chains.
+var routerFilter = []string{
+	"-A FORWARD -j NSHUNT_KS",
+	"-A FORWARD -o awg0 -j ACCEPT",
+	"-A FORWARD -i awg0 -j ACCEPT",
+	"-A FORWARD -j _NDM_SL_FORWARD",
+	"-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT",
+	"-A FORWARD -j _NDM_FORWARD",
+	"-N NSHUNT_KS",
+	"-A NSHUNT_KS -d 10.0.0.0/8 -j RETURN",
+	"-A NSHUNT_KS -d 172.16.0.0/12 -j RETURN",
+	"-A NSHUNT_KS -d 192.168.0.0/16 -j RETURN",
+	"-A NSHUNT_KS -m set --match-set bypass dst -j DROP",
+}
+
 func routerEnv(t *testing.T) *testEnv {
 	e := newEnv(t)
 	e.net.seed("nat", routerNat...)
 	e.net.seed("mangle", routerMangle...)
+	e.net.seed("filter", routerFilter...)
 	e.net.ipRule, e.net.ipRoute = true, true
 	return e
 }
@@ -327,20 +344,30 @@ func routerEnv(t *testing.T) *testEnv {
 func foreign(lines []string) []string {
 	var out []string
 	for _, l := range lines {
-		if strings.HasPrefix(l, "-A PREROUTING") && !strings.Contains(l, "NSHUNT") && !strings.Contains(l, "--dport 53") {
+		if isForeignLine(l) {
 			out = append(out, routerForm(canonicalRule(strings.Fields(l)[2:])))
 		}
 	}
 	return out
 }
 
+// isForeignLine reports whether an `iptables -S` line is a PREROUTING or
+// FORWARD rule netshunt does not own.
+func isForeignLine(l string) bool {
+	return (strings.HasPrefix(l, "-A PREROUTING") || strings.HasPrefix(l, "-A FORWARD")) &&
+		!strings.Contains(l, "NSHUNT") && !strings.Contains(l, "--dport 53")
+}
+
 func assertForeignKept(t *testing.T, e *testEnv) {
 	t.Helper()
-	for table, lines := range map[string][]string{"nat": routerNat, "mangle": routerMangle} {
-		got := e.net.save(table, "PREROUTING")
-		for _, f := range foreign(lines) {
-			if !slices.Contains(got, "-A PREROUTING "+f) {
-				t.Errorf("%s: foreign rule %q gone; PREROUTING = %v", table, f, got)
+	for _, c := range []struct {
+		table, chain string
+		lines        []string
+	}{{"nat", "PREROUTING", routerNat}, {"mangle", "PREROUTING", routerMangle}, {"filter", "FORWARD", routerFilter}} {
+		got := e.net.save(c.table, c.chain)
+		for _, f := range foreign(linesOf(c.lines, c.chain)) {
+			if !slices.Contains(got, "-A "+c.chain+" "+f) {
+				t.Errorf("%s: foreign rule %q gone; %s = %v", c.table, f, c.chain, got)
 			}
 		}
 	}
@@ -396,8 +423,8 @@ func TestReconcileUnchangedRunsNoMutations(t *testing.T) {
 			t.Errorf("non-read command: %q", c)
 		}
 	}
-	if n := len(e.run.Calls()); n != 6 {
-		t.Errorf("%d commands, want 6 reads: %v", n, e.run.Calls())
+	if n := len(e.run.Calls()); n != 8 {
+		t.Errorf("%d commands, want 8 reads: %v", n, e.run.Calls())
 	}
 }
 
@@ -405,6 +432,7 @@ func TestReconcileFromEmptyBuildsAllInOrder(t *testing.T) {
 	e := newEnv(t)
 	e.net.seed("nat", foreignOnly(routerNat)...)
 	e.net.seed("mangle", foreignOnly(routerMangle)...)
+	e.net.seed("filter", foreignOnly(routerFilter)...)
 
 	m := e.reconcile(t)
 	if len(m) == 0 {
@@ -426,6 +454,12 @@ func TestReconcileFromEmptyBuildsAllInOrder(t *testing.T) {
 	}
 	if got, want := e.net.save("mangle", "PREROUTING"), linesOf(routerMangle, "PREROUTING"); !slices.Equal(got, want) {
 		t.Errorf("mangle PREROUTING = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("filter", "NSHUNT_KS"), linesOf(routerFilter, "NSHUNT_KS"); !slices.Equal(got, want) {
+		t.Errorf("NSHUNT_KS = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("filter", "FORWARD"), linesOf(routerFilter, "FORWARD"); !slices.Equal(got, want) {
+		t.Errorf("FORWARD = %v\nwant %v", got, want)
 	}
 	if !e.net.ipRule || !e.net.ipRoute {
 		t.Error("policy rule/route missing")
@@ -502,7 +536,7 @@ func TestReconcileExcludedNetworkChanges(t *testing.T) {
 	e := routerEnv(t)
 	e.setConfig(func(c *config.Config) { c.ExcludedNetworks = []string{"10.0.0.0/8", "192.168.0.0/16"} })
 	m := e.reconcile(t)
-	want := []string{"iptables -w -t nat -D NSHUNT 2", "iptables -w -t mangle -D NSHUNT_UDP 2"}
+	want := []string{"iptables -w -t nat -D NSHUNT 2", "iptables -w -t filter -D NSHUNT_KS 2", "iptables -w -t mangle -D NSHUNT_UDP 2"}
 	if !slices.Equal(m, want) {
 		t.Fatalf("remove: commands = %v\nwant %v", m, want)
 	}
@@ -510,9 +544,22 @@ func TestReconcileExcludedNetworkChanges(t *testing.T) {
 		c.ExcludedNetworks = []string{"10.0.0.0/8", "100.64.0.0/10", "192.168.0.0/16"}
 	})
 	m = e.reconcile(t)
-	want = []string{"iptables -w -t nat -I NSHUNT 2 -d 100.64.0.0/10 -j RETURN", "iptables -w -t mangle -I NSHUNT_UDP 2 -d 100.64.0.0/10 -j RETURN"}
+	want = []string{
+		"iptables -w -t nat -I NSHUNT 2 -d 100.64.0.0/10 -j RETURN",
+		"iptables -w -t filter -I NSHUNT_KS 2 -d 100.64.0.0/10 -j RETURN",
+		"iptables -w -t mangle -I NSHUNT_UDP 2 -d 100.64.0.0/10 -j RETURN",
+	}
 	if !slices.Equal(m, want) {
 		t.Fatalf("add: commands = %v\nwant %v", m, want)
+	}
+	wantKS := []string{
+		"-A NSHUNT_KS -d 10.0.0.0/8 -j RETURN",
+		"-A NSHUNT_KS -d 100.64.0.0/10 -j RETURN",
+		"-A NSHUNT_KS -d 192.168.0.0/16 -j RETURN",
+		"-A NSHUNT_KS -m set --match-set bypass dst -j DROP",
+	}
+	if got := e.net.save("filter", "NSHUNT_KS"); !slices.Equal(got, wantKS) {
+		t.Fatalf("NSHUNT_KS = %v\nwant %v", got, wantKS)
 	}
 }
 
@@ -653,6 +700,7 @@ func TestReconcileTproxyFailureIsErrorAfterTCPConverged(t *testing.T) {
 	e := newEnv(t)
 	e.net.seed("nat", foreignOnly(routerNat)...)
 	e.net.seed("mangle", foreignOnly(routerMangle)...)
+	e.net.seed("filter", foreignOnly(routerFilter)...)
 	e.net.failIf = "-j TPROXY"
 	err := e.r.Reconcile(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "tproxy") {
@@ -664,6 +712,14 @@ func TestReconcileTproxyFailureIsErrorAfterTCPConverged(t *testing.T) {
 	}
 	if got, want := e.net.save("nat", "PREROUTING"), linesOf(routerNat, "PREROUTING"); !slices.Equal(got, want) {
 		t.Errorf("nat PREROUTING = %v\nwant %v", got, want)
+	}
+	// The kill switch is in place, so UDP to shunted addresses is dropped,
+	// not sent direct, while TPROXY is missing.
+	if got, want := e.net.save("filter", "NSHUNT_KS"), linesOf(routerFilter, "NSHUNT_KS"); !slices.Equal(got, want) {
+		t.Errorf("NSHUNT_KS = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("filter", "FORWARD"), linesOf(routerFilter, "FORWARD"); !slices.Equal(got, want) {
+		t.Errorf("FORWARD = %v\nwant %v", got, want)
 	}
 	for _, l := range e.net.save("mangle", "PREROUTING") {
 		if strings.Contains(l, "NSHUNT_UDP") {
@@ -696,10 +752,16 @@ func TestTeardownRemovesOnlyOurs(t *testing.T) {
 	if _, ok := e.net.chains["mangle/NSHUNT_UDP"]; ok {
 		t.Error("NSHUNT_UDP left")
 	}
-	if got, want := e.net.save("nat", "PREROUTING"), foreignPrefixed(routerNat); !slices.Equal(got, want) {
+	if _, ok := e.net.chains["filter/NSHUNT_KS"]; ok {
+		t.Error("NSHUNT_KS left")
+	}
+	if got, want := e.net.save("filter", "FORWARD"), foreignPrefixed(linesOf(routerFilter, "FORWARD")); !slices.Equal(got, want) {
+		t.Errorf("FORWARD = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("nat", "PREROUTING"), foreignPrefixed(linesOf(routerNat, "PREROUTING")); !slices.Equal(got, want) {
 		t.Errorf("nat PREROUTING = %v\nwant %v", got, want)
 	}
-	if got, want := e.net.save("mangle", "PREROUTING"), foreignPrefixed(routerMangle); !slices.Equal(got, want) {
+	if got, want := e.net.save("mangle", "PREROUTING"), foreignPrefixed(linesOf(routerMangle, "PREROUTING")); !slices.Equal(got, want) {
 		t.Errorf("mangle PREROUTING = %v\nwant %v", got, want)
 	}
 	if e.net.ipRule || e.net.ipRoute {
@@ -710,17 +772,21 @@ func TestTeardownRemovesOnlyOurs(t *testing.T) {
 func foreignOnly(lines []string) []string {
 	var out []string
 	for _, l := range lines {
-		if strings.HasPrefix(l, "-A PREROUTING") && !strings.Contains(l, "NSHUNT") && !strings.Contains(l, "--dport 53") {
+		if isForeignLine(l) {
 			out = append(out, l)
 		}
 	}
 	return out
 }
 
+// foreignPrefixed returns the foreign rules of lines (all of one chain) as
+// `iptables -S` prints them.
 func foreignPrefixed(lines []string) []string {
 	var out []string
-	for _, l := range foreign(lines) {
-		out = append(out, "-A PREROUTING "+l)
+	for _, l := range lines {
+		if isForeignLine(l) {
+			out = append(out, strings.Join(strings.Fields(l)[:2], " ")+" "+routerForm(canonicalRule(strings.Fields(l)[2:])))
+		}
 	}
 	return out
 }
@@ -745,4 +811,99 @@ func countPrefix(cmds []string, p string) int {
 		}
 	}
 	return n
+}
+
+func TestKillSwitchFromEmpty(t *testing.T) {
+	e := routerEnv(t)
+	delete(e.net.chains, "filter/NSHUNT_KS")
+	e.net.chains["filter/FORWARD"] = nil
+	e.net.seed("filter", foreignOnly(routerFilter)...)
+	m := e.reconcile(t)
+	want := []string{
+		"iptables -w -t filter -N NSHUNT_KS",
+		"iptables -w -t filter -I NSHUNT_KS 1 -d 10.0.0.0/8 -j RETURN",
+		"iptables -w -t filter -I NSHUNT_KS 2 -d 172.16.0.0/12 -j RETURN",
+		"iptables -w -t filter -I NSHUNT_KS 3 -d 192.168.0.0/16 -j RETURN",
+		"iptables -w -t filter -I NSHUNT_KS 4 -m set --match-set bypass dst -j DROP",
+		"iptables -w -t filter -I FORWARD 1 -j NSHUNT_KS",
+	}
+	if !slices.Equal(m, want) {
+		t.Fatalf("commands = %v\nwant %v", m, want)
+	}
+	if got, want := e.net.save("filter", "FORWARD"), linesOf(routerFilter, "FORWARD"); !slices.Equal(got, want) {
+		t.Fatalf("FORWARD = %v\nwant %v", got, want)
+	}
+	if got, want := e.net.save("filter", "NSHUNT_KS"), linesOf(routerFilter, "NSHUNT_KS"); !slices.Equal(got, want) {
+		t.Fatalf("NSHUNT_KS = %v\nwant %v", got, want)
+	}
+	assertForeignKept(t, e)
+	if m := e.reconcile(t); len(m) != 0 {
+		t.Fatalf("second run mutated: %v", m)
+	}
+}
+
+// NDM inserted its own rules above the jump: the jump moves back to 1, and
+// at no point is FORWARD without a jump.
+func TestKillSwitchJumpMovedBackToFirst(t *testing.T) {
+	e := routerEnv(t)
+	e.net.chains["filter/FORWARD"] = nil
+	e.net.seed("filter",
+		"-A FORWARD -j _NDM_SL_FORWARD",
+		"-A FORWARD -o awg0 -j ACCEPT",
+		"-A FORWARD -j NSHUNT_KS",
+		"-A FORWARD -i awg0 -j ACCEPT",
+		"-A FORWARD -j NSHUNT_KS",
+	)
+	var bad []string
+	e.net.after = func(f *fakeNet, cmd string) {
+		if !slices.Contains(f.chains["filter/FORWARD"], "-j NSHUNT_KS") {
+			bad = append(bad, "no jump after "+cmd)
+		}
+	}
+	m := e.reconcile(t)
+	want := []string{
+		"iptables -w -t filter -I FORWARD 1 -j NSHUNT_KS",
+		"iptables -w -t filter -D FORWARD 6",
+		"iptables -w -t filter -D FORWARD 4",
+	}
+	if !slices.Equal(m, want) {
+		t.Fatalf("commands = %v\nwant %v", m, want)
+	}
+	if len(bad) > 0 {
+		t.Fatal(strings.Join(bad, "\n"))
+	}
+	wantFwd := []string{
+		"-A FORWARD -j NSHUNT_KS",
+		"-A FORWARD -j _NDM_SL_FORWARD",
+		"-A FORWARD -o awg0 -j ACCEPT",
+		"-A FORWARD -i awg0 -j ACCEPT",
+	}
+	if got := e.net.save("filter", "FORWARD"); !slices.Equal(got, wantFwd) {
+		t.Fatalf("FORWARD = %v\nwant %v", got, wantFwd)
+	}
+	if m := e.reconcile(t); len(m) != 0 {
+		t.Fatalf("second run mutated: %v", m)
+	}
+}
+
+// A duplicate jump below the first one is removed; the first stays.
+func TestKillSwitchDuplicateJumpRemoved(t *testing.T) {
+	e := routerEnv(t)
+	e.net.seed("filter", "-A FORWARD -j NSHUNT_KS")
+	m := e.reconcile(t)
+	if want := []string{"iptables -w -t filter -D FORWARD 7"}; !slices.Equal(m, want) {
+		t.Fatalf("commands = %v\nwant %v", m, want)
+	}
+	if got, want := e.net.save("filter", "FORWARD"), linesOf(routerFilter, "FORWARD"); !slices.Equal(got, want) {
+		t.Fatalf("FORWARD = %v\nwant %v", got, want)
+	}
+}
+
+func TestKillSwitchStaleRuleInChainReplaced(t *testing.T) {
+	e := routerEnv(t)
+	e.setConfig(func(c *config.Config) { c.IPSet.TableName = "bypass2" })
+	m := e.reconcile(t)
+	if !slices.Contains(m, "iptables -w -t filter -R NSHUNT_KS 4 -m set --match-set bypass2 dst -j DROP") {
+		t.Fatalf("DROP rule not replaced in place: %v", m)
+	}
 }

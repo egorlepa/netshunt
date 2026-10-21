@@ -70,8 +70,9 @@ func newHookNetfilterCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// NDM rebuilt one of its tables. netshunt only manages IPv4
-			// nat/mangle rules; Reconcile reads both and fixes what is
-			// missing, and only reads when nothing is.
+			// nat/mangle/filter rules (filter: the FORWARD kill switch,
+			// which must stay rule 1); Reconcile reads all three and fixes
+			// what is missing, and only reads when nothing is.
 			if args[0] != "iptables" {
 				return nil
 			}

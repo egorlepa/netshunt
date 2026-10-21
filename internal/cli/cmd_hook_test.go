@@ -54,3 +54,20 @@ func TestIfstateScriptPassesSystemName(t *testing.T) {
 		}
 	}
 }
+
+// The netfilter hook must fire for every table netshunt has rules in: nat
+// (TCP redirect, DNS), mangle (TPROXY) and filter (FORWARD kill switch).
+func TestNetfilterScriptMatchesOurTables(t *testing.T) {
+	data, err := deploy.NDMScript("netfilter.d", "100-proxy-redirect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"nat", "mangle", "filter"} {
+		if !strings.Contains(string(data), `[ "$table" = "`+table+`" ]`) {
+			t.Errorf("netfilter script ignores table %s:\n%s", table, data)
+		}
+	}
+	if !strings.Contains(string(data), `hook netfilter "$type" "$table"`) {
+		t.Errorf("netfilter script does not call the hook:\n%s", data)
+	}
+}

@@ -19,8 +19,11 @@ import (
 const (
 	redirectChainName    = "NSHUNT"
 	redirectUDPChainName = "NSHUNT_UDP"
-	fwmark               = "0x1"
-	routeTable           = "100"
+	// KillSwitchChain is the filter-table chain FORWARD jumps to first; see
+	// desired() for what it drops and why.
+	KillSwitchChain = "NSHUNT_KS"
+	fwmark          = "0x1"
+	routeTable      = "100"
 	// rulePref is the policy-rule priority. It must stay clear of the
 	// priorities Keenetic NDM manages itself (it owns 100/101 among others
 	// and deletes by number when it rebuilds them), and below main (32766)
@@ -75,6 +78,8 @@ type desiredRules struct {
 	mangleChain [][]string // NSHUNT_UDP, in order
 	natPre      [][]string // our nat PREROUTING rules (jumps, then DNS)
 	manglePre   [][]string // our mangle PREROUTING rules (jumps)
+	ksChain     [][]string // filter NSHUNT_KS, in order
+	ksJump      []string   // filter FORWARD rule 1
 }
 
 func (r *Redirect) desired() desiredRules {
@@ -93,6 +98,30 @@ func (r *Redirect) desired() desiredRules {
 		"-j", "REDIRECT", "--to-ports", port})
 	d.mangleChain = append(d.mangleChain, []string{"-p", "udp", "-m", "set", "--match-set", ipsetName, "dst",
 		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", fwmark + "/" + fwmark})
+
+	// Kill switch (filter NSHUNT_KS, jumped to from FORWARD position 1, no
+	// -i): a packet to a shunted address that reaches FORWARD is a leak by
+	// definition, so it is dropped instead of leaving via the default route.
+	// What it must not drop, and why it does not:
+	//   - Redirected traffic: REDIRECT (nat) and TPROXY (mangle) deliver the
+	//     packet locally, so it goes to INPUT and never reaches FORWARD.
+	//   - Router-generated traffic (the proxy's own upstream connection, DNS
+	//     to the upstreams, healthchecks) goes through OUTPUT, not FORWARD.
+	//   - LAN-to-LAN or VPN traffic to the excluded networks: the same RETURN
+	//     list as NSHUNT/NSHUNT_UDP comes first, so a private address that
+	//     some domain resolved to is still forwarded normally.
+	// What it does drop, on purpose: anything to a shunted address that was
+	// not redirected, e.g. TCP/UDP from an interface netshunt does not
+	// intercept, ICMP and other protocols, packets of a direct connection
+	// opened before its address entered the set, and everything while the
+	// nat/mangle jumps are missing. The jump is unconditional and first, so
+	// neither NDM's own FORWARD rules nor the AmneziaWG ACCEPTs can let such
+	// a packet through.
+	for _, n := range excluded {
+		d.ksChain = append(d.ksChain, []string{"-d", n, "-j", "RETURN"})
+	}
+	d.ksChain = append(d.ksChain, []string{"-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"})
+	d.ksJump = []string{"-j", KillSwitchChain}
 
 	if len(ifaces) == 0 {
 		d.natPre = append(d.natPre, []string{"-j", redirectChainName})
@@ -142,8 +171,9 @@ func isOurManglePrerouting(key string) bool {
 // (`-I`/`-R` at their position), so the chain always holds exactly one
 // redirect rule, also while the port changes. In PREROUTING missing rules
 // are appended before stale ones of ours are deleted. Rules netshunt does
-// not own are never touched. With nothing to change only reads run:
-// `iptables -S` of the four chains, `ip rule show`, `ip route show`.
+// not own are never touched. The kill-switch jump is kept at FORWARD
+// position 1. With nothing to change only reads run: `iptables -S` of the
+// six chains, `ip rule show`, `ip route show`.
 func (r *Redirect) Reconcile(ctx context.Context) error {
 	unlock := r.lock()
 	defer unlock()
@@ -156,6 +186,14 @@ func (r *Redirect) Reconcile(ctx context.Context) error {
 	}
 	if err := r.syncPrerouting(ctx, "nat", d.natPre, isOurNatPrerouting); err != nil {
 		return fmt.Errorf("sync nat PREROUTING: %w", err)
+	}
+
+	// Kill switch: before UDP, so that a missing TPROXY fails closed.
+	if err := r.syncChain(ctx, "filter", KillSwitchChain, d.ksChain, nil); err != nil {
+		return fmt.Errorf("sync filter %s: %w", KillSwitchChain, err)
+	}
+	if err := r.syncFirstRule(ctx, "filter", "FORWARD", d.ksJump); err != nil {
+		return fmt.Errorf("sync filter FORWARD: %w", err)
 	}
 
 	// UDP: TPROXY via mangle. Mandatory: UDP to a shunted address must
@@ -344,6 +382,55 @@ func (r *Redirect) syncPrerouting(ctx context.Context, table string, desired [][
 	return nil
 }
 
+// syncFirstRule makes spec the first rule of a built-in chain shared with
+// NDM (FORWARD) and the only copy of it there. When it is not first it is
+// inserted at 1 before any other copy is deleted, so the chain never lacks
+// it. Copies are deleted by number, which is the only way to delete a copy
+// that is not the first match; FORWARD is rewritten by NDM, so the chain is
+// re-read before every delete and the number checked against it. With the
+// rule already first and unique this is one read.
+func (r *Redirect) syncFirstRule(ctx context.Context, table, chain string, spec []string) error {
+	key := canonicalRule(spec)
+	out, err := r.ipt.Save(ctx, table, chain)
+	if err != nil {
+		return err
+	}
+	cur := parseSave(out, chain)
+	if len(cur) == 0 || cur[0].key != key {
+		if err := r.iptMutate(ctx, table, append([]string{"-I", chain, "1"}, spec...)...); err != nil {
+			return err
+		}
+		cur = append([]savedRule{{spec: spec, key: key}}, cur...)
+	}
+	lastCopy := func(rules []savedRule) int {
+		for i := len(rules) - 1; i > 0; i-- {
+			if rules[i].key == key {
+				return i
+			}
+		}
+		return -1
+	}
+	for n := lastCopy(cur); n > 0; n = lastCopy(cur) {
+		out, err := r.ipt.Save(ctx, table, chain)
+		if err != nil {
+			return err
+		}
+		cur = parseSave(out, chain)
+		if n = lastCopy(cur); n < 0 {
+			break
+		}
+		if err := r.iptMutate(ctx, table, "-D", chain, fmt.Sprintf("%d", n+1)); err != nil {
+			return err
+		}
+		cur = append(cur[:n:n], cur[n+1:]...)
+	}
+	return nil
+}
+
+func isOurForward(key string) bool {
+	return key == canonicalRule([]string{"-j", KillSwitchChain})
+}
+
 // ensureTproxyModule loads xt_TPROXY before the TPROXY rule is installed.
 // On Keenetic routers modprobe is not available, so it falls back to insmod.
 func (r *Redirect) ensureTproxyModule(ctx context.Context) {
@@ -432,8 +519,8 @@ func (r *Redirect) lock() func() {
 	}
 }
 
-// TeardownRules removes TCP/UDP redirect chains, policy routing, and DNS
-// redirect rules (uninstall).
+// TeardownRules removes TCP/UDP redirect chains, the kill switch, policy
+// routing, and DNS redirect rules (uninstall).
 func (r *Redirect) TeardownRules(ctx context.Context) error {
 	unlock := r.lock()
 	defer unlock()
@@ -458,6 +545,21 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 			_ = r.iptMutate(ctx, t.table, "-F", t.chain)
 			_ = r.iptMutate(ctx, t.table, "-X", t.chain)
 		}
+	}
+
+	// Kill switch last: until here a packet to a shunted address that is no
+	// longer redirected is still dropped. The ipset can only be destroyed
+	// after this rule, which references it, is gone.
+	if out, err := r.ipt.Save(ctx, "filter", "FORWARD"); err == nil {
+		for _, x := range parseSave(out, "FORWARD") {
+			if isOurForward(x.key) {
+				_ = r.iptMutate(ctx, "filter", append([]string{"-D", "FORWARD"}, x.spec...)...)
+			}
+		}
+	}
+	if _, err := r.ipt.Save(ctx, "filter", KillSwitchChain); err == nil {
+		_ = r.iptMutate(ctx, "filter", "-F", KillSwitchChain)
+		_ = r.iptMutate(ctx, "filter", "-X", KillSwitchChain)
 	}
 
 	if r.policyRuleExists(ctx) {
