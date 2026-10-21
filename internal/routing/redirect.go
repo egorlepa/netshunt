@@ -2,13 +2,16 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/egorlepa/netshunt/internal/config"
-	"github.com/egorlepa/netshunt/internal/deploy"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/platform"
 )
@@ -23,6 +26,11 @@ const (
 	// and deletes by number when it rebuilds them), and below main (32766)
 	// so marked packets hit table 100 first.
 	rulePref = "32000"
+
+	// defaultLockPath serialises Reconcile between the daemon and the NDM
+	// hook processes, which may run at the same time: position-based
+	// commands inside our chains must not interleave.
+	defaultLockPath = "/var/run/netshunt-rules.lock"
 )
 
 // Redirect implements Mode using NAT REDIRECT (TCP) and TPROXY (UDP)
@@ -37,70 +45,63 @@ const (
 //  3. UDP: iptables PREROUTING (mangle) TPROXY to cfg.Routing.ActivePort()
 //  4. Transparent proxy forwards traffic through the tunnel
 type Redirect struct {
-	cfg    *config.Live
-	ipt    *netfilter.IPTables
-	logger *slog.Logger
+	cfg      *config.Live
+	ipt      *netfilter.IPTables
+	run      platform.Runner
+	logger   *slog.Logger
+	lockPath string
 }
 
 // NewRedirect creates a Redirect traffic mode handler.
 func NewRedirect(cfg *config.Live, logger *slog.Logger) *Redirect {
+	return newRedirect(cfg, logger, platform.DefaultRunner, defaultLockPath)
+}
+
+func newRedirect(cfg *config.Live, logger *slog.Logger, run platform.Runner, lockPath string) *Redirect {
 	return &Redirect{
-		cfg:    cfg,
-		ipt:    netfilter.NewIPTables(),
-		logger: logger,
+		cfg:      cfg,
+		ipt:      &netfilter.IPTables{Runner: run},
+		run:      run,
+		logger:   logger,
+		lockPath: lockPath,
 	}
 }
 
 func (r *Redirect) Name() string { return "redirect" }
 
-// SetupRules creates iptables rules for TCP (NAT REDIRECT) and UDP (TPROXY).
-func (r *Redirect) SetupRules(ctx context.Context) error {
+// desiredRules is the complete rule set Reconcile converges to.
+type desiredRules struct {
+	natChain    [][]string // NSHUNT, in order
+	mangleChain [][]string // NSHUNT_UDP, in order
+	natPre      [][]string // our nat PREROUTING rules (jumps, then DNS)
+	manglePre   [][]string // our mangle PREROUTING rules (jumps)
+}
+
+func (r *Redirect) desired() desiredRules {
 	cfg := r.cfg.Load()
 	ipsetName := cfg.IPSet.TableName
 	port := fmt.Sprintf("%d", cfg.Routing.ActivePort())
 	ifaces := cfg.Network.InterceptInterfaces()
-
 	excluded := filterIPv4Networks(cfg.ExcludedNetworks)
 
-	r.logger.Info("setting up redirect rules",
-		"ipset", ipsetName, "port", port, "interfaces", ifaces)
-
-	// TCP: NAT REDIRECT.
-	if err := r.ipt.CreateChain(ctx, "nat", redirectChainName); err != nil {
-		return fmt.Errorf("create tcp chain: %w", err)
-	}
-
+	var d desiredRules
 	for _, n := range excluded {
-		if err := r.ipt.AppendRule(ctx, "nat", redirectChainName, "-d", n, "-j", "RETURN"); err != nil {
-			return fmt.Errorf("tcp exclude network %s: %w", n, err)
-		}
+		d.natChain = append(d.natChain, []string{"-d", n, "-j", "RETURN"})
+		d.mangleChain = append(d.mangleChain, []string{"-d", n, "-j", "RETURN"})
 	}
-
-	if err := r.ipt.AppendRule(ctx, "nat",
-		redirectChainName, "-p", "tcp",
-		"-m", "set", "--match-set", ipsetName, "dst",
-		"-j", "REDIRECT", "--to-port", port,
-	); err != nil {
-		return fmt.Errorf("tcp redirect rule: %w", err)
-	}
+	d.natChain = append(d.natChain, []string{"-p", "tcp", "-m", "set", "--match-set", ipsetName, "dst",
+		"-j", "REDIRECT", "--to-ports", port})
+	d.mangleChain = append(d.mangleChain, []string{"-p", "udp", "-m", "set", "--match-set", ipsetName, "dst",
+		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", fwmark + "/" + fwmark})
 
 	if len(ifaces) == 0 {
-		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-j", redirectChainName); err != nil {
-			return fmt.Errorf("tcp prerouting jump: %w", err)
-		}
-	} else {
-		for _, iface := range ifaces {
-			if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING", "-i", iface, "-j", redirectChainName); err != nil {
-				return fmt.Errorf("tcp prerouting jump (%s): %w", iface, err)
-			}
-		}
+		d.natPre = append(d.natPre, []string{"-j", redirectChainName})
+		d.manglePre = append(d.manglePre, []string{"-j", redirectUDPChainName})
 	}
-
-	// UDP: TPROXY via mangle table (best-effort).
-	if err := r.setupUDPTproxy(ctx, ipsetName, port, ifaces, excluded); err != nil {
-		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
+	for _, iface := range ifaces {
+		d.natPre = append(d.natPre, []string{"-i", iface, "-j", redirectChainName})
+		d.manglePre = append(d.manglePre, []string{"-i", iface, "-j", redirectUDPChainName})
 	}
-
 	// DNS interception. REDIRECT rewrites the destination to the primary
 	// address of the ingress interface (192.168.1.1 on br0, the TUN address
 	// on awg0), which the router's INPUT chain already accepts. A DNAT to
@@ -109,74 +110,256 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 	// clients with a hard-coded resolver got no answer at all.
 	for _, iface := range cfg.Network.DNSInterfaces() {
 		for _, proto := range []string{"udp", "tcp"} {
-			if err := r.ipt.AppendRule(ctx, "nat", DNSRedirectRule(iface, proto)...); err != nil {
-				r.logger.Warn("dns redirect rule failed", "iface", iface, "proto", proto, "error", err)
-			}
+			d.natPre = append(d.natPre, DNSRedirectRule(iface, proto)[1:])
 		}
 	}
+	return d
+}
 
+// isOurNatPrerouting reports whether a nat PREROUTING rule is one netshunt
+// manages: a jump to NSHUNT or a DNS REDIRECT with our signature on any
+// interface (so a removed interface's rules are found).
+func isOurNatPrerouting(key string) bool {
+	if strings.HasSuffix(key, "-j "+redirectChainName) {
+		return true
+	}
+	for _, proto := range []string{"udp", "tcp"} {
+		sig := canonicalRule(DNSRedirectRule("x", proto)[3:]) // without "PREROUTING -i x"
+		if key == sig || (strings.HasPrefix(key, "-i ") && strings.HasSuffix(key, " "+sig) &&
+			len(strings.Fields(strings.TrimSuffix(key, " "+sig))) == 2) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOurManglePrerouting(key string) bool {
+	return strings.HasSuffix(key, "-j "+redirectUDPChainName)
+}
+
+// Reconcile converges iptables and the TPROXY policy route to the config.
+// Inside NSHUNT/NSHUNT_UDP rules are inserted or replaced in place
+// (`-I`/`-R` at their position), so the chain always holds exactly one
+// redirect rule, also while the port changes. In PREROUTING missing rules
+// are appended before stale ones of ours are deleted. Rules netshunt does
+// not own are never touched. With nothing to change only reads run:
+// `iptables -S` of the four chains, `ip rule show`, `ip route show`.
+func (r *Redirect) Reconcile(ctx context.Context) error {
+	unlock := r.lock()
+	defer unlock()
+
+	d := r.desired()
+
+	// TCP: nat.
+	if err := r.syncChain(ctx, "nat", redirectChainName, d.natChain, nil); err != nil {
+		return fmt.Errorf("sync nat %s: %w", redirectChainName, err)
+	}
+	if err := r.syncPrerouting(ctx, "nat", d.natPre, isOurNatPrerouting); err != nil {
+		return fmt.Errorf("sync nat PREROUTING: %w", err)
+	}
+
+	// UDP: TPROXY via mangle (best effort, as TPROXY may be unavailable).
+	if err := r.syncUDP(ctx, d); err != nil {
+		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
+	}
 	return nil
 }
 
-// setupUDPTproxy sets up TPROXY rules for UDP traffic.
-func (r *Redirect) setupUDPTproxy(ctx context.Context, ipsetName, port string, ifaces []string, excluded []string) error {
-	deploy.EnsureTproxyModule(ctx)
-
-	if err := r.ipt.CreateChain(ctx, "mangle", redirectUDPChainName); err != nil {
-		return fmt.Errorf("create udp chain: %w", err)
+func (r *Redirect) syncUDP(ctx context.Context, d desiredRules) error {
+	if err := r.syncChain(ctx, "mangle", redirectUDPChainName, d.mangleChain, r.ensureTproxyModule); err != nil {
+		return fmt.Errorf("sync mangle %s: %w", redirectUDPChainName, err)
 	}
+	if err := r.syncPrerouting(ctx, "mangle", d.manglePre, isOurManglePrerouting); err != nil {
+		return fmt.Errorf("sync mangle PREROUTING: %w", err)
+	}
+	// Policy routing for TPROXY-marked packets. "ip rule add" is not
+	// idempotent, so check first and pin the priority so teardown can
+	// remove exactly this rule.
+	if !r.policyRuleExists(ctx) {
+		if err := r.mutate(ctx, "ip", "rule", "add", "pref", rulePref, "fwmark", fwmark, "table", routeTable); err != nil {
+			return fmt.Errorf("ip rule add: %w", err)
+		}
+	}
+	if !r.localRouteExists(ctx) {
+		if err := r.mutate(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", routeTable); err != nil {
+			return fmt.Errorf("ip route replace: %w", err)
+		}
+	}
+	return nil
+}
 
-	for _, n := range excluded {
-		if err := r.ipt.AppendRule(ctx, "mangle", redirectUDPChainName, "-d", n, "-j", "RETURN"); err != nil {
-			_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-			return fmt.Errorf("udp exclude network %s: %w", n, err)
+// mutate runs and logs one state-changing command.
+func (r *Redirect) mutate(ctx context.Context, name string, args ...string) error {
+	r.logger.Info("rule change", "cmd", name+" "+strings.Join(args, " "))
+	return r.run.RunSilent(ctx, name, args...)
+}
+
+func (r *Redirect) iptMutate(ctx context.Context, table string, args ...string) error {
+	return r.mutate(ctx, "iptables", append([]string{"-w", "-t", table}, args...)...)
+}
+
+// syncChain makes chain hold exactly desired, in order. beforeTproxy, when
+// set, runs once before a TPROXY rule is written into a chain that has none
+// yet (it loads the kernel module).
+//
+// Walking the desired list: a matching rule is kept; a stale rule standing
+// where a desired one belongs is replaced in place (`-R`) when neither is
+// needed elsewhere; a stale rule in front of a desired one that exists
+// further down is deleted; otherwise the desired rule is inserted at its
+// position (`-I`). Leftovers past the end are deleted bottom-up. Every
+// iptables command commits atomically, so the chain never lacks the
+// redirect rule and never holds two.
+func (r *Redirect) syncChain(ctx context.Context, table, chain string, desired [][]string, beforeTproxy func(context.Context)) error {
+	out, err := r.ipt.Save(ctx, table, chain)
+	if err != nil {
+		if nerr := r.iptMutate(ctx, table, "-N", chain); nerr != nil {
+			return fmt.Errorf("read chain: %w; create chain: %w", err, nerr)
+		}
+		out = ""
+	}
+	cur := parseSave(out, chain)
+
+	moduleReady := beforeTproxy == nil
+	for _, x := range cur {
+		if slices.Contains(x.spec, "TPROXY") {
+			moduleReady = true
+		}
+	}
+	change := func(spec []string) {
+		if !moduleReady && slices.Contains(spec, "TPROXY") {
+			beforeTproxy(ctx)
+			moduleReady = true
 		}
 	}
 
-	if err := r.ipt.AppendRule(ctx, "mangle",
-		redirectUDPChainName, "-p", "udp",
-		"-m", "set", "--match-set", ipsetName, "dst",
-		"-j", "TPROXY", "--on-port", port, "--tproxy-mark", fwmark+"/"+fwmark,
-	); err != nil {
-		_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-		return fmt.Errorf("tproxy target not supported: %w", err)
+	keys := make([]string, len(desired))
+	for i, spec := range desired {
+		keys[i] = canonicalRule(spec)
+	}
+	countIn := func(key string, rules []savedRule) int {
+		n := 0
+		for _, x := range rules {
+			if x.key == key {
+				n++
+			}
+		}
+		return n
+	}
+	countKeys := func(key string, ks []string) int {
+		n := 0
+		for _, k := range ks {
+			if k == key {
+				n++
+			}
+		}
+		return n
 	}
 
-	if len(ifaces) == 0 {
-		if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-j", redirectUDPChainName); err != nil {
-			_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-			return fmt.Errorf("udp prerouting jump: %w", err)
+	for i := 0; i < len(desired); {
+		want := keys[i]
+		if i < len(cur) && cur[i].key == want {
+			i++
+			continue
 		}
-	} else {
-		for _, iface := range ifaces {
-			if err := r.ipt.AppendRule(ctx, "mangle", "PREROUTING", "-i", iface, "-j", redirectUDPChainName); err != nil {
-				_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-				return fmt.Errorf("udp prerouting jump (%s): %w", iface, err)
+		pos := fmt.Sprintf("%d", i+1)
+		if i < len(cur) {
+			staleNeededLater := countKeys(cur[i].key, keys[i+1:]) > 0
+			wantLater := countIn(want, cur[i+1:]) > 0
+			switch {
+			case !staleNeededLater && !wantLater:
+				change(desired[i])
+				if err := r.iptMutate(ctx, table, append([]string{"-R", chain, pos}, desired[i]...)...); err != nil {
+					return err
+				}
+				cur[i] = savedRule{spec: desired[i], key: want}
+				i++
+				continue
+			case !staleNeededLater && wantLater:
+				if err := r.iptMutate(ctx, table, "-D", chain, pos); err != nil {
+					return err
+				}
+				cur = append(cur[:i:i], cur[i+1:]...)
+				continue
+			}
+		}
+		change(desired[i])
+		if err := r.iptMutate(ctx, table, append([]string{"-I", chain, pos}, desired[i]...)...); err != nil {
+			return err
+		}
+		cur = append(cur[:i:i], append([]savedRule{{spec: desired[i], key: want}}, cur[i:]...)...)
+		i++
+	}
+	for n := len(cur); n > len(desired); n-- {
+		if err := r.iptMutate(ctx, table, "-D", chain, fmt.Sprintf("%d", n)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncPrerouting makes the rules of ours in PREROUTING equal desired: missing
+// ones are appended first, then stale or duplicate ones of ours deleted by
+// spec. Rules for which ours returns false are never touched; their
+// positions do not matter since nothing here deletes by number.
+func (r *Redirect) syncPrerouting(ctx context.Context, table string, desired [][]string, ours func(key string) bool) error {
+	out, err := r.ipt.Save(ctx, table, "PREROUTING")
+	if err != nil {
+		return err
+	}
+	cur := parseSave(out, "PREROUTING")
+
+	have := map[string]int{}
+	for _, x := range cur {
+		have[x.key]++
+	}
+	want := map[string]bool{}
+	for _, spec := range desired {
+		key := canonicalRule(spec)
+		if want[key] {
+			continue
+		}
+		want[key] = true
+		if have[key] == 0 {
+			if err := r.iptMutate(ctx, table, append([]string{"-A", "PREROUTING"}, spec...)...); err != nil {
+				return err
 			}
 		}
 	}
 
-	// Policy routing for TPROXY-marked packets. "ip rule add" is not
-	// idempotent and this path also runs from the NDM netfilter hook without
-	// a teardown, so check first and pin the priority so teardown can
-	// remove exactly this rule.
-	if !r.policyRuleExists(ctx) {
-		if err := platform.RunSilent(ctx, "ip", "rule", "add", "pref", rulePref, "fwmark", fwmark, "table", routeTable); err != nil {
-			return fmt.Errorf("ip rule add: %w", err)
+	kept := map[string]bool{}
+	for _, x := range cur {
+		if !ours(x.key) {
+			continue
+		}
+		if want[x.key] && !kept[x.key] {
+			kept[x.key] = true
+			continue
+		}
+		if err := r.iptMutate(ctx, table, append([]string{"-D", "PREROUTING"}, x.spec...)...); err != nil {
+			return err
 		}
 	}
-	if err := platform.RunSilent(ctx, "ip", "route", "replace", "local", "0/0", "dev", "lo", "table", routeTable); err != nil {
-		return fmt.Errorf("ip route replace: %w", err)
-	}
-
 	return nil
+}
+
+// ensureTproxyModule loads xt_TPROXY before the TPROXY rule is installed.
+// On Keenetic routers modprobe is not available, so it falls back to insmod.
+func (r *Redirect) ensureTproxyModule(ctx context.Context) {
+	if r.run.RunSilent(ctx, "modprobe", "xt_TPROXY") == nil {
+		return
+	}
+	rel, err := r.run.Run(ctx, "uname", "-r")
+	if err != nil {
+		return
+	}
+	_ = r.run.RunSilent(ctx, "insmod", "/lib/modules/"+strings.TrimSpace(rel)+"/xt_TPROXY.ko")
 }
 
 // policyRuleExists reports whether the fwmark policy rule is already
 // installed at rulePref. "ip rule show" prints one rule per line as
 // "<pref>:\tfrom all fwmark 0x1 lookup 100".
 func (r *Redirect) policyRuleExists(ctx context.Context) bool {
-	out, err := platform.Run(ctx, "ip", "rule", "show")
+	out, err := r.run.Run(ctx, "ip", "rule", "show")
 	if err != nil {
 		return false
 	}
@@ -190,30 +373,79 @@ func (r *Redirect) policyRuleExists(ctx context.Context) bool {
 	return false
 }
 
-// TeardownRules removes TCP/UDP redirect chains, policy routing, and DNS DNAT rules.
+// localRouteExists reports whether table 100 routes everything to lo
+// ("local default dev lo scope host").
+func (r *Redirect) localRouteExists(ctx context.Context) bool {
+	out, err := r.run.Run(ctx, "ip", "route", "show", "table", routeTable)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 4 && f[0] == "local" && (f[1] == "default" || f[1] == "0.0.0.0/0") &&
+			f[2] == "dev" && f[3] == "lo" {
+			return true
+		}
+	}
+	return false
+}
+
+// lock takes an exclusive flock on lockPath. Failing to open the lock file
+// (e.g. no /var/run on a dev machine) proceeds unlocked.
+func (r *Redirect) lock() func() {
+	if r.lockPath == "" {
+		return func() {}
+	}
+	f, err := os.OpenFile(r.lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return func() {}
+	}
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		if !errors.Is(err, syscall.EINTR) {
+			break
+		}
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}
+}
+
+// TeardownRules removes TCP/UDP redirect chains, policy routing, and DNS
+// redirect rules (uninstall).
 func (r *Redirect) TeardownRules(ctx context.Context) error {
-	cfg := r.cfg.Load()
+	unlock := r.lock()
+	defer unlock()
 	r.logger.Info("tearing down redirect rules")
 
-	// TCP: nat table.
-	_ = r.ipt.RemoveJumpRules(ctx, "nat", "PREROUTING", redirectChainName)
-	_ = r.ipt.DeleteChain(ctx, "nat", redirectChainName)
-
-	// UDP: mangle table.
-	_ = r.ipt.RemoveJumpRules(ctx, "mangle", "PREROUTING", redirectUDPChainName)
-	_ = r.ipt.DeleteChain(ctx, "mangle", redirectUDPChainName)
-
-	// Policy routing for TPROXY.
-	_ = platform.RunSilent(ctx, "ip", "rule", "del", "pref", rulePref, "fwmark", fwmark, "table", routeTable)
-	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
-
-	// DNS interception.
-	for _, iface := range cfg.Network.DNSInterfaces() {
-		for _, proto := range []string{"udp", "tcp"} {
-			_ = r.ipt.DeleteRule(ctx, "nat", DNSRedirectRule(iface, proto)...)
+	for _, t := range []struct{ table, chain string }{
+		{"nat", redirectChainName},
+		{"mangle", redirectUDPChainName},
+	} {
+		ours := isOurManglePrerouting
+		if t.table == "nat" {
+			ours = isOurNatPrerouting
+		}
+		if out, err := r.ipt.Save(ctx, t.table, "PREROUTING"); err == nil {
+			for _, x := range parseSave(out, "PREROUTING") {
+				if ours(x.key) {
+					_ = r.iptMutate(ctx, t.table, append([]string{"-D", "PREROUTING"}, x.spec...)...)
+				}
+			}
+		}
+		if _, err := r.ipt.Save(ctx, t.table, t.chain); err == nil {
+			_ = r.iptMutate(ctx, t.table, "-F", t.chain)
+			_ = r.iptMutate(ctx, t.table, "-X", t.chain)
 		}
 	}
 
+	if r.policyRuleExists(ctx) {
+		_ = r.mutate(ctx, "ip", "rule", "del", "pref", rulePref, "fwmark", fwmark, "table", routeTable)
+	}
+	if r.localRouteExists(ctx) {
+		_ = r.mutate(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
+	}
 	return nil
 }
 
@@ -229,7 +461,7 @@ func (r *Redirect) IsActive(ctx context.Context) (bool, error) {
 
 // filterIPv4Networks returns only the IPv4 CIDRs from the input.
 // Validation at the form layer rejects v6 entries, but legacy configs may
-// still contain them — skip silently to avoid breaking startup.
+// still contain them - skip silently to avoid breaking startup.
 func filterIPv4Networks(networks []string) []string {
 	var out []string
 	for _, n := range networks {
@@ -245,8 +477,8 @@ func filterIPv4Networks(networks []string) []string {
 }
 
 // DNSRedirectRule is the nat PREROUTING rule that steers port-53 traffic from
-// iface to the local forwarder. Shared by setup, teardown and the healthcheck
-// so all three agree on the exact rule signature.
+// iface to the local forwarder. Shared by reconcile, teardown and the
+// healthcheck so all three agree on the exact rule signature.
 func DNSRedirectRule(iface, proto string) []string {
 	return []string{"PREROUTING", "-i", iface, "-p", proto, "--dport", "53", "-j", "REDIRECT", "--to-ports", "53"}
 }

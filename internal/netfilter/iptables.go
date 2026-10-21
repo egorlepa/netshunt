@@ -130,3 +130,17 @@ func (ipt *IPTables) ListRules(ctx context.Context, table, chain string) ([][]st
 	}
 	return rules, nil
 }
+
+// Save returns the raw `iptables -S <chain>` output of a chain. An error
+// usually means the chain does not exist.
+func (ipt *IPTables) Save(ctx context.Context, table, chain string) (string, error) {
+	cmd, args := ipt.iptables("-t", table, "-S", chain)
+	return platform.OrDefault(ipt.Runner).Run(ctx, cmd, args...)
+}
+
+// Exec runs one iptables command in table (with -w) without any existence
+// check, e.g. Exec(ctx, "nat", "-I", "NSHUNT", "2", "-d", ...).
+func (ipt *IPTables) Exec(ctx context.Context, table string, args ...string) error {
+	cmd, full := ipt.iptables(append([]string{"-t", table}, args...)...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, full...)
+}

@@ -78,7 +78,6 @@ func (f *fakeIPSet) list() []string {
 type fakeMode struct {
 	mu         sync.Mutex
 	reconciles int
-	setups     int
 	teardowns  int
 }
 
@@ -87,12 +86,6 @@ func (m *fakeMode) Reconcile(context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reconciles++
-	return nil
-}
-func (m *fakeMode) SetupRules(context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.setups++
 	return nil
 }
 func (m *fakeMode) TeardownRules(context.Context) error {
@@ -409,4 +402,29 @@ func TestMutationCancelledMidSeedConverges(t *testing.T) {
 	// brings the cached domain in.
 	h.mutate()
 	h.want("198.51.100.1")
+}
+
+func TestRoutingReconcileOnlyOnFullReconcile(t *testing.T) {
+	h := newHarness(t)
+	h.create("a", true, "example.net")
+	for i := 0; i < 3; i++ {
+		h.mutate()
+	}
+	if h.mode.reconciles != 0 || h.mode.teardowns != 0 {
+		t.Fatalf("mutation touched routing: reconciles=%d teardowns=%d", h.mode.reconciles, h.mode.teardowns)
+	}
+	// Every full reconcile converges the rules, also with an unchanged
+	// config, and never tears them down.
+	for i := 1; i <= 3; i++ {
+		h.reconcile()
+		if h.mode.reconciles != i {
+			t.Fatalf("after %d reconciles Mode.Reconcile ran %d times", i, h.mode.reconciles)
+		}
+	}
+	if err := h.r.SwitchProxy(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if h.mode.reconciles != 4 || h.mode.teardowns != 0 {
+		t.Fatalf("SwitchProxy: reconciles=%d teardowns=%d", h.mode.reconciles, h.mode.teardowns)
+	}
 }

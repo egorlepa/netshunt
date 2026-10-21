@@ -12,10 +12,13 @@ type Mode interface {
 	// Name returns the mode identifier.
 	Name() string
 
-	// SetupRules creates iptables/ip rules necessary for traffic redirection.
-	SetupRules(ctx context.Context) error
+	// Reconcile converges the iptables/ip rules to the current config
+	// without tearing anything down first: missing rules are added, stale
+	// ones of ours removed, foreign rules never touched. When nothing
+	// differs it runs read-only commands only.
+	Reconcile(ctx context.Context) error
 
-	// TeardownRules removes all iptables/ip rules created by SetupRules.
+	// TeardownRules removes every rule Reconcile manages (uninstall).
 	TeardownRules(ctx context.Context) error
 
 	// IsActive returns true if the proxy appears to be available.

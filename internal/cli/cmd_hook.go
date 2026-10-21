@@ -31,8 +31,15 @@ func newHookCmd() *cobra.Command {
 	return cmd
 }
 
+// hookLogger logs to stderr at warn level; NETSHUNT_HOOK_LOG=info (or
+// debug) lowers it, e.g. to see the rule changes a hook makes when run by
+// hand.
 func hookLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	level := slog.LevelWarn
+	if v := os.Getenv("NETSHUNT_HOOK_LOG"); v != "" {
+		_ = level.UnmarshalText([]byte(v))
+	}
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
 // hook fs start — create ipset table on filesystem mount.
@@ -62,13 +69,19 @@ func newHookNetfilterCmd() *cobra.Command {
 		Short: "Netfilter event",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// NDM rebuilt one of its tables. netshunt only manages IPv4
+			// nat/mangle rules; Reconcile reads both and fixes what is
+			// missing, and only reads when nothing is.
+			if args[0] != "iptables" {
+				return nil
+			}
 			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
 			logger := hookLogger()
 			mode := routing.New(config.NewLive(cfg), logger)
-			return mode.SetupRules(cmd.Context())
+			return mode.Reconcile(cmd.Context())
 		},
 	}
 }
@@ -111,7 +124,7 @@ func newHookIfstateCmd() *cobra.Command {
 
 			if connected == "yes" && link == "up" {
 				logger.Info("interface up, setting up rules", "system-name", name)
-				return mode.SetupRules(cmd.Context())
+				return mode.Reconcile(cmd.Context())
 			}
 
 			if link == "down" {

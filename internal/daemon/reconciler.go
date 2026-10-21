@@ -26,8 +26,8 @@ import (
 //
 // Full reconcile: reload matcher, re-seed every matched cached domain, sync
 // static entries, then a repair pass diffs the kernel ipset against the
-// tracker (one `ipset list`), rebuild iptables. The cold first run flushes
-// the ipset instead of repairing it.
+// tracker (one `ipset list`), converge iptables (Mode.Reconcile). The cold
+// first run flushes the ipset instead of repairing it.
 //
 // Mutation reconcile: update matcher, sweep every tracked domain the new
 // rules no longer match, seed newly matched cached domains, sync static
@@ -68,7 +68,7 @@ func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forward
 }
 
 // Reconcile reapplies the full state: matcher, full re-seed, static entries,
-// ipset repair pass, iptables rebuild, blocklist. The kernel ipset is flushed
+// ipset repair pass, iptables convergence, blocklist. The kernel ipset is flushed
 // only on the very first call (cold start) to clear stale entries from a
 // previous daemon process; subsequent reconciles preserve the in-memory
 // tracker and instead diff the kernel ipset against it (Tracker.Repair).
@@ -109,9 +109,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 	}
 
-	_ = r.Mode.TeardownRules(ctx)
-	if err := r.Mode.SetupRules(ctx); err != nil {
-		return fmt.Errorf("setup rules: %w", err)
+	// Always converge iptables, also with an unchanged config: this is the
+	// repair for rules NDM may have flushed. Nothing is torn down first, so
+	// there is no window without redirect or DNS interception, and with
+	// nothing to fix it only reads.
+	if err := r.Mode.Reconcile(ctx); err != nil {
+		return fmt.Errorf("reconcile rules: %w", err)
 	}
 
 	r.applyBlocklistLocked()
@@ -120,17 +123,15 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// SwitchProxy rebuilds only the iptables rules so they target
-// cfg.Routing.ActivePort(). Skips ipset flush and matcher updates so DNS-resolved
-// IPs stay in the set - otherwise a brief window after the switch would leak
-// traffic directly (real IP) until the next DNS query repopulates the ipset.
+// SwitchProxy converges only the iptables rules so they target
+// cfg.Routing.ActivePort(): the redirect rules are replaced in place, the
+// ipset and matcher are left alone.
 func (r *Reconciler) SwitchProxy(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	_ = r.Mode.TeardownRules(ctx)
-	if err := r.Mode.SetupRules(ctx); err != nil {
-		return fmt.Errorf("setup rules: %w", err)
+	if err := r.Mode.Reconcile(ctx); err != nil {
+		return fmt.Errorf("reconcile rules: %w", err)
 	}
 	return nil
 }
