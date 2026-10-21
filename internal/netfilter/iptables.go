@@ -10,7 +10,10 @@ import (
 
 // IPTables manages iptables rules for traffic redirection.
 // All commands use -w to wait for the xtables lock.
-type IPTables struct{}
+type IPTables struct {
+	// Runner executes iptables; nil means platform.DefaultRunner.
+	Runner platform.Runner
+}
 
 // NewIPTables creates an IPTables manager.
 func NewIPTables() *IPTables {
@@ -24,7 +27,7 @@ func (ipt *IPTables) iptables(args ...string) (string, []string) {
 // ChainExists checks if a chain exists in the given table.
 func (ipt *IPTables) ChainExists(ctx context.Context, table, chain string) (bool, error) {
 	cmd, args := ipt.iptables("-t", table, "-L", chain, "-n")
-	err := platform.RunSilent(ctx, cmd, args...)
+	err := platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 	return err == nil, nil
 }
 
@@ -35,7 +38,7 @@ func (ipt *IPTables) CreateChain(ctx context.Context, table, chain string) error
 		return nil
 	}
 	cmd, args := ipt.iptables("-t", table, "-N", chain)
-	return platform.RunSilent(ctx, cmd, args...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 }
 
 // DeleteChain flushes and removes a chain from the given table.
@@ -45,15 +48,15 @@ func (ipt *IPTables) DeleteChain(ctx context.Context, table, chain string) error
 		return nil
 	}
 	cmd, args := ipt.iptables("-t", table, "-F", chain)
-	_ = platform.RunSilent(ctx, cmd, args...)
+	_ = platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 	cmd, args = ipt.iptables("-t", table, "-X", chain)
-	return platform.RunSilent(ctx, cmd, args...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 }
 
 // RuleExists checks if a specific rule exists.
 func (ipt *IPTables) RuleExists(ctx context.Context, table string, ruleSpec ...string) bool {
 	cmd, args := ipt.iptables(append([]string{"-t", table, "-C"}, ruleSpec...)...)
-	return platform.RunSilent(ctx, cmd, args...) == nil
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...) == nil
 }
 
 // AppendRule adds a rule if it doesn't already exist.
@@ -62,7 +65,7 @@ func (ipt *IPTables) AppendRule(ctx context.Context, table string, ruleSpec ...s
 		return nil
 	}
 	cmd, args := ipt.iptables(append([]string{"-t", table, "-A"}, ruleSpec...)...)
-	return platform.RunSilent(ctx, cmd, args...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 }
 
 // InsertRule inserts a rule at position 1 if it doesn't already exist.
@@ -71,7 +74,7 @@ func (ipt *IPTables) InsertRule(ctx context.Context, table string, ruleSpec ...s
 		return nil
 	}
 	cmd, args := ipt.iptables(append([]string{"-t", table, "-I"}, ruleSpec...)...)
-	return platform.RunSilent(ctx, cmd, args...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 }
 
 // DeleteRule removes a rule if it exists.
@@ -80,13 +83,13 @@ func (ipt *IPTables) DeleteRule(ctx context.Context, table string, ruleSpec ...s
 		return nil
 	}
 	cmd, args := ipt.iptables(append([]string{"-t", table, "-D"}, ruleSpec...)...)
-	return platform.RunSilent(ctx, cmd, args...)
+	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...)
 }
 
 // RemoveJumpRules removes all jump rules to the given chain from a parent chain.
 func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, targetChain string) error {
 	cmd, args := ipt.iptables("-t", table, "-L", parentChain, "--line-numbers", "-n")
-	out, err := platform.Run(ctx, cmd, args...)
+	out, err := platform.OrDefault(ipt.Runner).Run(ctx, cmd, args...)
 	if err != nil {
 		return nil // Parent chain doesn't exist, nothing to do.
 	}
@@ -102,7 +105,7 @@ func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, ta
 
 	for _, num := range lineNums {
 		cmd, args := ipt.iptables("-t", table, "-D", parentChain, num)
-		if err := platform.RunSilent(ctx, cmd, args...); err != nil {
+		if err := platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, args...); err != nil {
 			return fmt.Errorf("delete rule %s from %s: %w", num, parentChain, err)
 		}
 	}
@@ -113,7 +116,7 @@ func (ipt *IPTables) RemoveJumpRules(ctx context.Context, table, parentChain, ta
 // without the leading "-A <chain>", so each one can be passed to DeleteRule.
 func (ipt *IPTables) ListRules(ctx context.Context, table, chain string) ([][]string, error) {
 	cmd, args := ipt.iptables("-t", table, "-S", chain)
-	out, err := platform.Run(ctx, cmd, args...)
+	out, err := platform.OrDefault(ipt.Runner).Run(ctx, cmd, args...)
 	if err != nil {
 		return nil, err
 	}
