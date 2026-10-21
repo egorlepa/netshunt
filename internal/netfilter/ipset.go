@@ -20,13 +20,19 @@ func NewIPSet(name string) *IPSet {
 	return &IPSet{Name: name}
 }
 
-// EnsureTable creates the ipset table if it doesn't exist.
+// MaxElem is the capacity a new set is created with. The kernel default
+// (65536) is within reach of a geosite-heavy setup; an existing set keeps
+// its size until it is recreated or swapped.
+const MaxElem = "262144"
+
+// EnsureTable creates the ipset table if it doesn't exist. The existence
+// check lists only the header (-t), not the members.
 func (s *IPSet) EnsureTable(ctx context.Context) error {
-	_, err := platform.OrDefault(s.Runner).Run(ctx, "ipset", "list", s.Name)
+	_, err := platform.OrDefault(s.Runner).Run(ctx, "ipset", "list", "-t", s.Name)
 	if err == nil {
 		return nil // already exists
 	}
-	return platform.OrDefault(s.Runner).RunSilent(ctx, "ipset", "create", s.Name, "hash:net")
+	return platform.OrDefault(s.Runner).RunSilent(ctx, "ipset", "create", s.Name, "hash:net", "maxelem", MaxElem)
 }
 
 // Flush removes all entries from the table.

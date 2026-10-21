@@ -340,6 +340,8 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 	t.mu.Unlock()
 
 	missing, unknown := diffMembers(known, kernel)
+	t.logger.Info("ipset members", "kernel", len(kernel), "tracked", len(known),
+		"missing", len(missing), "unknown", len(unknown))
 
 	var failed []string
 	for _, m := range missing {
