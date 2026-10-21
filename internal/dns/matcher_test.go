@@ -181,3 +181,16 @@ func TestMatcherSnapshot(t *testing.T) {
 		t.Error("matcher did not take the new rules")
 	}
 }
+
+func TestMatcherNormalisesRuleValues(t *testing.T) {
+	m := NewMatcher()
+	m.Update([]shunt.Entry{{Value: "Example.COM"}, {Value: "full:WWW.Other.ORG"}, {Value: "https://Foo.NET/path"}, {Value: "keyword:Tube"}})
+	for _, d := range []string{"www.example.com", "example.com", "www.other.org", "a.foo.net", "youtube.com"} {
+		if !m.Match(d) {
+			t.Errorf("Match(%q) = false", d)
+		}
+	}
+	if m.Match("other.org") {
+		t.Error("full: rule matched the parent domain")
+	}
+}

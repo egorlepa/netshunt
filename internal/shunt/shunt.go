@@ -109,6 +109,12 @@ func (s *Shunt) RemoveEntry(value string) bool {
 	return false
 }
 
+// NormalizeEntry returns the canonical stored form of an entry value: prefix
+// kept, suffix/full domains lowercased with URL scheme, path and port
+// stripped, IPs and CIDRs untouched (CIDR lowercased), keyword and regexp
+// values trimmed.
+func NormalizeEntry(s string) string { return normalizeEntry(s) }
+
 func normalizeEntry(s string) string {
 	s = strings.TrimSpace(s)
 

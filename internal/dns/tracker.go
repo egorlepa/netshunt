@@ -43,8 +43,16 @@ type Tracker struct {
 	forward  map[string][]string // domain -> IPs (typically 1-4)
 	reverse  map[string][]string // IP -> domains (typically 1-2)
 	static   map[string]struct{} // static IP/CIDR members, canonical form
-	ipset    IPSetOps
-	logger   *slog.Logger
+	// orphans are members the maps no longer reference whose `ipset del`
+	// failed (e.g. a cancelled context). They are still in the kernel, so
+	// RetryOrphans deletes them on the next mutation; Repair and Flush
+	// clear them.
+	orphans map[string]struct{}
+	ipset   IPSetOps
+	logger  *slog.Logger
+
+	// Runner executes conntrack; nil means platform.DefaultRunner.
+	Runner platform.Runner
 
 	// flushConntrack drops conntrack entries for a member (IP or CIDR).
 	// Replaceable in tests.
@@ -57,6 +65,7 @@ func NewTracker(ipset IPSetOps, logger *slog.Logger) *Tracker {
 		forward: make(map[string][]string),
 		reverse: make(map[string][]string),
 		static:  make(map[string]struct{}),
+		orphans: make(map[string]struct{}),
 		ipset:   ipset,
 		logger:  logger,
 	}
@@ -118,6 +127,7 @@ func (t *Tracker) Track(ctx context.Context, domain, ip string) {
 	}
 	t.mu.Lock()
 	t.linkLocked(domain, ip)
+	delete(t.orphans, ip)
 	t.mu.Unlock()
 	t.kernelMu.Unlock()
 
@@ -157,14 +167,80 @@ func (t *Tracker) RemoveDomain(ctx context.Context, domain string) {
 }
 
 // delMembersLocked execs ipset del for each member. A failed del leaves an
-// unexplained member in the kernel; the full-reconcile repair pass removes it.
+// unexplained member in the kernel: it is recorded as an orphan so the next
+// RetryOrphans (every mutation) or Repair (full reconcile) removes it.
 // Caller holds kernelMu.
 func (t *Tracker) delMembersLocked(ctx context.Context, members []string) {
 	for _, m := range members {
 		if err := t.ipset.Del(ctx, m); err != nil {
 			t.logger.Warn("tracker: ipset del failed", "member", m, "error", err)
+			t.mu.Lock()
+			if !t.presentLocked(m) {
+				t.orphans[m] = struct{}{}
+			}
+			t.mu.Unlock()
 		}
 	}
+}
+
+// RetryOrphans deletes members whose earlier `ipset del` failed and that
+// nothing has referenced since. Cheap when there are none (no exec).
+func (t *Tracker) RetryOrphans(ctx context.Context) {
+	t.kernelMu.Lock()
+	t.mu.Lock()
+	var todo []string
+	for m := range t.orphans {
+		if t.presentLocked(m) {
+			delete(t.orphans, m)
+			continue
+		}
+		todo = append(todo, m)
+	}
+	t.mu.Unlock()
+	slices.Sort(todo)
+	var done []string
+	for _, m := range todo {
+		if err := t.ipset.Del(ctx, m); err != nil {
+			t.logger.Warn("tracker: orphan ipset del failed", "member", m, "error", err)
+			continue
+		}
+		done = append(done, m)
+	}
+	t.mu.Lock()
+	for _, m := range done {
+		delete(t.orphans, m)
+	}
+	t.mu.Unlock()
+	t.kernelMu.Unlock()
+	for _, m := range done {
+		t.flushConntrack(ctx, m)
+	}
+}
+
+// Domains returns a snapshot of every tracked domain (the lowercase DNS
+// query names), in unspecified order.
+func (t *Tracker) Domains() []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	out := make([]string, 0, len(t.forward))
+	for d := range t.forward {
+		out = append(out, d)
+	}
+	return out
+}
+
+// Members returns the number of members the tracker believes the kernel
+// ipset holds (domain-referenced IPs plus static entries).
+func (t *Tracker) Members() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	n := len(t.reverse)
+	for m := range t.static {
+		if len(t.reverse[m]) == 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // SetStatic replaces the set of static IP/CIDR entries (IPv4 only, from
@@ -221,6 +297,7 @@ func (t *Tracker) SetStatic(ctx context.Context, values []string) {
 	t.mu.Lock()
 	for _, m := range added {
 		t.static[m] = struct{}{}
+		delete(t.orphans, m)
 	}
 	t.mu.Unlock()
 	t.delMembersLocked(ctx, toRemove)
@@ -249,7 +326,7 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 		return 0, 0, err
 	}
 
-	t.mu.RLock()
+	t.mu.Lock()
 	known := make(map[string]struct{}, len(t.reverse)+len(t.static))
 	for ip := range t.reverse {
 		known[ip] = struct{}{}
@@ -257,7 +334,10 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 	for m := range t.static {
 		known[m] = struct{}{}
 	}
-	t.mu.RUnlock()
+	// Orphans are in the kernel but not known: diffMembers reports them as
+	// unknown and they are deleted below.
+	t.orphans = make(map[string]struct{})
+	t.mu.Unlock()
 
 	missing, unknown := diffMembers(known, kernel)
 
@@ -376,7 +456,7 @@ func (t *Tracker) runConntrackFlush(ctx context.Context, member string) {
 		mask := net.IP(net.CIDRMask(p.Bits(), 32)).String()
 		args = []string{"-D", "--orig-dst", p.Masked().Addr().String(), "--mask-dst", mask}
 	}
-	if err := platform.RunSilent(ctx, "conntrack", args...); err != nil {
+	if err := platform.OrDefault(t.Runner).RunSilent(ctx, "conntrack", args...); err != nil {
 		t.logger.Debug("conntrack flush returned non-zero (likely no matches)", "member", member, "error", err)
 	}
 }
@@ -390,6 +470,7 @@ func (t *Tracker) Flush(ctx context.Context) error {
 	t.forward = make(map[string][]string)
 	t.reverse = make(map[string][]string)
 	t.static = make(map[string]struct{})
+	t.orphans = make(map[string]struct{})
 	t.mu.Unlock()
 
 	if err := t.ipset.Flush(ctx); err != nil {

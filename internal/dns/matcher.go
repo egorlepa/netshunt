@@ -36,7 +36,22 @@ func NewMatcher() *Matcher {
 // Match reports whether domain matches any loaded rule.
 // The domain should be in lowercase without a trailing dot.
 func (m *Matcher) Match(domain string) bool {
+	return m.rules.Load().match(domain)
+}
+
+// matchRules is Match that also returns the rules it used, so a caller can
+// tell afterwards whether an Update happened in between.
+func (m *Matcher) matchRules(domain string) (bool, *matcherRules) {
 	r := m.rules.Load()
+	return r.match(domain), r
+}
+
+// changedSince reports whether the rules were replaced after r was loaded.
+func (m *Matcher) changedSince(r *matcherRules) bool {
+	return m.rules.Load() != r
+}
+
+func (r *matcherRules) match(domain string) bool {
 
 	// Exact match.
 	if _, ok := r.exact[domain]; ok {
@@ -91,6 +106,10 @@ func (m *Matcher) Update(entries []shunt.Entry) {
 	}
 
 	for _, e := range entries {
+		// Normalised like the store does on add, so a value hand-typed in
+		// YAML with upper case or a URL still keys on the lowercase query
+		// name the forwarder and tracker use.
+		e = shunt.Entry{Value: shunt.NormalizeEntry(e.Value)}
 		switch e.Type() {
 		case shunt.EntryDomainSuffix:
 			r.suffixes[strings.ToLower(e.DomainValue())] = struct{}{}

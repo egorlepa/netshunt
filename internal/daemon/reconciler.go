@@ -29,8 +29,9 @@ import (
 // tracker (one `ipset list`), rebuild iptables. The cold first run flushes
 // the ipset instead of repairing it.
 //
-// Mutation reconcile: update matcher (diff removed domains via tracker), seed
-// newly matched cached domains, sync static entries.
+// Mutation reconcile: update matcher, sweep every tracked domain the new
+// rules no longer match, seed newly matched cached domains, sync static
+// entries.
 type Reconciler struct {
 	mu        sync.Mutex
 	Config    *config.Live
@@ -41,9 +42,10 @@ type Reconciler struct {
 	Blocklist *blocklist.Store
 	Logger    *slog.Logger
 
-	// lastDomains tracks domain entries from the previous mutation reconcile
-	// so we can detect removals.
-	lastDomains map[string]struct{}
+	// seedAll forces the next mutation to seed every matched cached domain:
+	// set when a mutation stopped before its seeding finished, because the
+	// next one would otherwise consider those domains already matched.
+	seedAll bool
 
 	// bootstrapped flips to true after the first Reconcile. The first run
 	// flushes the kernel ipset to clear any stale entries left by a previous
@@ -55,14 +57,13 @@ type Reconciler struct {
 // NewReconciler creates a Reconciler from the given configuration.
 func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
-		Config:      cfg,
-		Shunts:      shunts,
-		IPSet:       netfilter.NewIPSet(cfg.Load().IPSet.TableName),
-		Forwarder:   forwarder,
-		Mode:        routing.New(cfg, logger),
-		Blocklist:   blocklistStore,
-		Logger:      logger,
-		lastDomains: make(map[string]struct{}),
+		Config:    cfg,
+		Shunts:    shunts,
+		IPSet:     netfilter.NewIPSet(cfg.Load().IPSet.TableName),
+		Forwarder: forwarder,
+		Mode:      routing.New(cfg, logger),
+		Blocklist: blocklistStore,
+		Logger:    logger,
 	}
 }
 
@@ -197,43 +198,63 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 // applyMutationLocked is the body of ApplyMutation, callable from Reconcile
 // which already holds r.mu and has ensured the ipset table. fullSeed re-seeds
 // every cached domain the rules match, not only the newly matched ones.
-func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) error {
+//
+// The tracker is keyed by DNS query name (www.example.net), not by rule
+// (example.net), so removals are found by running every tracked domain
+// through the new matcher: a suffix, keyword or regexp rule, a disabled or
+// deleted shunt and a geosite update that drops domains all release exactly
+// the IPs no remaining rule explains.
+func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (err error) {
 	entries, err := r.Shunts.EnabledEntries()
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
 	}
 
-	// Diff and remove stale domains from tracker.
-	newDomains := domainSet(entries)
-	removed := make(map[string]struct{})
-	for domain := range r.lastDomains {
-		if _, ok := newDomains[domain]; !ok {
-			r.Forwarder.TrackerRef().RemoveDomain(ctx, domain)
-			removed[domain] = struct{}{}
-		}
-	}
+	tracker := r.Forwarder.TrackerRef()
+	// Members whose del failed on an earlier run (cancelled context) are
+	// still in the kernel; drop them first.
+	tracker.RetryOrphans(ctx)
 
-	// Update matcher and snapshot.
+	fullSeed = fullSeed || r.seedAll
+	r.seedAll = true
+	defer func() {
+		if err == nil {
+			r.seedAll = false
+		}
+	}()
+
+	// (a) previous rules, (b) new rules first, so a DNS answer that arrives
+	// during the sweep is already judged by them.
 	prev := r.Forwarder.Matcher().Snapshot()
 	r.Forwarder.UpdateMatcher(entries)
-	r.lastDomains = newDomains
+	matcher := r.Forwarder.Matcher()
 
-	// Seed from the resolve cache: for every domain the forwarder has recently
-	// resolved that matches a newly-added shunt rule, push its IPs into the
-	// tracker. Track() handles ipset.Add + first-seen conntrack flush, so the
-	// client's next request hits a live REDIRECT even if its browser/OS DNS
-	// cache is still warm with the pre-shunt IP.
+	// (c) Sweep: a tracked domain the new rules do not match loses its IPs.
+	// A domain another rule still matches is simply not swept.
+	swept := 0
+	for _, domain := range tracker.Domains() {
+		if matcher.Match(domain) {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("sweep: %w", err)
+		}
+		tracker.RemoveDomain(ctx, domain)
+		swept++
+	}
+
+	// (d) Seed from the resolve cache: for every domain the forwarder has
+	// recently resolved that a newly added rule matches, push its IPs into
+	// the tracker. Track() handles ipset.Add + first-seen conntrack flush, so
+	// the client's next request hits a live REDIRECT even if its browser/OS
+	// DNS cache is still warm with the pre-shunt IP.
 	//
 	// On a shunt mutation, domains the previous rules already matched were
 	// tracked at query time, so only the difference is seeded: Track() execs
 	// ipset per IP, and re-seeding the whole cache took about a minute on the
-	// router. A removed domain that another rule still matches lost its IPs in
-	// RemoveDomain above and is seeded back. A full Reconcile (startup, WAN
-	// hook, settings) still re-seeds everything as a repair pass. The pairs
-	// are collected first and tracked outside Range, which holds the cache
-	// lock that every DNS response needs.
-	matcher := r.Forwarder.Matcher()
-	tracker := r.Forwarder.TrackerRef()
+	// router. A full Reconcile (startup, WAN hook, settings) still re-seeds
+	// everything as a repair pass. The pairs are collected first and tracked
+	// outside Range, which holds the cache lock that every DNS response needs.
 	type seed struct {
 		domain string
 		ips    []string
@@ -243,22 +264,31 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) err
 		if !matcher.Match(domain) {
 			return true
 		}
-		_, wasRemoved := removed[domain]
-		if fullSeed || wasRemoved || !prev.Match(domain) {
+		if fullSeed || !prev.Match(domain) {
 			seeds = append(seeds, seed{domain, slices.Clone(ips)})
 		}
 		return true
 	})
 	for _, s := range seeds {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
 		for _, ip := range s.ips {
 			tracker.Track(ctx, s.domain, ip)
 		}
 	}
 
-	// Static IP/CIDR entries share the tracker's reference count with
+	// (e) Static IP/CIDR entries share the tracker's reference count with
 	// DNS-tracked IPs: SetStatic adds/removes only what changes kernel
 	// membership and flushes conntrack for exactly those members.
 	tracker.SetStatic(ctx, r.staticEntries(entries))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if swept > 0 || len(seeds) > 0 {
+		r.Logger.Debug("mutation applied", "swept_domains", swept, "seeded_domains", len(seeds))
+	}
 	return nil
 }
 
@@ -289,14 +319,4 @@ func isIPv6Entry(entry string) bool {
 		return ip.To4() == nil
 	}
 	return false
-}
-
-func domainSet(entries []shunt.Entry) map[string]struct{} {
-	set := make(map[string]struct{})
-	for _, e := range entries {
-		if e.IsDomain() {
-			set[e.DomainValue()] = struct{}{}
-		}
-	}
-	return set
 }

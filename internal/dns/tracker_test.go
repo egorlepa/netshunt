@@ -17,6 +17,8 @@ type fakeIPSet struct {
 	members map[string]struct{}
 	calls   []string // "add 1.2.3.4", "del ...", "flush", "list"
 	failAdd map[string]bool
+	// failDelOnCancel makes Del fail when its context is done.
+	failDelOnCancel bool
 }
 
 func newFakeIPSet() *fakeIPSet {
@@ -34,10 +36,13 @@ func (f *fakeIPSet) Add(_ context.Context, e string) error {
 	return nil
 }
 
-func (f *fakeIPSet) Del(_ context.Context, e string) error {
+func (f *fakeIPSet) Del(ctx context.Context, e string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "del "+e)
+	if f.failDelOnCancel && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	delete(f.members, e)
 	return nil
 }
@@ -445,5 +450,63 @@ func TestTrackerFlush(t *testing.T) {
 	tr.SetStatic(ctx, []string{"3.3.3.3"})
 	if !fs.has("3.3.3.3") {
 		t.Error("static entry not re-added after flush")
+	}
+}
+
+func TestTrackerDomainsSnapshot(t *testing.T) {
+	tr, _, _ := newTestTracker()
+	ctx := context.Background()
+	tr.Track(ctx, "www.example.net", "198.51.100.1")
+	tr.Track(ctx, "api.example.net", "198.51.100.1")
+	got := tr.Domains()
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"api.example.net", "www.example.net"}) {
+		t.Fatalf("Domains() = %v", got)
+	}
+	if n := tr.Members(); n != 1 {
+		t.Fatalf("Members() = %d, want 1", n)
+	}
+}
+
+func TestTrackerFailedDelBecomesOrphanAndIsRetried(t *testing.T) {
+	tr, fs, ct := newTestTracker()
+	ctx := context.Background()
+	tr.Track(ctx, "www.example.net", "198.51.100.1")
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	fs.failDelOnCancel = true
+	tr.RemoveDomain(cctx, "www.example.net")
+	if !fs.has("198.51.100.1") {
+		t.Fatal("del with cancelled ctx should have failed in the fake")
+	}
+
+	tr.RetryOrphans(ctx)
+	if fs.has("198.51.100.1") {
+		t.Fatal("orphan not deleted by RetryOrphans")
+	}
+	if ct.count("198.51.100.1") < 2 {
+		t.Fatal("orphan delete should flush conntrack")
+	}
+	before := fs.count("del 198.51.100.1")
+	tr.RetryOrphans(ctx)
+	if fs.count("del 198.51.100.1") != before {
+		t.Fatal("RetryOrphans with no orphans must not exec")
+	}
+}
+
+func TestTrackerOrphanReTrackedIsNotDeleted(t *testing.T) {
+	tr, fs, _ := newTestTracker()
+	ctx := context.Background()
+	tr.Track(ctx, "a.example", "198.51.100.1")
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	fs.failDelOnCancel = true
+	tr.RemoveDomain(cctx, "a.example")
+
+	tr.Track(ctx, "b.example", "198.51.100.1")
+	tr.RetryOrphans(ctx)
+	if !fs.has("198.51.100.1") {
+		t.Fatal("member tracked again must stay")
 	}
 }

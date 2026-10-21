@@ -454,14 +454,26 @@ func (f *Forwarder) cacheResolved(domain string, resp *dns.Msg) {
 
 // trackMatched adds the A records of a shunt-matched domain to the ipset
 // (through the tracker) before the client sees the answer.
+//
+// The match is re-checked when the rules changed while the IPs were being
+// tracked: a mutation that removed the rule may have swept the tracker
+// before Track ran, and the IPs would otherwise stay in the ipset with no
+// rule explaining them.
 func (f *Forwarder) trackMatched(ctx context.Context, domain string, resp *dns.Msg) {
-	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 || !f.matcher.Match(domain) {
+	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
+		return
+	}
+	matched, rules := f.matcher.matchRules(domain)
+	if !matched {
 		return
 	}
 	for _, rr := range resp.Answer {
 		if a, ok := rr.(*dns.A); ok {
 			f.tracker.Track(ctx, domain, a.Addr.String())
 		}
+	}
+	if f.matcher.changedSince(rules) && !f.matcher.Match(domain) {
+		f.tracker.RemoveDomain(ctx, domain)
 	}
 }
 
