@@ -5,12 +5,16 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/netip"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+
+	mdns "codeberg.org/miekg/dns"
+	"codeberg.org/miekg/dns/rdata"
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
@@ -446,4 +450,94 @@ func TestInvalidEntryWarnedOnceWithShuntName(t *testing.T) {
 	}
 	h.resolve("www.ok.example", "198.51.100.1")
 	h.want("198.51.100.1")
+}
+
+// resolveChain feeds the forwarder an upstream answer for qname that CNAMEs
+// through chain to the A records ips, as handleQuery does after an upstream
+// round trip.
+func (h *harness) resolveChain(qname string, chain []string, ips ...string) {
+	m := &mdns.Msg{MsgHeader: mdns.MsgHeader{Response: true, Rcode: mdns.RcodeSuccess}}
+	owner := qname + "."
+	for _, c := range chain {
+		m.Answer = append(m.Answer, &mdns.CNAME{
+			Hdr:   mdns.Header{Name: owner, TTL: 300, Class: mdns.ClassINET},
+			CNAME: rdata.CNAME{Target: c + "."},
+		})
+		owner = c + "."
+	}
+	for _, ip := range ips {
+		m.Answer = append(m.Answer, &mdns.A{
+			Hdr: mdns.Header{Name: owner, TTL: 300, Class: mdns.ClassINET},
+			A:   rdata.A{Addr: netip.MustParseAddr(ip)},
+		})
+	}
+	h.fwd.RecordAnswer(context.Background(), qname, m)
+}
+
+func TestMutationCNAMETargetRuleSeedsAndSweeps(t *testing.T) {
+	h := newHarness(t)
+	h.create("a", true)
+	h.mutate()
+	h.resolveChain("www.shop.com", []string{"shop.cdn.cloudfront.net"}, "13.32.10.5", "13.32.10.6")
+	h.resolve("other.org", "198.51.100.9")
+	h.want()
+
+	// A rule on the CNAME target seeds from the cache without a new query.
+	h.do(h.store.AddEntry("a", "cloudfront.net"))
+	h.mutate()
+	h.want("13.32.10.5", "13.32.10.6")
+	if got := h.fwd.TrackerRef().Domains(); !slices.Equal(got, []string{"shop.cdn.cloudfront.net"}) {
+		t.Fatalf("tracker keys = %v, want the target name", got)
+	}
+
+	// An unrelated mutation does not sweep it: the key still matches.
+	h.do(h.store.AddEntry("a", "unrelated.net"))
+	h.mutate()
+	h.want("13.32.10.5", "13.32.10.6")
+
+	// The next answer through the forwarder keeps it under the target name.
+	h.resolveChain("www.shop.com", []string{"shop.cdn.cloudfront.net"}, "13.32.10.5", "13.32.10.6")
+	if got := h.fwd.TrackerRef().Domains(); !slices.Equal(got, []string{"shop.cdn.cloudfront.net"}) {
+		t.Fatalf("tracker keys after a live answer = %v", got)
+	}
+
+	// Removing the rule sweeps them.
+	h.do(h.store.RemoveEntry("a", "cloudfront.net"))
+	h.mutate()
+	h.want()
+
+	// Re-adding the rule seeds again; a full reconcile keeps it.
+	h.do(h.store.AddEntry("a", "cloudfront.net"))
+	h.mutate()
+	h.reconcile()
+	h.want("13.32.10.5", "13.32.10.6")
+	h.do(h.store.Delete("a"))
+	h.mutate()
+	h.want()
+}
+
+func TestMutationCNAMEQnameRuleEndToEnd(t *testing.T) {
+	h := newHarness(t)
+	h.create("a", true, "shop.com")
+	h.mutate()
+	h.resolveChain("www.shop.com", []string{"shop.cdn.cloudfront.net"}, "13.32.10.5")
+	h.want("13.32.10.5")
+	if got := h.fwd.TrackerRef().Domains(); !slices.Equal(got, []string{"www.shop.com"}) {
+		t.Fatalf("tracker keys = %v, want the query name", got)
+	}
+
+	// A second rule on the target seeds the cached target name as well, so
+	// dropping the qname rule sweeps the qname key but keeps the IP.
+	h.do(h.store.AddEntry("a", "cloudfront.net"))
+	h.mutate()
+	h.do(h.store.RemoveEntry("a", "shop.com"))
+	h.mutate()
+	h.want("13.32.10.5")
+	if got := h.fwd.TrackerRef().Domains(); !slices.Equal(got, []string{"shop.cdn.cloudfront.net"}) {
+		t.Fatalf("tracker keys = %v, want the target name", got)
+	}
+
+	h.do(h.store.RemoveEntry("a", "cloudfront.net"))
+	h.mutate()
+	h.want()
 }

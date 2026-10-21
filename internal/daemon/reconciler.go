@@ -208,8 +208,9 @@ func (r *Reconciler) ApplyMutation(ctx context.Context) error {
 // which already holds r.mu and has ensured the ipset table. fullSeed re-seeds
 // every cached domain the rules match, not only the newly matched ones.
 //
-// The tracker is keyed by DNS query name (www.example.net), not by rule
-// (example.net), so removals are found by running every tracked domain
+// The tracker is keyed by the DNS name a rule matched (the query name
+// www.example.net, or the name of its CNAME chain that matched), not by
+// rule (example.net), so removals are found by running every tracked domain
 // through the new matcher: a suffix, keyword or regexp rule, a disabled or
 // deleted shunt and a geosite update that drops domains all release exactly
 // the IPs no remaining rule explains.

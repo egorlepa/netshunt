@@ -39,11 +39,17 @@ func (m *Matcher) Match(domain string) bool {
 	return m.rules.Load().match(domain)
 }
 
-// matchRules is Match that also returns the rules it used, so a caller can
-// tell afterwards whether an Update happened in between.
-func (m *Matcher) matchRules(domain string) (bool, *matcherRules) {
+// firstMatch returns the first of names that matches a loaded rule ("" when
+// none does) and the rules it used, so a caller can tell afterwards whether
+// an Update happened in between.
+func (m *Matcher) firstMatch(names []string) (string, *matcherRules) {
 	r := m.rules.Load()
-	return r.match(domain), r
+	for _, n := range names {
+		if r.match(n) {
+			return n, r
+		}
+	}
+	return "", r
 }
 
 // changedSince reports whether the rules were replaced after r was loaded.

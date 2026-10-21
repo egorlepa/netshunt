@@ -456,3 +456,123 @@ func TestForwarderEndToEndUDP(t *testing.T) {
 		t.Errorf("upstream hits = %d, want 1 (TCP answer from cache)", s.hits.Load())
 	}
 }
+
+// answerChain answers with the CNAME chain q -> targets[0] -> ... and the A
+// records ips on the last target, as a recursive resolver does.
+func answerChain(ttl uint32, targets []string, ips ...string) dohHandler {
+	return func(q *dns.Msg) (*dns.Msg, time.Duration, int) {
+		m := replyTo(q, dns.RcodeSuccess)
+		owner := q.Question[0].Header().Name
+		for _, tgt := range targets {
+			m.Answer = append(m.Answer, &dns.CNAME{
+				Hdr:   dns.Header{Name: owner, TTL: ttl, Class: dns.ClassINET},
+				CNAME: rdata.CNAME{Target: tgt},
+			})
+			owner = tgt
+		}
+		for _, ip := range ips {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.Header{Name: owner, TTL: ttl, Class: dns.ClassINET},
+				A:   rdata.A{Addr: netip.MustParseAddr(ip)},
+			})
+		}
+		return m, 0, 0
+	}
+}
+
+// trackedDomains returns the tracker's keys, sorted.
+func trackedDomains(f *testForwarder) []string {
+	d := f.TrackerRef().Domains()
+	slices.Sort(d)
+	return d
+}
+
+func TestForwarderCNAMEChainMatch(t *testing.T) {
+	twoHop := []string{"www.shop.com.cdn.edge.net.", "shop.cdn.cloudfront.net."}
+	tests := []struct {
+		name    string
+		rule    string
+		targets []string
+		want    []string // tracker keys; nil = nothing tracked
+	}{
+		{"rule on target", "cloudfront.net", []string{"shop.cdn.cloudfront.net."}, []string{"shop.cdn.cloudfront.net"}},
+		{"rule on qname", "shop.com", []string{"shop.cdn.cloudfront.net."}, []string{"www.shop.com"}},
+		{"qname wins over target", "keyword:shop", []string{"shop.cdn.cloudfront.net."}, []string{"www.shop.com"}},
+		{"rule on middle of two hops", "edge.net", twoHop, []string{"www.shop.com.cdn.edge.net"}},
+		{"rule on end of two hops", "full:shop.cdn.cloudfront.net", twoHop, []string{"shop.cdn.cloudfront.net"}},
+		{"no match", "example.org", twoHop, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newDoHServer(t, answerChain(300, tt.targets, "13.32.10.5", "13.32.10.6"))
+			f := newTestForwarder(t, s)
+			f.UpdateMatcher([]shunt.Entry{{Value: tt.rule}})
+
+			f.query(t, "WWW.Shop.com.", dns.TypeA)
+			if got := trackedDomains(f); !slices.Equal(got, tt.want) {
+				t.Fatalf("tracked = %v, want %v", got, tt.want)
+			}
+			wantIP := tt.want != nil
+			for _, ip := range []string{"13.32.10.5", "13.32.10.6"} {
+				if f.ipset.has(ip) != wantIP {
+					t.Errorf("ipset has %s = %v, want %v", ip, !wantIP, wantIP)
+				}
+			}
+
+			// Cache hit: the packed response carries the chain, so it tracks
+			// the same way.
+			for _, d := range tt.want {
+				f.TrackerRef().RemoveDomain(context.Background(), d)
+			}
+			f.query(t, "www.shop.com.", dns.TypeA)
+			if s.hits.Load() != 1 {
+				t.Fatalf("second query not from cache")
+			}
+			if got := trackedDomains(f); !slices.Equal(got, tt.want) {
+				t.Errorf("cache hit tracked = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestForwarderRemembersIPsUnderChainNames(t *testing.T) {
+	s := newDoHServer(t, answerChain(300, []string{"Shop.CDN.edge.net.", "shop.cdn.cloudfront.net."}, "13.32.10.5"))
+	f := newTestForwarder(t, s)
+	f.query(t, "www.shop.com.", dns.TypeA)
+
+	got := collect(f.ResolveCache())
+	for _, name := range []string{"www.shop.com", "shop.cdn.edge.net", "shop.cdn.cloudfront.net"} {
+		if !slices.Equal(got[name], []string{"13.32.10.5"}) {
+			t.Errorf("seed IPs of %s = %v, want [13.32.10.5]", name, got[name])
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("cache = %v, want exactly the 3 chain names", got)
+	}
+	// The response itself stays under the query name only.
+	if _, _, ok := f.ResolveCache().LookupResponse("shop.cdn.cloudfront.net", dns.TypeA); ok {
+		t.Errorf("response cached under an alias name")
+	}
+	if _, _, ok := f.ResolveCache().LookupResponse("www.shop.com", dns.TypeA); !ok {
+		t.Errorf("response not cached under the query name")
+	}
+}
+
+func TestAnswerNames(t *testing.T) {
+	cname := func(owner, target string) dns.RR {
+		return &dns.CNAME{Hdr: dns.Header{Name: owner, Class: dns.ClassINET}, CNAME: rdata.CNAME{Target: target}}
+	}
+	m := &dns.Msg{Answer: []dns.RR{
+		cname("WWW.a.com.", "b.net."),
+		cname("b.net.", "c.org."),
+		cname("b.net.", "a.com."), // odd but harmless: dedup
+		&dns.A{Hdr: dns.Header{Name: "c.org.", Class: dns.ClassINET}, A: rdata.A{Addr: netip.MustParseAddr("192.0.2.1")}},
+	}}
+	got := answerNames("www.a.com", m)
+	if want := []string{"www.a.com", "b.net", "c.org", "a.com"}; !slices.Equal(got, want) {
+		t.Errorf("answerNames = %v, want %v", got, want)
+	}
+	if got := answerNames("x.com", &dns.Msg{}); !slices.Equal(got, []string{"x.com"}) {
+		t.Errorf("no CNAME: %v", got)
+	}
+}

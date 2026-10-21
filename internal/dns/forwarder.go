@@ -315,14 +315,19 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	if cacheable {
 		f.storeResponse(qname, qtype, resp)
 	}
-	f.trackMatched(ctx, qname, resp)
-
-	// Remember every successful A-resolve regardless of shunt match, so that
-	// a later shunt mutation can retroactively seed the ipset for IPs the
-	// client already cached.
-	f.cacheResolved(qname, resp)
+	f.RecordAnswer(ctx, qname, resp)
 
 	f.reply(w, r, resp)
+}
+
+// RecordAnswer handles an upstream answer to qname: the A records are
+// tracked when a rule matches any name of the answer (see trackMatched),
+// and remembered in the resolve cache under every name of the answer
+// regardless of a match, so that a later shunt mutation can retroactively
+// seed the ipset for IPs the client already cached.
+func (f *Forwarder) RecordAnswer(ctx context.Context, qname string, resp *dns.Msg) {
+	f.trackMatched(ctx, qname, resp)
+	f.cacheResolved(qname, resp)
 }
 
 // Response cache TTL bounds. NODATA has no TTL of its own here.
@@ -438,43 +443,81 @@ func (f *Forwarder) reply(w dns.ResponseWriter, r, resp *dns.Msg) {
 	f.writeMsg(w, resp)
 }
 
-// cacheResolved adds the A records of a successful resolution to the
-// domain's accumulated seeding IPs.
-func (f *Forwarder) cacheResolved(domain string, resp *dns.Msg) {
-	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
-		return
+// answerNames returns the names an answer to qname is about: qname, then
+// the owner and target of every CNAME in the answer section in order,
+// lowercase without the trailing dot, deduplicated. A rule on a CDN domain
+// a client only reaches through a CNAME (www.shop.com CNAME
+// shop.cdn.cloudfront.net) matches one of the later names.
+func answerNames(qname string, resp *dns.Msg) []string {
+	names := []string{qname}
+	add := func(n string) {
+		n = strings.ToLower(strings.TrimSuffix(n, "."))
+		if n != "" && !slices.Contains(names, n) {
+			names = append(names, n)
+		}
 	}
+	for _, rr := range resp.Answer {
+		if c, ok := rr.(*dns.CNAME); ok {
+			add(c.Hdr.Name)
+			add(c.Target)
+		}
+	}
+	return names
+}
+
+// answerIPs returns the addresses of the A records in resp's answer.
+func answerIPs(resp *dns.Msg) []string {
 	var ips []string
 	for _, rr := range resp.Answer {
 		if a, ok := rr.(*dns.A); ok {
 			ips = append(ips, a.Addr.String())
 		}
 	}
-	f.cache.Remember(domain, ips)
+	return ips
 }
 
-// trackMatched adds the A records of a shunt-matched domain to the ipset
-// (through the tracker) before the client sees the answer.
+// cacheResolved adds the A records of a successful resolution to the
+// accumulated seeding IPs of every name of the answer (qname and its CNAME
+// chain), so a rule added later on a CNAME target seeds from the cache too.
+// Only the IPs are stored under the chain names; the packed response stays
+// keyed by the query name.
+func (f *Forwarder) cacheResolved(qname string, resp *dns.Msg) {
+	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
+		return
+	}
+	ips := answerIPs(resp)
+	if len(ips) == 0 {
+		return
+	}
+	for _, name := range answerNames(qname, resp) {
+		f.cache.Remember(name, ips)
+	}
+}
+
+// trackMatched adds the A records of a shunt-matched answer to the ipset
+// (through the tracker) before the client sees it. The answer matches when
+// any of its names (qname, then the CNAME chain) matches; the IPs are
+// tracked under the first matching name, not under qname: the reconciler
+// sweeps tracker keys through the matcher, and a qname no rule matches
+// would be swept on the next mutation although the rule still holds.
 //
 // The match is re-checked when the rules changed while the IPs were being
 // tracked: a mutation that removed the rule may have swept the tracker
 // before Track ran, and the IPs would otherwise stay in the ipset with no
 // rule explaining them.
-func (f *Forwarder) trackMatched(ctx context.Context, domain string, resp *dns.Msg) {
+func (f *Forwarder) trackMatched(ctx context.Context, qname string, resp *dns.Msg) {
 	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
 		return
 	}
-	matched, rules := f.matcher.matchRules(domain)
-	if !matched {
+	key, rules := f.matcher.firstMatch(answerNames(qname, resp))
+	if key == "" {
 		return
 	}
-	for _, rr := range resp.Answer {
-		if a, ok := rr.(*dns.A); ok {
-			f.tracker.Track(ctx, domain, a.Addr.String())
-		}
+	for _, ip := range answerIPs(resp) {
+		f.tracker.Track(ctx, key, ip)
 	}
-	if f.matcher.changedSince(rules) && !f.matcher.Match(domain) {
-		f.tracker.RemoveDomain(ctx, domain)
+	if f.matcher.changedSince(rules) && !f.matcher.Match(key) {
+		f.tracker.RemoveDomain(ctx, key)
 	}
 }
 

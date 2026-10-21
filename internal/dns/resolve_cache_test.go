@@ -3,6 +3,7 @@ package dns
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -225,5 +226,42 @@ func TestResolveCacheLRUEvictionWithResponses(t *testing.T) {
 	got := collect(c)
 	if len(got["a.com"]) != 1 || len(got["c.com"]) != 1 {
 		t.Errorf("Range after eviction = %v", got)
+	}
+}
+
+// TestResolveCacheAliasEntries covers what the forwarder does with a CNAME
+// answer: the same IPs remembered under every chain name. Each alias
+// accumulates on its own and is a full LRU entry.
+func TestResolveCacheAliasEntries(t *testing.T) {
+	c := NewResolveCache(3)
+	chain := []string{"www.shop.com", "shop.cdn.cloudfront.net"}
+	for _, name := range chain {
+		c.Remember(name, []string{"13.32.10.5"})
+	}
+	// A later answer for the target alone (another site on the same CDN
+	// name) accumulates there without touching the alias.
+	c.Remember("shop.cdn.cloudfront.net", []string{"13.32.10.6"})
+	got := collect(c)
+	if !slices.Equal(got["www.shop.com"], []string{"13.32.10.5"}) ||
+		!slices.Equal(got["shop.cdn.cloudfront.net"], []string{"13.32.10.5", "13.32.10.6"}) {
+		t.Errorf("alias IPs = %v", got)
+	}
+	if c.Len() != 2 || c.Cap() != 3 {
+		t.Errorf("Len/Cap = %d/%d, want 2/3", c.Len(), c.Cap())
+	}
+
+	// Two more names push the capacity: the oldest alias (www.shop.com) is
+	// evicted like any entry.
+	c.Remember("a.com", []string{"1.1.1.1"})
+	c.Remember("b.com", []string{"2.2.2.2"})
+	got = collect(c)
+	if c.Len() != 3 {
+		t.Errorf("Len = %d, want 3", c.Len())
+	}
+	if _, ok := got["www.shop.com"]; ok {
+		t.Errorf("LRU alias not evicted: %v", got)
+	}
+	if _, ok := got["shop.cdn.cloudfront.net"]; !ok {
+		t.Errorf("newer alias evicted: %v", got)
 	}
 }

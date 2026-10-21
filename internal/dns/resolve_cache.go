@@ -23,7 +23,9 @@ const maxCachedResponse = 4096
 //     the reconciler ranges over them to retroactively populate the kernel
 //     ipset for IPs clients already cached. Without this, clients with a
 //     warm DNS cache keep routing the cached IP past iptables until their
-//     cache entry expires.
+//     cache entry expires. The forwarder remembers an answer's IPs under
+//     every name of its CNAME chain, so each alias is an entry of its own
+//     and counts against the capacity like any other.
 //   - Response cache: per query type, the packed upstream response and its
 //     expiry, answering repeat queries without an upstream round trip.
 type ResolveCache struct {
