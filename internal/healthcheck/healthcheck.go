@@ -14,6 +14,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/netfilter"
+	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/service"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
@@ -405,9 +406,8 @@ func checkIPTables4(ctx context.Context, cfg *config.Config) Result {
 	}
 
 	for _, iface := range cfg.Network.DNSInterfaces() {
-		if !ipt.RuleExists(ctx, "nat", "PREROUTING",
-			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1") {
-			missing = append(missing, "dns dnat ("+iface+")")
+		if !ipt.RuleExists(ctx, "nat", routing.DNSRedirectRule(iface, "udp")...) {
+			missing = append(missing, "dns redirect ("+iface+")")
 		}
 	}
 

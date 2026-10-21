@@ -94,15 +94,17 @@ func (r *Redirect) SetupRules(ctx context.Context) error {
 		r.logger.Warn("UDP TPROXY not available, only TCP will be proxied", "error", err)
 	}
 
-	// DNS DNAT.
+	// DNS interception. REDIRECT rewrites the destination to the primary
+	// address of the ingress interface (192.168.1.1 on br0, the TUN address
+	// on awg0), which the router's INPUT chain already accepts. A DNAT to
+	// 127.0.0.1 does not work here: packets that arrive on br0 with a
+	// loopback destination are dropped before they reach the forwarder, so
+	// clients with a hard-coded resolver got no answer at all.
 	for _, iface := range r.cfg.Network.DNSInterfaces() {
-		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
-			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-			r.logger.Warn("dns dnat udp rule failed", "iface", iface, "error", err)
-		}
-		if err := r.ipt.AppendRule(ctx, "nat", "PREROUTING",
-			"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1"); err != nil {
-			r.logger.Warn("dns dnat tcp rule failed", "iface", iface, "error", err)
+		for _, proto := range []string{"udp", "tcp"} {
+			if err := r.ipt.AppendRule(ctx, "nat", DNSRedirectRule(iface, proto)...); err != nil {
+				r.logger.Warn("dns redirect rule failed", "iface", iface, "proto", proto, "error", err)
+			}
 		}
 	}
 
@@ -174,12 +176,11 @@ func (r *Redirect) TeardownRules(ctx context.Context) error {
 	_ = platform.RunSilent(ctx, "ip", "rule", "del", "fwmark", fwmark, "table", routeTable)
 	_ = platform.RunSilent(ctx, "ip", "route", "del", "local", "0/0", "table", routeTable)
 
-	// DNS DNAT.
+	// DNS interception.
 	for _, iface := range r.cfg.Network.DNSInterfaces() {
-		_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
-			"-i", iface, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
-		_ = r.ipt.DeleteRule(ctx, "nat", "PREROUTING",
-			"-i", iface, "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to", "127.0.0.1")
+		for _, proto := range []string{"udp", "tcp"} {
+			_ = r.ipt.DeleteRule(ctx, "nat", DNSRedirectRule(iface, proto)...)
+		}
 	}
 
 	return nil
@@ -210,4 +211,11 @@ func filterIPv4Networks(networks []string) []string {
 		}
 	}
 	return out
+}
+
+// DNSRedirectRule is the nat PREROUTING rule that steers port-53 traffic from
+// iface to the local forwarder. Shared by setup, teardown and the healthcheck
+// so all three agree on the exact rule signature.
+func DNSRedirectRule(iface, proto string) []string {
+	return []string{"PREROUTING", "-i", iface, "-p", proto, "--dport", "53", "-j", "REDIRECT", "--to-ports", "53"}
 }
