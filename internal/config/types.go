@@ -76,6 +76,17 @@ func (n NetworkConfig) DNSInterfaces() []string {
 // DNSConfig holds DNS forwarder settings.
 type DNSConfig struct {
 	ListenAddr string `yaml:"listen_addr"`
+	// Upstreams are the DNS-over-HTTPS resolvers every query is sent to.
+	// Empty means DefaultDNSUpstreams.
+	Upstreams []DNSUpstream `yaml:"upstreams,omitempty"`
+}
+
+// DNSUpstream is one DNS-over-HTTPS resolver. URL must use an IP-literal
+// host so no bootstrap resolver is needed; SNI is the TLS server name and
+// the HTTP Host header.
+type DNSUpstream struct {
+	URL string `yaml:"url"`
+	SNI string `yaml:"sni"`
 }
 
 // DNSCryptConfig holds dnscrypt-proxy2 settings.
