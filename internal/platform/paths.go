@@ -13,9 +13,6 @@ const (
 	BlocklistFile = ConfigDir + "/blocklist.yaml"
 	BlocklistDir  = ConfigDir + "/blocklist-cache"
 
-	// dnscrypt-proxy.
-	DnscryptConfFile = OptDir + "/etc/dnscrypt-proxy.toml"
-
 	// Daemon.
 	PidFile       = "/var/run/netshunt.pid"
 	LogFile       = OptDir + "/var/log/netshunt.log"

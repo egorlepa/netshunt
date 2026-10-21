@@ -24,7 +24,6 @@ var requiredDeps = []Dependency{
 	{Name: "iptables", Binary: "iptables", Package: "iptables"},
 	{Name: "ip", Binary: "ip", Package: "ip-full"},
 	{Name: "conntrack", Binary: "conntrack", Package: "conntrack-tools"},
-	{Name: "dnscrypt-proxy", Binary: "dnscrypt-proxy", Package: "dnscrypt-proxy2"},
 }
 
 // CheckResult holds the result of a dependency check.

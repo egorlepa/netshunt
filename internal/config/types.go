@@ -7,7 +7,6 @@ type Config struct {
 	Routing   RoutingConfig   `yaml:"routing"`
 	Network   NetworkConfig   `yaml:"network"`
 	DNS       DNSConfig       `yaml:"dns"`
-	DNSCrypt  DNSCryptConfig  `yaml:"dnscrypt"`
 	IPSet     IPSetConfig     `yaml:"ipset"`
 	Daemon    DaemonConfig    `yaml:"daemon"`
 	Blocklist BlocklistConfig `yaml:"blocklist"`
@@ -89,11 +88,6 @@ type DNSUpstream struct {
 	SNI string `yaml:"sni"`
 }
 
-// DNSCryptConfig holds dnscrypt-proxy2 settings.
-type DNSCryptConfig struct {
-	Port int `yaml:"port"`
-}
-
 // IPSetConfig holds ipset table settings.
 type IPSetConfig struct {
 	TableName string `yaml:"table_name"`
@@ -154,9 +148,6 @@ func Defaults() Config {
 		},
 		DNS: DNSConfig{
 			ListenAddr: ":53",
-		},
-		DNSCrypt: DNSCryptConfig{
-			Port: 9153,
 		},
 		IPSet: IPSetConfig{
 			TableName: "bypass",

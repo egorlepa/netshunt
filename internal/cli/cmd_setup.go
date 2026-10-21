@@ -15,11 +15,11 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/deploy"
-	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/router"
 	"github.com/egorlepa/netshunt/internal/service"
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 func newSetupCmd() *cobra.Command {
@@ -135,7 +135,11 @@ func newSetupCmd() *cobra.Command {
 
 			// 5. DNS configuration (informational).
 			fmt.Println("DNS configuration:")
-			fmt.Printf("  DNS queries: netshunt forwarder -> dnscrypt-proxy (:%d) -> encrypted upstream\n", cfg.DNSCrypt.Port)
+			fmt.Println("  DNS queries: netshunt forwarder -> DNS-over-HTTPS upstreams:")
+			for _, u := range cfg.DNS.EffectiveUpstreams() {
+				fmt.Printf("    %s (%s)\n", u.URL, u.SNI)
+			}
+			fmt.Println("  Change them later under Settings in the web UI.")
 			fmt.Println()
 
 			// 6. Network interface.
@@ -153,14 +157,7 @@ func newSetupCmd() *cobra.Command {
 
 			fmt.Println()
 
-			// 8. Start dnscrypt-proxy.
-			if err := service.DNSCrypt.EnsureRunning(ctx); err != nil {
-				printFail(fmt.Sprintf("dnscrypt-proxy: %v", err))
-			} else {
-				printPass("dnscrypt-proxy: running")
-			}
-
-			// 9. Install NDM hooks.
+			// 8. Install NDM hooks.
 			n, err := deploy.InstallNDMHooks()
 			if err != nil {
 				printFail(fmt.Sprintf("NDM hooks: %v", err))

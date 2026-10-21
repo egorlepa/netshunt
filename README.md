@@ -10,9 +10,9 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 - **Geosite integration** — import curated domain categories from the [v2fly domain-list-community](https://github.com/v2fly/domain-list-community) (google, netflix, facebook, and 1400+ more)
 - **Web dashboard** — manage shunts, browse geosite categories, view status, adjust settings, run diagnostics
 - **HTTP API** — full API for scripting and automation
-- **Encrypted DNS** — built-in DNS forwarder → dnscrypt-proxy for DoH/DoT upstream resolution
+- **Encrypted DNS** - the built-in forwarder resolves over DNS-over-HTTPS (Google, Cloudflare and Quad9 by default, queried in parallel, first answer wins) with a response cache; no separate resolver to install
 - **Automatic IP tracking** — DNS forwarder populates ipset in real-time; tracked IPs persist until the domain is removed or the daemon restarts
-- **TCP + UDP** — NAT REDIRECT for TCP, TPROXY for UDP. IPv4 only (AAAA records stripped from matched responses to prevent IPv6 bypass)
+- **TCP + UDP** - NAT REDIRECT for TCP, TPROXY for UDP. IPv4 only (AAAA queries are answered with an empty answer to prevent IPv6 bypass)
 - **Keenetic integration** — NDM hooks restore rules on reboots, WAN changes, interface restarts
 - **Multi-interface / road-warrior** — apply the same shunt routing to extra ingress interfaces (e.g. an AmneziaWG/WireGuard TUN) via `network.additional_interfaces`, so remote VPN clients hit the same bypass list as the LAN
 - **Proxy-agnostic** — redirects to a local port, any transparent proxy works
@@ -23,8 +23,7 @@ netshunt routes specific domains, IPs, and CIDRs through a transparent proxy whi
 flowchart LR
     Client([LAN Client])
     Client -->|DNS query| forwarder[netshunt forwarder :53]
-    forwarder -->|forward| dnscrypt[dnscrypt-proxy :9153]
-    dnscrypt -->|DoH / DoT| upstream((Encrypted Upstream DNS))
+    forwarder -->|DoH| upstream((DoH Upstreams))
     forwarder -.->|matched| ipset4[(ipset bypass)]
 
     Client -->|TCP / UDP| iptables{iptables}
@@ -51,7 +50,7 @@ netshunt setup
 - A transparent proxy listening on a local port (e.g. Shadowsocks, xray, sing-box, Hysteria 2)
 - SSH access to the router
 
-System dependencies (`ipset`, `iptables`, `ip-full`, `dnscrypt-proxy2`) are installed automatically as opkg dependencies.
+System dependencies (`ipset`, `iptables`, `conntrack`) are installed automatically as opkg dependencies.
 
 ## Building from Source
 

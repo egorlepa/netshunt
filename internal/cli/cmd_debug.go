@@ -39,7 +39,7 @@ func newDebugCmd() *cobra.Command {
 
 func debugServices(ctx context.Context) {
 	fmt.Println("--- Services ---")
-	for _, svc := range []service.Service{service.DNSCrypt, service.Daemon} {
+	for _, svc := range []service.Service{service.Daemon} {
 		installed := svc.IsInstalled()
 		running := false
 		if installed {
@@ -79,7 +79,10 @@ func debugIPTables(ctx context.Context) {
 func debugConfig(cfg *config.Config) {
 	fmt.Println("--- Config ---")
 	fmt.Printf("Routing port:      %d\n", cfg.Routing.LocalPort)
-	fmt.Printf("DNSCrypt port:     %d\n", cfg.DNSCrypt.Port)
+	fmt.Printf("DNS listen:        %s\n", cfg.DNS.ListenAddr)
+	for _, u := range cfg.DNS.EffectiveUpstreams() {
+		fmt.Printf("DNS upstream:      %s (%s)\n", u.URL, u.SNI)
+	}
 	fmt.Printf("Interface:         %s\n", cfg.Network.EntwareInterface)
 	if len(cfg.Network.AdditionalInterfaces) > 0 {
 		fmt.Printf("Add'l interfaces:  %s\n", strings.Join(cfg.Network.AdditionalInterfaces, ", "))

@@ -16,7 +16,6 @@ func newDNSCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newDNSTestCmd(),
-		newDNSCryptStatusCmd(),
 	)
 
 	return cmd
@@ -44,21 +43,6 @@ func newDNSTestCmd() *cobra.Command {
 				}
 			}
 
-			return nil
-		},
-	}
-}
-
-func newDNSCryptStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "crypt-status",
-		Short: "Show dnscrypt-proxy status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d := intdns.NewDNSCrypt()
-
-			fmt.Println("dnscrypt-proxy:")
-			fmt.Printf("  Installed: %v\n", d.IsInstalled())
-			fmt.Printf("  Running:   %v\n", d.IsRunning(cmd.Context()))
 			return nil
 		},
 	}

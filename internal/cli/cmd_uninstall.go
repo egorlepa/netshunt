@@ -33,13 +33,7 @@ func newUninstallCmd() *cobra.Command {
 				fmt.Printf("  Warning: %v\n", err)
 			}
 
-			// 2. Stop dnscrypt-proxy.
-			fmt.Println("Stopping dnscrypt-proxy...")
-			if err := service.DNSCrypt.Stop(ctx); err != nil {
-				fmt.Printf("  Warning: %v\n", err)
-			}
-
-			// 3. Remove iptables rules.
+			// 2. Remove iptables rules.
 			fmt.Println("Removing iptables rules...")
 			logger, _ := platform.NewLogger("error")
 			mode := routing.New(config.NewLive(cfg), logger)
@@ -47,13 +41,13 @@ func newUninstallCmd() *cobra.Command {
 				fmt.Printf("  Warning: %v\n", err)
 			}
 
-			// 4. Flush and destroy ipset table.
+			// 3. Flush and destroy ipset table.
 			fmt.Println("Removing ipset table...")
 			ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
 			_ = ipset.Flush(ctx)
 			_ = ipset.Destroy(ctx)
 
-			// 5. Disable dns-override so Keenetic reclaims DNS after reboot.
+			// 4. Disable dns-override so Keenetic reclaims DNS after reboot.
 			fmt.Println("Disabling dns-override...")
 			rci := router.NewClient()
 			if err := rci.DisableDNSOverride(ctx); err != nil {
@@ -61,15 +55,15 @@ func newUninstallCmd() *cobra.Command {
 				fmt.Println("  Disable manually: no opkg dns-override && system configuration save")
 			}
 
-			// 6. Remove init.d scripts.
+			// 5. Remove init.d scripts.
 			fmt.Println("Removing init.d scripts...")
 			_ = os.Remove(platform.InitScript)
 
-			// 7. Remove NDM hooks.
+			// 6. Remove NDM hooks.
 			fmt.Println("Removing NDM hooks...")
 			deploy.UninstallNDMHooks()
 
-			// 8. Remove netshunt config (keep shunts for reinstall).
+			// 7. Remove netshunt config (keep shunts for reinstall).
 			fmt.Println("Removing configuration (keeping shunts)...")
 			_ = os.Remove(platform.ConfigFile)
 			_ = os.Remove(platform.PidFile)
@@ -77,7 +71,7 @@ func newUninstallCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("netshunt removed. Shunts preserved in " + platform.ShuntsFile)
 			fmt.Println("Next steps:")
-			fmt.Println("  opkg remove netshunt dnscrypt-proxy2")
+			fmt.Println("  opkg remove netshunt")
 			return nil
 		},
 	}
