@@ -13,6 +13,11 @@ const (
 	BlocklistFile = ConfigDir + "/blocklist.yaml"
 	BlocklistDir  = ConfigDir + "/blocklist-cache"
 
+	// State (survives daemon restarts and reboots, unlike /tmp and the
+	// kernel ipset).
+	StateDir    = OptDir + "/var/lib/netshunt"
+	TrackerFile = StateDir + "/tracker.json"
+
 	// Daemon.
 	PidFile       = "/var/run/netshunt.pid"
 	LogFile       = OptDir + "/var/log/netshunt.log"

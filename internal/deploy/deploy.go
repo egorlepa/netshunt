@@ -118,6 +118,7 @@ func InstallInitScript() error {
 func EnsureDirectories() error {
 	dirs := []string{
 		platform.ConfigDir,
+		platform.StateDir,
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {

@@ -29,7 +29,9 @@ import (
 // Full reconcile: reload matcher, re-seed every matched cached domain, sync
 // static entries, then a repair pass diffs the kernel ipset against the
 // tracker (one `ipset list`), converge iptables (Mode.Reconcile). The cold
-// first run flushes the ipset instead of repairing it.
+// first run loads the persisted tracker state first (filtered through the
+// current rules, installed without exec), so the repair pass keeps what the
+// kernel already holds: the ipset is never flushed on start.
 //
 // Mutation reconcile: update matcher, sweep every tracked domain the new
 // rules no longer match, seed newly matched cached domains, sync static
@@ -53,10 +55,8 @@ type Reconciler struct {
 	// run, so the warning is logged when it changes, not on every mutation.
 	lastRejected string
 
-	// bootstrapped flips to true after the first Reconcile. The first run
-	// flushes the kernel ipset to clear any stale entries left by a previous
-	// daemon process - subsequent runs trust the in-memory tracker as source
-	// of truth and never flush (no leak window).
+	// bootstrapped flips to true after the first Reconcile, which loads the
+	// persisted tracker state.
 	bootstrapped bool
 }
 
@@ -74,10 +74,12 @@ func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forward
 }
 
 // Reconcile reapplies the full state: matcher, full re-seed, static entries,
-// ipset repair pass, iptables convergence, blocklist. The kernel ipset is flushed
-// only on the very first call (cold start) to clear stale entries from a
-// previous daemon process; subsequent reconciles preserve the in-memory
-// tracker and instead diff the kernel ipset against it (Tracker.Repair).
+// ipset repair pass, iptables convergence, blocklist. The very first call
+// (cold start) first loads the tracker state the previous daemon saved; the
+// repair pass then deletes kernel members nothing explains and re-adds the
+// ones the kernel lacks (all of them after a reboot). The kernel ipset is
+// never flushed, so clients holding cached IPs keep going through the proxy
+// across a daemon restart.
 func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -89,12 +91,9 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	tracker := r.Forwarder.TrackerRef()
-	// The cold run flushes the kernel ipset, so the repair pass after it would
-	// be a no-op; it is still needed if that flush failed.
-	needRepair := r.bootstrapped
 	if !r.bootstrapped {
-		if err := tracker.Flush(ctx); err != nil {
-			needRepair = true
+		if err := r.loadTrackerLocked(); err != nil {
+			return err
 		}
 		r.bootstrapped = true
 	}
@@ -104,15 +103,15 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	// Repair pass: the only place that heals external interference with the
-	// kernel ipset (manual flush, failed del). Not run on ApplyMutation.
-	if needRepair {
-		added, removed, err := tracker.Repair(ctx)
-		switch {
-		case err != nil:
-			r.Logger.Warn("ipset repair failed", "error", err)
-		case added > 0 || removed > 0:
-			r.Logger.Info("ipset repaired", "readded", added, "removed", removed)
-		}
+	// kernel ipset (manual flush, failed del) and, on the cold run, the
+	// difference between the loaded state and the kernel. Not run on
+	// ApplyMutation.
+	added, removed, err := tracker.Repair(ctx)
+	switch {
+	case err != nil:
+		r.Logger.Warn("ipset repair failed", "error", err)
+	case added > 0 || removed > 0:
+		r.Logger.Info("ipset repaired", "readded", added, "removed", removed)
 	}
 	cache := r.Forwarder.ResolveCache()
 	r.Logger.Info("resolve cache", "entries", cache.Len(), "capacity", cache.Cap())
@@ -131,6 +130,30 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("reconcile rules: %w", modeErr)
 	}
 	r.Logger.Info("reconcile complete")
+	return nil
+}
+
+// loadTrackerLocked is the cold-start half of the tracker persistence: the
+// saved domain -> IPs map is filtered through a matcher built from the
+// current shunts (the forwarder's matcher is still empty here), and the
+// survivors plus the static entries are installed into the tracker without
+// exec, as believed present. The repair pass that follows makes the kernel
+// equal to that. A missing or corrupt file is an empty state.
+func (r *Reconciler) loadTrackerLocked() error {
+	entries, err := r.Shunts.EnabledEntries()
+	if err != nil {
+		return fmt.Errorf("load entries: %w", err)
+	}
+	matcher := dns.NewMatcher()
+	matcher.Update(entries)
+	tracker := r.Forwarder.TrackerRef()
+	res, err := tracker.LoadPersisted(matcher.Match)
+	if err != nil {
+		r.Logger.Warn("tracker state not loaded, starting empty", "error", err)
+	} else {
+		r.Logger.Info("tracker state loaded", "domains", res.Domains, "ips", res.IPs, "dropped_domains", res.Dropped)
+	}
+	tracker.PresumeStatic(r.staticEntries(entries))
 	return nil
 }
 

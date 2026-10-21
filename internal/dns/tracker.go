@@ -57,6 +57,9 @@ type Tracker struct {
 	// flushConntrack drops conntrack entries for a member (IP or CIDR).
 	// Replaceable in tests.
 	flushConntrack func(ctx context.Context, member string)
+
+	// persist, when set, saves the domain map to disk (EnablePersistence).
+	persist *persister
 }
 
 // NewTracker creates a Tracker that manages the given ipset table.
@@ -87,6 +90,7 @@ func (t *Tracker) presentLocked(member string) bool {
 func (t *Tracker) linkLocked(domain, ip string) {
 	if ips := t.forward[domain]; !slices.Contains(ips, ip) {
 		t.forward[domain] = append(ips, ip)
+		t.markDirty()
 	}
 	if refs := t.reverse[ip]; !slices.Contains(refs, domain) {
 		t.reverse[ip] = append(refs, domain)
@@ -139,8 +143,11 @@ func (t *Tracker) Track(ctx context.Context, domain, ip string) {
 func (t *Tracker) RemoveDomain(ctx context.Context, domain string) {
 	t.kernelMu.Lock()
 	t.mu.Lock()
-	ips := t.forward[domain]
-	delete(t.forward, domain)
+	ips, ok := t.forward[domain]
+	if ok {
+		delete(t.forward, domain)
+		t.markDirty()
+	}
 
 	var toRemove []string
 	for _, ip := range ips {
@@ -252,6 +259,19 @@ func (t *Tracker) Members() int {
 // no kernel state. A failed add leaves the entry out of the static set, so
 // the next call retries it.
 func (t *Tracker) SetStatic(ctx context.Context, values []string) {
+	t.setStatic(ctx, values, false)
+}
+
+// PresumeStatic records static entries as present in the kernel WITHOUT
+// exec or conntrack flush, like LoadPersisted does for domains: on a daemon
+// restart they are still in the set and their connections already go
+// through the proxy. Repair afterwards re-adds what the kernel lacks. Call
+// on a tracker with no static entries (cold start), before SetStatic.
+func (t *Tracker) PresumeStatic(values []string) {
+	t.setStatic(context.Background(), values, true)
+}
+
+func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) {
 	want := make(map[string]struct{}, len(values))
 	for _, v := range values {
 		m, ok := canonicalMember(v)
@@ -285,6 +305,17 @@ func (t *Tracker) SetStatic(ctx context.Context, values []string) {
 		}
 	}
 	t.mu.Unlock()
+
+	if presume {
+		t.mu.Lock()
+		for _, m := range toAdd {
+			t.static[m] = struct{}{}
+		}
+		t.mu.Unlock()
+		t.delMembersLocked(ctx, toRemove)
+		t.kernelMu.Unlock()
+		return
+	}
 
 	var added []string
 	for _, m := range toAdd {
@@ -382,6 +413,9 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 
 // forgetLocked drops every reference to member. Caller holds mu.
 func (t *Tracker) forgetLocked(member string) {
+	if len(t.reverse[member]) > 0 {
+		t.markDirty()
+	}
 	for _, d := range t.reverse[member] {
 		ips := slices.DeleteFunc(t.forward[d], func(ip string) bool { return ip == member })
 		if len(ips) == 0 {
@@ -464,11 +498,15 @@ func (t *Tracker) runConntrackFlush(ctx context.Context, member string) {
 }
 
 // Flush clears all tracked state (domains and static entries) and flushes
-// the ipset.
+// the ipset. Not used on daemon start: the cold reconcile loads the saved
+// state and repairs instead, so the set never empties across a restart.
 func (t *Tracker) Flush(ctx context.Context) error {
 	t.kernelMu.Lock()
 	defer t.kernelMu.Unlock()
 	t.mu.Lock()
+	if len(t.forward) > 0 {
+		t.markDirty()
+	}
 	t.forward = make(map[string][]string)
 	t.reverse = make(map[string][]string)
 	t.static = make(map[string]struct{})

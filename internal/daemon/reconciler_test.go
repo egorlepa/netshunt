@@ -28,7 +28,8 @@ type fakeIPSet struct {
 	mu      sync.Mutex
 	members map[string]struct{}
 	// onDel runs before every Del (outside the lock), e.g. to cancel ctx.
-	onDel func()
+	onDel   func()
+	flushes int
 }
 
 func newFakeIPSet() *fakeIPSet { return &fakeIPSet{members: map[string]struct{}{}} }
@@ -59,6 +60,7 @@ func (f *fakeIPSet) Del(ctx context.Context, e string) error {
 func (f *fakeIPSet) Flush(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.flushes++
 	f.members = map[string]struct{}{}
 	return nil
 }

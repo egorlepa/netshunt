@@ -21,6 +21,10 @@ import (
 	"github.com/egorlepa/netshunt/internal/web"
 )
 
+// trackerSaveInterval bounds how often the tracker state is written: at most
+// once per interval while domains change, plus once at shutdown.
+const trackerSaveInterval = 5 * time.Second
+
 // Daemon is the long-lived process that runs the DNS forwarder, reconciles
 // routing state, and serves the web UI.
 type Daemon struct {
@@ -37,6 +41,7 @@ type Daemon struct {
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
 func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) (*Daemon, error) {
 	tracker := dns.NewTracker(netfilter.NewIPSet(cfg.IPSet.TableName), logger)
+	tracker.EnablePersistence(platform.TrackerFile, trackerSaveInterval)
 	forwarder, err := dns.NewForwarder(cfg.DNS.ListenAddr, dns.ConfigUpstreams(cfg.DNS), tracker, logger)
 	if err != nil {
 		// A hand-edited config with a bad upstream must not leave the LAN
@@ -132,6 +137,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	scheduler.Stop()
 	d.Forwarder.Stop()
+	d.saveTracker()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
@@ -139,4 +145,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.Logger.Warn("http server shutdown", "error", err)
 	}
 	return nil
+}
+
+// saveTracker writes the tracker state once more on shutdown, after the
+// forwarder stopped, so the next start loads exactly what the set holds.
+func (d *Daemon) saveTracker() {
+	tracker := d.Forwarder.TrackerRef()
+	if err := tracker.Save(); err != nil {
+		d.Logger.Warn("save tracker state failed", "error", err)
+		return
+	}
+	domains, ips := tracker.Count()
+	d.Logger.Info("tracker state saved", "domains", domains, "ips", ips)
 }
