@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -106,54 +107,13 @@ func InstallNDMHooks() (int, error) {
 	return installed, nil
 }
 
-// InstallInitScript installs the init.d startup script.
+//go:embed S96netshunt
+var initScript []byte
+
+// InstallInitScript installs the init.d startup script. The same file ships in
+// the IPK and is copied by postinst.
 func InstallInitScript() error {
-	script := fmt.Sprintf(`#!/bin/sh
-PIDFILE=%s
-BINARY=%s
-PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-is_running() {
-    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
-}
-
-case "$1" in
-    start)
-        if is_running; then
-            echo "netshunt daemon already running (pid $(cat $PIDFILE))"
-            exit 0
-        fi
-        start-stop-daemon -S -b -m -p "$PIDFILE" -a "$BINARY" -- daemon
-        echo "netshunt daemon started"
-        ;;
-    stop)
-        if is_running; then
-            kill "$(cat "$PIDFILE")" 2>/dev/null
-            rm -f "$PIDFILE"
-            echo "netshunt daemon stopped"
-        else
-            echo "netshunt daemon not running"
-        fi
-        ;;
-    restart)
-        $0 stop
-        sleep 1
-        $0 start
-        ;;
-    status)
-        if is_running; then
-            echo "netshunt daemon running (pid $(cat $PIDFILE))"
-        else
-            echo "netshunt daemon stopped"
-        fi
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart|status}"
-        exit 1
-        ;;
-esac
-`, platform.PidFile, platform.BinaryPath)
-	return os.WriteFile(platform.InitScript, []byte(script), 0o755)
+	return os.WriteFile(platform.InitScript, initScript, 0o755)
 }
 
 // EnsureDirectories creates all required directories.

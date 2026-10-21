@@ -1,0 +1,64 @@
+#!/bin/sh
+
+PIDFILE=/var/run/netshunt.pid
+DAEMON=/opt/bin/netshunt
+PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Graceful shutdown can take up to 30 s while a scheduled blocklist/geosite
+# job finishes; after this the daemon is killed.
+STOP_TIMEOUT=40
+
+is_running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+case "$1" in
+  start)
+    if is_running; then
+      echo "netshunt daemon already running (PID $(cat $PIDFILE))"
+      exit 0
+    fi
+    echo "Starting netshunt daemon..."
+    start-stop-daemon -S -b -m -p $PIDFILE -x $DAEMON -- daemon
+    ;;
+  stop)
+    if ! is_running; then
+      echo "netshunt daemon not running"
+      rm -f $PIDFILE
+      exit 0
+    fi
+    echo "Stopping netshunt daemon..."
+    # Wait for the process to exit: a new daemon started while the old one
+    # still holds :53 resets the ipset and iptables, then dies on bind.
+    pid=$(cat $PIDFILE)
+    kill "$pid" 2>/dev/null
+    deadline=$(( $(date +%s) + STOP_TIMEOUT ))
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        echo "netshunt daemon did not exit in ${STOP_TIMEOUT}s, killing"
+        kill -9 "$pid" 2>/dev/null
+        break
+      fi
+      usleep 200000 2>/dev/null || sleep 1
+    done
+    while kill -0 "$pid" 2>/dev/null; do
+      usleep 200000 2>/dev/null || sleep 1
+    done
+    rm -f $PIDFILE
+    ;;
+  restart)
+    $0 stop
+    $0 start
+    ;;
+  status)
+    if is_running; then
+      echo "netshunt daemon is running (PID $(cat $PIDFILE))"
+    else
+      echo "netshunt daemon is not running"
+    fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac

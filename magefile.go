@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version    = "1.5.7~rc10"
+	version    = "1.5.7~rc12"
 	binaryName = "netshunt"
 	ldflags    = fmt.Sprintf("-s -w -X main.version=%s", version)
 )
@@ -231,7 +231,7 @@ func buildDataTar(binaryPath string, binaryInfo os.FileInfo, now time.Time) ([]b
 	}
 
 	// Init.d script.
-	if err := addFile("./opt/etc/netshunt/init.d/S96netshunt", "scripts/init.d/S96netshunt", 0755); err != nil {
+	if err := addFile("./opt/etc/netshunt/init.d/S96netshunt", "internal/deploy/S96netshunt", 0755); err != nil {
 		return nil, 0, err
 	}
 

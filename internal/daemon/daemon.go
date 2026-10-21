@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -59,10 +60,17 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 // Run starts the daemon, blocking until a signal is received.
 func (d *Daemon) Run(ctx context.Context) error {
 	// Write PID file.
-	if err := os.WriteFile(platform.PidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
+	pid := fmt.Sprintf("%d", os.Getpid())
+	if err := os.WriteFile(platform.PidFile, []byte(pid), 0644); err != nil {
 		d.Logger.Warn("failed to write pid file", "error", err)
 	}
-	defer func() { _ = os.Remove(platform.PidFile) }()
+	// Remove it only while it is still ours: a daemon started after this one
+	// has already written its own PID.
+	defer func() {
+		if data, err := os.ReadFile(platform.PidFile); err == nil && strings.TrimSpace(string(data)) == pid {
+			_ = os.Remove(platform.PidFile)
+		}
+	}()
 
 	// Setup signal handling.
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
