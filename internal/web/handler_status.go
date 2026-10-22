@@ -5,14 +5,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	cfg := s.Config.Load()
-	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
-	ipsetCount, _ := ipset.Count(ctx)
+	ipsetCount := s.Tracker.Members()
 
 	shunts, _ := s.Shunts.List()
 	enabledCount, entryCount := 0, 0

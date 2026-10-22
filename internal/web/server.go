@@ -41,6 +41,10 @@ type Scheduler interface {
 // TrackerStats is the interface the web server uses to read DNS tracker state.
 type TrackerStats interface {
 	Count() (domains int, ips int)
+	// Members is the tracker's view of the kernel ipset size (domain IPs
+	// plus static entries); it spares the dashboard an `ipset list` exec on
+	// every poll.
+	Members() int
 }
 
 // LogReader is the interface the web server uses to read recent log entries.

@@ -3,6 +3,7 @@ package shunt_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egorlepa/netshunt/internal/shunt"
@@ -292,5 +293,49 @@ func TestImportExportFile(t *testing.T) {
 	shunts, _ := s2.List()
 	if len(shunts) != 1 || shunts[0].Name != "A" {
 		t.Fatalf("expected only shunt A, got: %+v", shunts)
+	}
+}
+
+func TestStoreCachesAndReloadsOnExternalChange(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "shunts.yaml")
+	s := shunt.NewStore(f)
+	if err := s.Create(shunt.Shunt{Name: "a", Enabled: true, Entries: []shunt.Entry{{Value: "a.example.com"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reads must not alias the cache: mutating a returned slice changes nothing.
+	got, _ := s.List()
+	got[0].Entries[0].Value = "mutated"
+	got2, _ := s.List()
+	if got2[0].Entries[0].Value != "a.example.com" {
+		t.Fatalf("cache aliased by a returned copy: %q", got2[0].Entries[0].Value)
+	}
+
+	// An external edit with a different size is picked up on the next read.
+	ext := "shunts:\n    - name: hand\n      enabled: true\n      entries:\n        - value: hand.example.com\n"
+	if err := os.WriteFile(f, []byte(ext), 0644); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Name != "hand" {
+		t.Fatalf("external edit not reloaded: %+v", list)
+	}
+
+	// A write refreshes the cache without a reparse: the file on disk and the
+	// cache agree afterwards.
+	if err := s.AddEntry("hand", "two.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(f)
+	if !strings.Contains(string(raw), "two.example.com") {
+		t.Fatalf("write-through missing: %s", raw)
+	}
+	sh, _ := s.Get("hand")
+	if len(sh.Entries) != 2 {
+		t.Fatalf("cache after save = %+v", sh.Entries)
 	}
 }

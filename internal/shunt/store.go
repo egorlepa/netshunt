@@ -20,9 +20,29 @@ type shuntsFile struct {
 }
 
 // Store manages shunts with file-backed persistence.
+//
+// The YAML file is the durable copy, but it is parsed only when it changes:
+// Store keeps the last loaded state in memory together with the file's
+// size and mtime, and every read hands out a deep copy of that state. A
+// write goes to disk first (atomically) and then replaces the cached copy.
+// If the file is edited by hand, the next read notices the changed stat and
+// reloads it. Parsing 150 KB of YAML costs tens of milliseconds and a few MB
+// of garbage on the router, which used to happen on every page view and
+// every dashboard poll.
 type Store struct {
 	mu   sync.Mutex
 	path string
+
+	cached    []Shunt // nil until the first load; aliases nothing handed out
+	cacheStat fileStat
+	cacheOK   bool
+}
+
+// fileStat identifies a version of the file on disk.
+type fileStat struct {
+	size    int64
+	modTime int64 // UnixNano
+	exists  bool
 }
 
 // NewStore creates a Store that reads/writes the given file path.
@@ -411,25 +431,80 @@ func (s *Store) GeositeShunts() ([]Shunt, error) {
 	return result, nil
 }
 
+// load returns a deep copy of the shunts, re-reading the file only when its
+// size or mtime differs from the cached version. Caller holds s.mu.
 func (s *Store) load() ([]Shunt, error) {
-	data, err := os.ReadFile(s.path)
+	st, err := statFile(s.path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+		return nil, fmt.Errorf("stat shunts: %w", err)
+	}
+	if s.cacheOK && st == s.cacheStat {
+		return cloneShunts(s.cached), nil
+	}
+	var shunts []Shunt
+	if st.exists {
+		data, err := os.ReadFile(s.path)
+		if err != nil {
+			return nil, fmt.Errorf("read shunts: %w", err)
 		}
-		return nil, fmt.Errorf("read shunts: %w", err)
+		var f shuntsFile
+		if err := yaml.Unmarshal(data, &f); err != nil {
+			return nil, fmt.Errorf("parse shunts: %w", err)
+		}
+		shunts = f.Shunts
 	}
-	var f shuntsFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("parse shunts: %w", err)
-	}
-	return f.Shunts, nil
+	s.cached = shunts
+	s.cacheStat = st
+	s.cacheOK = true
+	return cloneShunts(shunts), nil
 }
 
+// save writes shunts atomically and makes them the cached state. Caller
+// holds s.mu. On a write error the cache is left as it was, so the next read
+// reflects what is actually on disk.
 func (s *Store) save(shunts []Shunt) error {
 	data, err := yaml.Marshal(shuntsFile{Shunts: shunts})
 	if err != nil {
 		return fmt.Errorf("marshal shunts: %w", err)
 	}
-	return platform.WriteFileAtomic(s.path, data, 0644)
+	if err := platform.WriteFileAtomic(s.path, data, 0644); err != nil {
+		return err
+	}
+	st, err := statFile(s.path)
+	if err != nil {
+		s.cacheOK = false
+		return nil
+	}
+	s.cached = cloneShunts(shunts)
+	s.cacheStat = st
+	s.cacheOK = true
+	return nil
+}
+
+func statFile(path string) (fileStat, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fileStat{}, nil
+		}
+		return fileStat{}, err
+	}
+	return fileStat{size: fi.Size(), modTime: fi.ModTime().UnixNano(), exists: true}, nil
+}
+
+// cloneShunts deep-copies the slice so callers can mutate their copy
+// without touching the cache (mutations only reach the cache through save).
+func cloneShunts(in []Shunt) []Shunt {
+	if in == nil {
+		return nil
+	}
+	out := make([]Shunt, len(in))
+	for i, sh := range in {
+		out[i] = sh
+		if sh.Entries != nil {
+			out[i].Entries = make([]Entry, len(sh.Entries))
+			copy(out[i].Entries, sh.Entries)
+		}
+	}
+	return out
 }
