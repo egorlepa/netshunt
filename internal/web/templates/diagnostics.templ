@@ -23,33 +23,6 @@ templ DiagnosticsPage() {
 			</div>
 		</div>
 		<div class="card mb-16">
-			<h2 class="mb-8">Domain Probe</h2>
-			<p class="text-muted text-sm mb-8">Test if a domain resolves and its IPs are in the ipset.</p>
-			<form
-				hx-post="/diagnostics/probe"
-				hx-target="#probe-results"
-				hx-swap="innerHTML"
-				hx-disabled-elt="find button[type='submit']"
-				class="flex gap-8 stack-sm"
-			>
-				<input type="text" name="domain" value="ifconfig.me" placeholder="example.com" required/>
-				<button class="btn btn-accent" type="submit">
-					Test
-					<span class="htmx-indicator"><span class="spinner"></span></span>
-				</button>
-			</form>
-			<div id="probe-results" class="mt-8" hx-post="/diagnostics/probe" hx-trigger="load" hx-swap="innerHTML" hx-vals='{"domain":"ifconfig.me"}'>
-				<p class="mb-8"><strong>ifconfig.me</strong></p>
-				<div class="check-list">
-					<div class="check-row">
-						<span class="check-icon check-pending"><span class="spinner"></span></span>
-						<span class="check-name">resolving…</span>
-						<span class="check-detail text-muted">checking ipset</span>
-					</div>
-				</div>
-			</div>
-		</div>
-		<div class="card mb-16">
 			<h2 class="mb-8">Maintenance</h2>
 			<div class="flex gap-8 flex-wrap">
 				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none" hx-disabled-elt="this">
@@ -126,41 +99,4 @@ templ DiagnosticsCheckResult(i int, r healthcheck.Result) {
 		<span class="check-name"><strong>{ r.Name }</strong></span>
 		<span class="check-detail text-muted" title={ r.Detail }>{ r.Detail }</span>
 	</div>
-}
-
-templ DiagnosticsProbeResult(probe healthcheck.ProbeResult) {
-	<p class="mb-8"><strong>{ probe.Domain }</strong></p>
-	if len(probe.IPs) == 0 {
-		<div class="check-row">
-			<span class="check-icon"><span class="text-red">✗</span></span>
-			<span class="check-detail">no IPs resolved</span>
-		</div>
-	} else {
-		<div class="check-list">
-			for _, ip := range probe.IPs {
-				<div class="check-row">
-					<span class="check-icon">
-						if probe.InIPSet[ip] {
-							<span class="text-green">✓</span>
-						} else {
-							<span class="text-red">✗</span>
-						}
-					</span>
-					<span class="check-name mono">{ ip }</span>
-					<span class="check-detail text-muted">
-						if probe.InIPSet[ip] {
-							in ipset
-						} else {
-							not in ipset
-						}
-					</span>
-				</div>
-			}
-		</div>
-	}
-}
-
-templ DiagnosticsProbeError(domain string, errMsg string) {
-	<p class="mb-8"><strong>{ domain }</strong></p>
-	<p><span class="text-red">✗</span> <span class="text-muted">{ errMsg }</span></p>
 }

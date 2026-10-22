@@ -202,24 +202,6 @@ func newSetupCmd() *cobra.Command {
 			results := healthcheck.RunChecks(ctx, cfg, store)
 			PrintResults(results)
 
-			// 16. Domain probe: verify ifconfig.me resolves through the pipeline.
-			fmt.Println()
-			fmt.Println("Domain probe: ifconfig.me")
-			probe, err := healthcheck.ProbeDomain(ctx, cfg, "ifconfig.me")
-			if err != nil {
-				printFail(fmt.Sprintf("ifconfig.me: %v", err))
-			} else if len(probe.IPs) == 0 {
-				printFail("ifconfig.me: no IPs resolved")
-			} else {
-				for _, ip := range probe.IPs {
-					if probe.InIPSet[ip] {
-						printPass(fmt.Sprintf("%s in ipset", ip))
-					} else {
-						printFail(fmt.Sprintf("%s not in ipset", ip))
-					}
-				}
-			}
-
 			fmt.Println()
 			fmt.Println("Verify your setup:")
 			fmt.Println("  Open https://ifconfig.me in your browser.")

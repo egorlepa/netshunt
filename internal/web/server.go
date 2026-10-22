@@ -111,7 +111,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
 	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
 	s.mux.HandleFunc("GET /diagnostics/run/{i}", s.handleDiagnosticsRunOne)
-	s.mux.HandleFunc("POST /diagnostics/probe", s.handleDiagnosticsProbe)
 	s.mux.HandleFunc("GET /diagnostics/logs", s.handleDiagnosticsLogs)
 
 	// Shunt mutations (htmx).
