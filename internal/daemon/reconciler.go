@@ -62,6 +62,11 @@ type Reconciler struct {
 	// bootstrapped flips to true after the first Reconcile, which loads the
 	// persisted tracker state.
 	bootstrapped bool
+
+	// blocklistKey identifies the inputs of the installed blocklist matcher:
+	// "disabled", or "enabled" plus the store fingerprint (enabled sources,
+	// cache file size and mtime). Empty until the first apply.
+	blocklistKey string
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
@@ -175,8 +180,8 @@ func (r *Reconciler) SwitchProxy(ctx context.Context) error {
 	return nil
 }
 
-// ApplyBlocklist rebuilds the forwarder's blocklist matcher from the store
-// and re-applies the configured response kind. Cheap - just file reads.
+// ApplyBlocklist re-applies the configured response kind and rebuilds the
+// forwarder's blocklist matcher from the store when its inputs changed.
 func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -184,26 +189,46 @@ func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {
 	return nil
 }
 
+// applyBlocklistLocked always sets the response kind, which does not affect
+// the matcher, then rebuilds the matcher only when (enabled, fingerprint)
+// differs from the last applied build: a rebuild of a 200k-domain list costs
+// about 0.7 s and a 13 MB heap spike on the router, and a full reconcile or a
+// response-kind change would otherwise pay it every time.
 func (r *Reconciler) applyBlocklistLocked() {
 	cfg := r.Config.Load()
 	r.Forwarder.SetBlockResponse(blockResponseFromConfig(cfg.Blocklist.Response))
 
-	if r.Blocklist == nil || !cfg.Blocklist.Enabled {
-		// Clear the matcher.
+	key := "disabled"
+	if r.Blocklist != nil && cfg.Blocklist.Enabled {
+		// Taken before streaming: a download renamed in during the build
+		// changes the fingerprint, so the next apply rebuilds again.
+		key = "enabled\x00" + r.Blocklist.Fingerprint()
+	}
+	if key == r.blocklistKey {
+		r.Logger.Debug("blocklist unchanged")
+		return
+	}
+
+	if key == "disabled" {
 		r.Forwarder.Blocklist().Replace(nil)
+		r.blocklistKey = key
+		r.Logger.Info("blocklist cleared")
 		return
 	}
 
 	// Stream-build: each domain is scanned from disk, normalized in place,
-	// and inserted directly into the new SuffixSet. No []string or
-	// []shunt.Entry slice is materialised.
+	// and copied straight into the new SuffixSet. No per-domain string, no
+	// []string or []shunt.Entry slice is materialised.
 	counts := map[string]int{}
-	total := r.Forwarder.Blocklist().Replace(func(add func(string)) {
-		r.Blocklist.Stream(
-			func(b []byte) { add(string(b)) },
-			func(id string, c int) { counts[id] = c },
-		)
+	total := r.Forwarder.Blocklist().Replace(func(add func([]byte)) {
+		r.Blocklist.Stream(add, func(id string, c int, err error) {
+			counts[id] = c
+			if err != nil {
+				r.Logger.Warn("blocklist source unreadable", "id", id, "error", err)
+			}
+		})
 	})
+	r.blocklistKey = key
 
 	// Force reclamation of the old matcher rules + any transient parse
 	// allocations now, rather than waiting on the GC pacer. On a router the

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -110,13 +112,15 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	count, unchanged, err := s.fetchAndRecord(r.Context(), *preset)
+	ctx, cancel := detachedUpdateContext(r)
+	defer cancel()
+	count, unchanged, err := s.fetchAndRecord(ctx, *preset)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if err := s.Reconciler.ApplyBlocklist(r.Context()); err != nil {
+	if err := s.Reconciler.ApplyBlocklist(ctx); err != nil {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -131,7 +135,9 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request) {
-	success, failed := s.UpdateAllBlocklistSources(r.Context())
+	ctx, cancel := detachedUpdateContext(r)
+	defer cancel()
+	success, failed := s.UpdateAllBlocklistSources(ctx)
 
 	if failed == 0 {
 		toastTrigger(w, fmt.Sprintf("Updated %d source(s)", success), "success")
@@ -140,6 +146,19 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 	}
 	bl := s.Config.Load().Blocklist
 	s.render(r, w, templates.BlocklistContent(bl.Enabled, bl.Response, bl.AutoUpdate, s.blocklistSourceViews()))
+}
+
+// blocklistUpdateTimeout bounds a UI-triggered update once it no longer
+// follows the request (each mirror attempt is also capped at 2 minutes by the
+// HTTP client).
+const blocklistUpdateTimeout = 10 * time.Minute
+
+// detachedUpdateContext is the context for a download started from the UI:
+// it keeps the request's values but not its cancellation, so closing the tab
+// mid-download does not abort it with "context canceled" and leave the
+// source half-updated. The handler still waits for the result.
+func detachedUpdateContext(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), blocklistUpdateTimeout)
 }
 
 func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Request) {
@@ -213,12 +232,19 @@ func (s *Server) UpdateAllBlocklistSources(ctx context.Context) (success, failed
 // fetchAndRecord downloads a single source (conditional GET via stored
 // validators) and records the result on the store. Returns the post-fetch
 // domain count, a flag indicating the upstream returned 304 Not Modified, and
-// any fatal error.
+// any fatal error. A download that parses to nothing or to less than half of
+// the recorded count is rejected by Download and the old file kept.
 func (s *Server) fetchAndRecord(ctx context.Context, preset blocklist.Source) (int, bool, error) {
 	dest := blocklist.CachePath(s.Blocklist.CacheDir(), preset.ID)
 
 	prev, _ := s.Blocklist.State(preset.ID)
-	res, err := blocklist.Download(ctx, preset, dest, prev.ETag, prev.LastModified)
+	// The shrink check compares against the list on disk: without a cache
+	// file there is nothing to keep, so any non-empty list is accepted.
+	prevCount := prev.DomainCount
+	if _, err := os.Stat(dest); err != nil {
+		prevCount = 0
+	}
+	res, err := blocklist.Download(ctx, preset, dest, prev.ETag, prev.LastModified, prevCount)
 	if err != nil {
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
 		return 0, false, fmt.Errorf("%s: %w", preset.ID, err)
@@ -231,17 +257,10 @@ func (s *Server) fetchAndRecord(ctx context.Context, preset blocklist.Source) (i
 		return prev.DomainCount, true, nil
 	}
 
-	// Stream-count: visit each domain without building a slice so a large
-	// file (1M lines) doesn't spike memory just to get a count for display.
-	count := 0
-	if err := blocklist.StreamFile(dest, preset.Format, func([]byte) { count++ }); err != nil {
-		_ = s.Blocklist.RecordError(preset.ID, err.Error())
-		return 0, false, fmt.Errorf("%s parse: %w", preset.ID, err)
-	}
-	if err := s.Blocklist.RecordFetch(preset.ID, count, res.ETag, res.LastModified); err != nil {
+	if err := s.Blocklist.RecordFetch(preset.ID, res.Count, res.ETag, res.LastModified); err != nil {
 		return 0, false, err
 	}
-	return count, false, nil
+	return res.Count, false, nil
 }
 
 // blocklistSourceViews zips Presets with persisted state in display order.

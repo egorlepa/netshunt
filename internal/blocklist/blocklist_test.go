@@ -2,11 +2,14 @@ package blocklist
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,7 +122,7 @@ func TestDownloadRecordsValidators(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "test.txt")
-	res, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "")
+	res, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "", 0)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
@@ -131,6 +134,9 @@ func TestDownloadRecordsValidators(t *testing.T) {
 	}
 	if res.LastModified != "Wed, 21 Oct 2026 07:28:00 GMT" {
 		t.Errorf("LastModified = %q", res.LastModified)
+	}
+	if res.Count != 1 {
+		t.Errorf("Count = %d, want 1", res.Count)
 	}
 	data, err := os.ReadFile(dest)
 	if err != nil || !strings.Contains(string(data), "ads.example.com") {
@@ -153,7 +159,7 @@ func TestDownloadConditional304(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	res, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, `"abc123"`, "Wed, 21 Oct 2026 07:28:00 GMT")
+	res, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, `"abc123"`, "Wed, 21 Oct 2026 07:28:00 GMT", 7)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
@@ -169,6 +175,9 @@ func TestDownloadConditional304(t *testing.T) {
 	// Previous validators should be preserved on the result.
 	if res.ETag != `"abc123"` {
 		t.Errorf("ETag = %q, want carried-through previous value", res.ETag)
+	}
+	if res.Count != 7 {
+		t.Errorf("Count = %d, want the previous count 7", res.Count)
 	}
 	// Cache file must be untouched.
 	data, _ := os.ReadFile(dest)
@@ -190,7 +199,7 @@ func TestDownloadExceedsSizeCap(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "test.txt")
-	_, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "")
+	_, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "", 0)
 	if err == nil {
 		t.Fatalf("expected size-cap error, got nil")
 	}
@@ -213,7 +222,7 @@ func TestDownloadFallsBackToMirror(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "test.txt")
 	src := Source{URL: gone.URL, Mirrors: []string{mirror.URL}, Format: FormatDomains}
-	if _, err := Download(context.Background(), src, dest, "", ""); err != nil {
+	if _, err := Download(context.Background(), src, dest, "", "", 0); err != nil {
 		t.Fatalf("Download: %v", err)
 	}
 	data, _ := os.ReadFile(dest)
@@ -228,7 +237,7 @@ func TestDownloadAllMirrorsFail(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "test.txt")
 	src := Source{URL: gone.URL + "/a", Mirrors: []string{gone.URL + "/b"}, Format: FormatDomains}
-	_, err := Download(context.Background(), src, dest, "", "")
+	_, err := Download(context.Background(), src, dest, "", "", 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -302,5 +311,239 @@ func TestStoreRecordFetchPersistsValidators(t *testing.T) {
 	st2, _ := s2.State("hagezi-pro")
 	if st2.ETag != `"v1"` || st2.LastModified != "Wed, 21 Oct 2026 07:28:00 GMT" {
 		t.Errorf("validators did not round-trip: %+v", st2)
+	}
+}
+
+// serveBody answers every request with 200 and body.
+func serveBody(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// seedCache writes the previous list to dest and returns its content.
+func seedCache(t *testing.T, dest string, n int) string {
+	t.Helper()
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "old%d.example.com\n", i)
+	}
+	if err := os.WriteFile(dest, []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func assertKept(t *testing.T, dest, want string) {
+	t.Helper()
+	data, err := os.ReadFile(dest)
+	if err != nil || string(data) != want {
+		t.Errorf("previous cache file not kept: err=%v, %d bytes", err, len(data))
+	}
+	tmps, _ := filepath.Glob(filepath.Join(filepath.Dir(dest), "*.tmp"))
+	if len(tmps) > 0 {
+		t.Errorf("temp files left behind: %v", tmps)
+	}
+}
+
+func TestDownloadEmptyBodyRejected(t *testing.T) {
+	// An HTML error page served with 200 parses to no domains as well.
+	for _, body := range []string{"", "<html><body>rate limited</body></html>\n"} {
+		srv := serveBody(t, body)
+		dest := filepath.Join(t.TempDir(), "test.txt")
+		old := seedCache(t, dest, 10)
+		_, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "", 10)
+		if err == nil || !strings.Contains(err.Error(), "no domains parsed, keeping previous list") {
+			t.Fatalf("body %q: err = %v, want rejection", body, err)
+		}
+		assertKept(t, dest, old)
+	}
+}
+
+func TestDownloadShrunkBelowHalfRejected(t *testing.T) {
+	srv := serveBody(t, "a.example.com\nb.example.com\nc.example.com\nd.example.com\n")
+	dest := filepath.Join(t.TempDir(), "test.txt")
+	old := seedCache(t, dest, 10)
+	_, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "", 10)
+	if err == nil || !strings.Contains(err.Error(), "parsed 4 domains, previous 10, keeping previous list") {
+		t.Fatalf("err = %v, want shrink rejection", err)
+	}
+	assertKept(t, dest, old)
+}
+
+func TestDownloadHalfSizeAccepted(t *testing.T) {
+	// Exactly half is the boundary that still passes.
+	srv := serveBody(t, "a.example.com\nb.example.com\nc.example.com\nd.example.com\ne.example.com\n")
+	dest := filepath.Join(t.TempDir(), "test.txt")
+	seedCache(t, dest, 10)
+	res, err := Download(context.Background(), Source{URL: srv.URL, Format: FormatDomains}, dest, "", "", 10)
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if res.Count != 5 {
+		t.Errorf("Count = %d, want 5", res.Count)
+	}
+	data, _ := os.ReadFile(dest)
+	if !strings.HasPrefix(string(data), "a.example.com") {
+		t.Errorf("cache not replaced: %q", data)
+	}
+}
+
+func TestDownloadRejectedPrimaryFallsBackToMirror(t *testing.T) {
+	empty := serveBody(t, "")
+	good := serveBody(t, "ads.example.com\ntracker.example.net\n")
+	dest := filepath.Join(t.TempDir(), "test.txt")
+	src := Source{URL: empty.URL, Mirrors: []string{good.URL}, Format: FormatDomains}
+	res, err := Download(context.Background(), src, dest, "", "", 0)
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if res.Count != 2 {
+		t.Errorf("Count = %d, want 2", res.Count)
+	}
+}
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := NewStore(filepath.Join(dir, "meta.yaml"), filepath.Join(dir, "cache"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := os.MkdirAll(s.CacheDir(), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestStoreFingerprint(t *testing.T) {
+	s := newTestStore(t)
+	// Defaults: hagezi-light enabled, no cache file yet.
+	missing := s.Fingerprint()
+	if missing != "hagezi-light:missing;" {
+		t.Fatalf("Fingerprint = %q", missing)
+	}
+
+	path := CachePath(s.CacheDir(), "hagezi-light")
+	if err := os.WriteFile(path, []byte("a.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	fp := s.Fingerprint()
+	if fp == missing || fp != s.Fingerprint() {
+		t.Fatalf("Fingerprint not stable or equals missing: %q", fp)
+	}
+
+	// Same size, new mtime.
+	if err := os.Chtimes(path, mtime.Add(time.Second), mtime.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if s.Fingerprint() == fp {
+		t.Errorf("mtime change not reflected")
+	}
+	// Same mtime, new size.
+	if err := os.WriteFile(path, []byte("ab.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	if s.Fingerprint() == fp {
+		t.Errorf("size change not reflected")
+	}
+	// A disabled source does not count; an enabled one does.
+	before := s.Fingerprint()
+	if err := s.SetEnabled("hagezi-pro", true); err != nil {
+		t.Fatal(err)
+	}
+	if s.Fingerprint() == before {
+		t.Errorf("enabling a source not reflected")
+	}
+}
+
+func TestStoreStreamReportsUnreadableSource(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SetEnabled("hagezi-pro", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(CachePath(s.CacheDir(), "hagezi-pro"), []byte("a.example.com\nb.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	type report struct {
+		count int
+		err   error
+	}
+	got := map[string]report{}
+	emitted := 0
+	s.Stream(func([]byte) { emitted++ }, func(id string, n int, err error) {
+		got[id] = report{n, err}
+	})
+	if emitted != 2 {
+		t.Errorf("emitted %d, want 2", emitted)
+	}
+	if r := got["hagezi-pro"]; r.count != 2 || r.err != nil {
+		t.Errorf("hagezi-pro = %+v", r)
+	}
+	if r, ok := got["hagezi-light"]; !ok || !errors.Is(r.err, os.ErrNotExist) {
+		t.Errorf("missing hagezi-light not reported: %+v ok=%v", r, ok)
+	}
+}
+
+func TestStoreCleanCache(t *testing.T) {
+	s := newTestStore(t)
+	dir := s.CacheDir()
+	files := []string{
+		"hagezi-light.txt",          // preset: kept
+		"hagezi-pro.txt",            // preset: kept
+		"hagezi-tif.txt",            // dropped preset: removed
+		"stevenblack.txt",           // dropped preset: removed
+		"hagezi-pro.txt.123456.tmp", // interrupted download: removed
+		"notes.md",                  // other name: kept
+		"hagezi-pro.txt.bak",        // other name: kept
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A directory with a matching name is not a regular file: kept.
+	if err := os.Mkdir(filepath.Join(dir, "old.txt"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := s.CleanCache()
+	if err != nil {
+		t.Fatalf("CleanCache: %v", err)
+	}
+	slices.Sort(removed)
+	want := []string{"hagezi-pro.txt.123456.tmp", "hagezi-tif.txt", "stevenblack.txt"}
+	if !slices.Equal(removed, want) {
+		t.Errorf("removed = %v, want %v", removed, want)
+	}
+	left, _ := os.ReadDir(dir)
+	var names []string
+	for _, e := range left {
+		names = append(names, e.Name())
+	}
+	wantLeft := []string{"hagezi-light.txt", "hagezi-pro.txt", "hagezi-pro.txt.bak", "notes.md", "old.txt"}
+	if !slices.Equal(names, wantLeft) {
+		t.Errorf("left = %v, want %v", names, wantLeft)
+	}
+
+	// Second run: nothing to do. Missing dir: no error.
+	if removed, err := s.CleanCache(); err != nil || len(removed) != 0 {
+		t.Errorf("second run: removed=%v err=%v", removed, err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CleanCache(); err != nil {
+		t.Errorf("missing dir: %v", err)
 	}
 }

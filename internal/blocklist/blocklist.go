@@ -114,6 +114,9 @@ type DownloadResult struct {
 	// previously-stored values.
 	ETag         string
 	LastModified string
+	// Count is the number of domains parsed from the new file (pre-dedup);
+	// on NotModified it is the previous count passed to Download.
+	Count int
 }
 
 // Download fetches src into destPath atomically, trying src.URL and then
@@ -122,14 +125,19 @@ type DownloadResult struct {
 // response destPath is not touched and the returned DownloadResult has
 // NotModified=true. The response body is capped at MaxDownloadBytes and
 // streamed directly to disk (never buffered entirely in memory).
-func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModified string) (DownloadResult, error) {
+//
+// The new body is parsed before it replaces destPath: a body with no domains,
+// or with fewer than half of prevCount (the count recorded for the current
+// file, 0 when unknown), is rejected and destPath is left untouched, so a
+// truncated or error-page response never empties the blocklist.
+func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModified string, prevCount int) (DownloadResult, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return DownloadResult{}, fmt.Errorf("create directory: %w", err)
 	}
 
 	var errs []string
 	for _, url := range append([]string{src.URL}, src.Mirrors...) {
-		res, err := downloadOnce(ctx, url, destPath, prevETag, prevLastModified)
+		res, err := downloadOnce(ctx, url, src.Format, destPath, prevETag, prevLastModified, prevCount)
 		if err == nil {
 			return res, nil
 		}
@@ -141,7 +149,7 @@ func Download(ctx context.Context, src Source, destPath, prevETag, prevLastModif
 	return DownloadResult{}, errors.New(strings.Join(errs, "; "))
 }
 
-func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified string) (DownloadResult, error) {
+func downloadOnce(ctx context.Context, url string, format Format, destPath, prevETag, prevLastModified string, prevCount int) (DownloadResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("create request: %w", err)
@@ -162,7 +170,7 @@ func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return DownloadResult{NotModified: true, ETag: prevETag, LastModified: prevLastModified}, nil
+		return DownloadResult{NotModified: true, ETag: prevETag, LastModified: prevLastModified, Count: prevCount}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		return DownloadResult{}, fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -188,8 +196,21 @@ func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified
 	if written > MaxDownloadBytes {
 		return DownloadResult{}, fmt.Errorf("download exceeds %d byte cap", MaxDownloadBytes)
 	}
+	// The rename below is the commit point: the data must be on the stick
+	// before the old list is replaced, or a power cut leaves an empty file.
+	if err := tmp.Sync(); err != nil {
+		return DownloadResult{}, fmt.Errorf("sync: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return DownloadResult{}, fmt.Errorf("close: %w", err)
+	}
+
+	count := 0
+	if err := StreamFile(tmpName, format, func([]byte) { count++ }); err != nil {
+		return DownloadResult{}, fmt.Errorf("parse: %w", err)
+	}
+	if err := checkCount(count, prevCount); err != nil {
+		return DownloadResult{}, err
 	}
 
 	if err := os.Rename(tmpName, destPath); err != nil {
@@ -198,7 +219,21 @@ func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified
 	return DownloadResult{
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
+		Count:        count,
 	}, nil
+}
+
+// checkCount rejects a downloaded list that parsed to nothing or shrank to
+// less than half of the previous one: an upstream error page served with 200,
+// a truncated transfer or a format change, never a real list update.
+func checkCount(count, prevCount int) error {
+	if count == 0 {
+		return errors.New("no domains parsed, keeping previous list")
+	}
+	if 2*count < prevCount {
+		return fmt.Errorf("parsed %d domains, previous %d, keeping previous list", count, prevCount)
+	}
+	return nil
 }
 
 // StreamFile opens path and invokes emit for every normalized domain in the

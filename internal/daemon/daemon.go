@@ -65,6 +65,13 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 	if err != nil {
 		return nil, fmt.Errorf("init blocklist store: %w", err)
 	}
+	// Lists of presets that no longer exist and temp files of interrupted
+	// downloads only take space on the stick.
+	if removed, err := blocklistStore.CleanCache(); err != nil {
+		logger.Warn("blocklist cache cleanup failed", "error", err, "removed", removed)
+	} else if len(removed) > 0 {
+		logger.Info("blocklist cache cleaned", "removed", removed)
+	}
 
 	// Geosite shunts are references: their entries are read from dlc.dat
 	// through the index whenever the matcher is rebuilt.

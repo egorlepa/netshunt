@@ -306,9 +306,9 @@ func TestIsUndelegated(t *testing.T) {
 func TestForwarderBlocklistTakesPrecedence(t *testing.T) {
 	s := newDoHServer(t, answerA(60, "192.0.2.1"))
 	f := newTestForwarder(t, s)
-	f.Blocklist().Replace(func(add func(string)) {
-		add("ads.example.org")
-		add("tracker.local")
+	f.Blocklist().Replace(func(add func([]byte)) {
+		add([]byte("ads.example.org"))
+		add([]byte("tracker.local"))
 	})
 	for _, qtype := range []uint16{dns.TypeA, dns.TypeAAAA} {
 		if r := f.query(t, "x.ads.example.org.", qtype); r.Rcode != dns.RcodeNameError {

@@ -79,9 +79,9 @@ func pickSample(src []string, n int) []string {
 // ──────────────────────────────────────────────────────────────────────────
 
 func buildSuffixSet(domains []string) *SuffixSet {
-	return BuildSuffixSet(func(add func(string)) {
+	return BuildSuffixSet(func(add func([]byte)) {
 		for _, d := range domains {
-			add(d)
+			add([]byte(d))
 		}
 	})
 }

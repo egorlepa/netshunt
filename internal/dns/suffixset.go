@@ -59,8 +59,10 @@ func (s *SuffixSet) Match(query string) bool {
 
 // BuildSuffixSet constructs a SuffixSet from a streaming callback. The build
 // function should call add() for each domain to include. Duplicates are
-// silently collapsed. Empty strings are ignored.
-func BuildSuffixSet(build func(add func(domain string))) *SuffixSet {
+// silently collapsed. Empty domains are ignored. add copies the bytes into
+// the set before returning, so the slice may alias a scanner buffer that the
+// caller reuses; no per-domain string is allocated.
+func BuildSuffixSet(build func(add func(domain []byte))) *SuffixSet {
 	// Stream into reversed-form bytes + per-entry (start, length).
 	// We sort indices (not strings) and compact into the final layout.
 	type entry struct {
@@ -72,12 +74,12 @@ func BuildSuffixSet(build func(add func(domain string))) *SuffixSet {
 		entries []entry
 	)
 	if build != nil {
-		build(func(d string) {
-			if d == "" {
+		build(func(d []byte) {
+			if len(d) == 0 {
 				return
 			}
 			start := len(raw)
-			raw = reverseLabelsAppend(raw, d)
+			raw = reverseLabelsAppendBytes(raw, d)
 			entries = append(entries, entry{
 				start:  uint32(start),
 				length: uint32(len(raw) - start),
@@ -141,6 +143,22 @@ func reverseLabelsAppend(dst []byte, d string) []byte {
 	return dst
 }
 
+// reverseLabelsAppendBytes is reverseLabelsAppend for a byte slice, used by
+// the build so a streamed domain never becomes a string.
+func reverseLabelsAppendBytes(dst, d []byte) []byte {
+	end := len(d)
+	for end > 0 {
+		start := bytes.LastIndexByte(d[:end], '.') + 1
+		dst = append(dst, d[start:end]...)
+		dst = append(dst, '.')
+		end = start - 1
+		if end < 0 {
+			break
+		}
+	}
+	return dst
+}
+
 // BlocklistMatcher is a thread-safe wrapper around SuffixSet supporting
 // atomic replacement (for blocklist refresh) and lock-free reads.
 type BlocklistMatcher struct {
@@ -160,8 +178,9 @@ func (m *BlocklistMatcher) Match(domain string) bool {
 }
 
 // Replace builds a fresh SuffixSet from the supplied stream and atomically
-// swaps it in. Returns the number of unique entries installed.
-func (m *BlocklistMatcher) Replace(build func(add func(domain string))) int {
+// swaps it in. Returns the number of unique entries installed. A nil build
+// installs an empty set.
+func (m *BlocklistMatcher) Replace(build func(add func(domain []byte))) int {
 	s := BuildSuffixSet(build)
 	m.set.Store(s)
 	return s.Len()
