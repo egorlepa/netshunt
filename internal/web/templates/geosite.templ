@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"net/url"
+
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/geosite"
 )
@@ -138,7 +140,7 @@ templ GeositeCategoryRow(cat geosite.CategoryInfo, imported bool) {
 				<span class="badge badge-green" style="margin-right:8px">Imported</span>
 				<button
 					class="btn btn-sm btn-danger"
-					hx-delete={ "/geosite/import/" + cat.Name }
+					hx-delete={ "/geosite/import/" + url.PathEscape(cat.Name) }
 					hx-target={ "#cat-" + SlugID(cat.Name) }
 					hx-swap="outerHTML"
 					hx-confirm={ "Remove imported shunt \"" + cat.Name + "\"?" }
@@ -146,7 +148,7 @@ templ GeositeCategoryRow(cat geosite.CategoryInfo, imported bool) {
 			} else {
 				<button
 					class="btn btn-sm btn-accent"
-					hx-post={ "/geosite/import/" + cat.Name }
+					hx-post={ "/geosite/import/" + url.PathEscape(cat.Name) }
 					hx-target={ "#cat-" + SlugID(cat.Name) }
 					hx-swap="outerHTML"
 				>Import</button>

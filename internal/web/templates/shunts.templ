@@ -124,14 +124,14 @@ templ ShuntToggle(s shunt.Shunt) {
 			<input
 				type="checkbox"
 				checked
-				hx-put={ "/shunts/" + s.Name + "/disable" }
+				hx-put={ shuntPath(s.Name) + "/disable" }
 				hx-target={ "#toggle-" + SlugID(s.Name) }
 				hx-swap="outerHTML"
 			/>
 		} else {
 			<input
 				type="checkbox"
-				hx-put={ "/shunts/" + s.Name + "/enable" }
+				hx-put={ shuntPath(s.Name) + "/enable" }
 				hx-target={ "#toggle-" + SlugID(s.Name) }
 				hx-swap="outerHTML"
 			/>
@@ -162,7 +162,7 @@ templ ShuntCard(s shunt.Shunt) {
 				@ShuntToggle(s)
 				<button
 					class="btn btn-sm btn-danger"
-					hx-delete={ "/shunts/" + s.Name }
+					hx-delete={ shuntPath(s.Name) }
 					hx-target={ "#shunt-" + SlugID(s.Name) }
 					hx-swap="outerHTML"
 					hx-confirm={ "Delete shunt \"" + s.Name + "\"?" }
@@ -175,7 +175,7 @@ templ ShuntCard(s shunt.Shunt) {
 			</div>
 			if s.Source == "" {
 				<form
-					hx-post={ "/shunts/" + s.Name + "/entries/bulk" }
+					hx-post={ shuntPath(s.Name) + "/entries/bulk" }
 					hx-target={ "#shunt-" + SlugID(s.Name) }
 					hx-swap="outerHTML"
 					hx-disabled-elt="find textarea, find button[type='submit']"
@@ -210,7 +210,7 @@ templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readO
 					if !readOnly {
 						<button
 							class="btn btn-sm btn-danger"
-							hx-delete={ "/shunts/" + shuntName + "/entries/" + e.Value }
+							hx-delete={ entryPath(shuntName, e.Value) }
 							hx-target={ "#entry-items-" + shuntSlug }
 							hx-swap="innerHTML"
 						>&times;</button>

@@ -2,6 +2,7 @@ package templates
 
 import (
 	"encoding/hex"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,4 +61,17 @@ func logLevelClass(level string) string {
 	default:
 		return "log-level text-muted"
 	}
+}
+
+// shuntPath returns the URL path for a shunt, with the name escaped so names
+// with spaces, slashes or '#' survive the round trip.
+func shuntPath(name string) string {
+	return "/shunts/" + url.PathEscape(name)
+}
+
+// entryPath returns the URL path for one entry of a shunt. Values such as
+// regexp:^a#b?c or 1.2.3.0/24 must be escaped: the mux decodes each segment
+// back in PathValue, '%2F' included.
+func entryPath(shunt, value string) string {
+	return shuntPath(shunt) + "/entries/" + url.PathEscape(value)
 }
