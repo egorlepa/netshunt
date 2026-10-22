@@ -25,6 +25,15 @@ func NewIPSet(name string) *IPSet {
 // its size until it is recreated or swapped.
 const MaxElem = "262144"
 
+// HashSize is the initial bucket count of a new set. The Keenetic 4.9 kernel
+// has a hash:net bug: once a set created with the default hashsize (1024)
+// holds about 1000 members and has to grow, deleting a member can silently
+// drop unrelated members or fail with "not added" (reproduced on the
+// router with 2000 /32s: 1154 left after deleting all; clean at hashsize
+// 8192). A large initial hashsize keeps the set from ever resizing in
+// practice. Cost: about 400 KB of kernel memory for an empty set.
+const HashSize = "16384"
+
 // EnsureTable creates the ipset table if it doesn't exist. The existence
 // check lists only the header (-t), not the members.
 func (s *IPSet) EnsureTable(ctx context.Context) error {
@@ -32,7 +41,7 @@ func (s *IPSet) EnsureTable(ctx context.Context) error {
 	if err == nil {
 		return nil // already exists
 	}
-	return platform.OrDefault(s.Runner).RunSilent(ctx, "ipset", "create", s.Name, "hash:net", "maxelem", MaxElem)
+	return platform.OrDefault(s.Runner).RunSilent(ctx, "ipset", "create", s.Name, "hash:net", "hashsize", HashSize, "maxelem", MaxElem)
 }
 
 // Flush removes all entries from the table.

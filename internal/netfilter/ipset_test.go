@@ -15,7 +15,7 @@ func TestEnsureTableCreatesWithMaxElem(t *testing.T) {
 	if err := s.EnsureTable(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"ipset list -t bypass", "ipset create bypass hash:net maxelem 262144"}
+	want := []string{"ipset list -t bypass", "ipset create bypass hash:net hashsize 16384 maxelem 262144"}
 	if got := run.Calls(); !slices.Equal(got, want) {
 		t.Fatalf("calls = %v, want %v", got, want)
 	}
