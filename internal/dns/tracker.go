@@ -310,8 +310,8 @@ func (t *Tracker) Members() int {
 // A static entry whose IP a domain already holds (or keeps holding) changes
 // no kernel state. A failed add leaves the entry out of the static set, so
 // the next call retries it.
-func (t *Tracker) SetStatic(ctx context.Context, values []string) {
-	t.setStatic(ctx, values, false)
+func (t *Tracker) SetStatic(ctx context.Context, values []string) (added, removed int) {
+	return t.setStatic(ctx, values, false)
 }
 
 // PresumeStatic records static entries as present in the kernel WITHOUT
@@ -323,7 +323,9 @@ func (t *Tracker) PresumeStatic(values []string) {
 	t.setStatic(context.Background(), values, true)
 }
 
-func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) {
+// setStatic returns how many members were added to and removed from the
+// kernel set (presumed ones count as added).
+func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) (added, removed int) {
 	want := make(map[string]struct{}, len(values))
 	for _, v := range values {
 		m, ok := canonicalMember(v)
@@ -366,12 +368,12 @@ func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) 
 		t.mu.Unlock()
 		t.delMembersLocked(ctx, toRemove)
 		t.kernelMu.Unlock()
-		return
+		return len(toAdd), len(toRemove)
 	}
 
-	added, _ := t.addMembers(ctx, toAdd)
+	ok, _ := t.addMembers(ctx, toAdd)
 	t.mu.Lock()
-	for _, m := range added {
+	for _, m := range ok {
 		t.static[m] = struct{}{}
 		delete(t.orphans, m)
 	}
@@ -379,12 +381,13 @@ func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) 
 	t.delMembersLocked(ctx, toRemove)
 	t.kernelMu.Unlock()
 
-	for _, m := range added {
+	for _, m := range ok {
 		t.flushConntrack(ctx, m)
 	}
 	for _, m := range toRemove {
 		t.flushConntrack(ctx, m)
 	}
+	return len(ok), len(toRemove)
 }
 
 // Repair makes the kernel ipset equal the tracker's members with exactly one

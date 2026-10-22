@@ -249,6 +249,7 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
 	}
+	shuntsNow, _ := r.Shunts.List()
 	r.warnGeositeMissing()
 
 	tracker := r.Forwarder.TrackerRef()
@@ -328,13 +329,26 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 	// (e) Static IP/CIDR entries share the tracker's reference count with
 	// DNS-tracked IPs: SetStatic adds/removes only what changes kernel
 	// membership and flushes conntrack for exactly those members.
-	tracker.SetStatic(ctx, r.staticEntries(entries))
+	staticAdded, staticRemoved := tracker.SetStatic(ctx, r.staticEntries(entries))
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if swept > 0 || len(seeds) > 0 {
-		r.Logger.Debug("mutation applied", "swept_domains", swept, "seeded_domains", len(seeds))
+	// One Info line per mutation that changed anything: this is the audit
+	// trail for "why did the ipset change", and the only record of what
+	// a toggle did once the request is gone.
+	if swept > 0 || len(seeds) > 0 || staticAdded > 0 || staticRemoved > 0 {
+		enabled := 0
+		for _, sh := range shuntsNow {
+			if sh.Enabled {
+				enabled++
+			}
+		}
+		r.Logger.Info("mutation applied",
+			"full", fullSeed, "enabled_shunts", enabled, "entries", len(entries),
+			"swept_domains", swept, "seeded_domains", len(seeds),
+			"static_added", staticAdded, "static_removed", staticRemoved,
+			"members", tracker.Members())
 	}
 	return nil
 }
