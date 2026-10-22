@@ -111,6 +111,7 @@ func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 	}
 
 	s.triggerMutation(ctx)
+	s.Logger.Info("geosite update applied", "geosite_shunts", len(geositeShunts), "with_data", updated)
 	return updated, nil
 }
 
