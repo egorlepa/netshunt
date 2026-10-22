@@ -2,7 +2,7 @@ package templates
 
 import "github.com/egorlepa/netshunt/internal/shunt"
 
-templ ShuntsPage(shunts []shunt.Shunt) {
+templ ShuntsPage(shunts []ShuntView) {
 	@Layout("Shunts", "shunts") {
 		<div class="flex-between mb-16">
 			<h1>Shunts</h1>
@@ -107,7 +107,7 @@ templ ShuntsPage(shunts []shunt.Shunt) {
 	}
 }
 
-templ ShuntList(shunts []shunt.Shunt) {
+templ ShuntList(shunts []ShuntView) {
 	if len(shunts) == 0 {
 		<div class="card">
 			<p class="text-muted">No shunts configured. Create one to get started.</p>
@@ -140,60 +140,105 @@ templ ShuntToggle(s shunt.Shunt) {
 	</label>
 }
 
-templ ShuntCard(s shunt.Shunt) {
-	<div class="card" id={ "shunt-" + SlugID(s.Name) }>
-		<div class="shunt-head mb-8">
-			<div class="shunt-head-main shunt-header" data-shunt={ SlugID(s.Name) } onclick="toggleShunt(this.dataset.shunt)">
-				<span class="expand-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
-				<div class="shunt-title">
-					<div class="shunt-name-row">
-						<h2>{ s.Name }</h2>
-						if s.Source != "" {
-							<span class="badge badge-yellow">geosite</span>
-						}
-						<span class="entry-count">{ itoa(len(s.Entries)) } entries</span>
-					</div>
-					if s.Description != "" {
-						<div class="shunt-desc text-muted text-sm">{ s.Description }</div>
+templ ShuntCard(v ShuntView) {
+	if v.IsGeosite() {
+		@geositeShuntCard(v)
+	} else {
+		@manualShuntCard(v)
+	}
+}
+
+templ shuntHead(v ShuntView) {
+	<div class="shunt-head mb-8">
+		<div class="shunt-head-main shunt-header" data-shunt={ SlugID(v.Name) } onclick="toggleShunt(this.dataset.shunt)">
+			<span class="expand-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
+			<div class="shunt-title">
+				<div class="shunt-name-row">
+					<h2>{ v.Name }</h2>
+					if v.IsGeosite() {
+						<span class="badge badge-yellow" title={ v.Source }>geosite</span>
+					}
+					<span class="entry-count">{ itoa(v.Count) } entries</span>
+					if v.NoData != "" {
+						<span class="badge badge-red" title="This shunt routes nothing until the geosite database has the category">{ v.NoData }</span>
 					}
 				</div>
-			</div>
-			<div class="shunt-controls">
-				@ShuntToggle(s)
-				<button
-					class="btn btn-sm btn-danger"
-					hx-delete={ shuntPath(s.Name) }
-					hx-target={ "#shunt-" + SlugID(s.Name) }
-					hx-swap="outerHTML"
-					hx-confirm={ "Delete shunt \"" + s.Name + "\"?" }
-				>Delete</button>
+				if v.IsGeosite() {
+					<div class="shunt-desc text-muted text-sm mono">{ v.Source }</div>
+				}
+				if v.Description != "" {
+					<div class="shunt-desc text-muted text-sm">{ v.Description }</div>
+				}
 			</div>
 		</div>
-		<div class="entries-section" id={ "entries-" + SlugID(s.Name) } style="display:none">
-			<div id={ "entry-items-" + SlugID(s.Name) }>
-				@EntryList(SlugID(s.Name), s.Name, s.Entries, s.Source != "")
-			</div>
-			if s.Source == "" {
-				<form
-					hx-post={ shuntPath(s.Name) + "/entries/bulk" }
-					hx-target={ "#shunt-" + SlugID(s.Name) }
-					hx-swap="outerHTML"
-					hx-disabled-elt="find textarea, find button[type='submit']"
-					hx-on::after-request="if(event.detail.successful) this.reset()"
-					class="mt-8"
-				>
-					<div class="flex gap-8 items-center stack-sm">
-						<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8" required></textarea>
-						<button class="btn btn-sm btn-accent" type="submit">
-							Add
-							<span class="htmx-indicator"><span class="spinner"></span></span>
-						</button>
-					</div>
-					<div class="text-muted text-sm mt-8">Prefixes: <span class="mono">full:</span>, <span class="mono">keyword:</span>, <span class="mono">regexp:</span></div>
-				</form>
-			}
+		<div class="shunt-controls">
+			@ShuntToggle(v.Shunt)
+			<button
+				class="btn btn-sm btn-danger"
+				hx-delete={ shuntPath(v.Name) }
+				hx-target={ "#shunt-" + SlugID(v.Name) }
+				hx-swap="outerHTML"
+				hx-confirm={ "Delete shunt \"" + v.Name + "\"?" }
+			>Delete</button>
 		</div>
 	</div>
+}
+
+// geositeShuntCard is a reference to a geosite category: the entries come
+// from the database and are loaded only when the card is expanded.
+templ geositeShuntCard(v ShuntView) {
+	<div class="card" id={ "shunt-" + SlugID(v.Name) }>
+		@shuntHead(v)
+		<div class="entries-section" id={ "entries-" + SlugID(v.Name) } style="display:none">
+			<div
+				id={ "entry-items-" + SlugID(v.Name) }
+				hx-get={ shuntPath(v.Name) + "/entries" }
+				hx-trigger="intersect once"
+				hx-swap="innerHTML"
+			>
+				<p class="text-muted text-sm">Loading entries... <span class="spinner"></span></p>
+			</div>
+			<div class="text-muted text-sm mt-8">Read-only: managed from the <a href="/geosite">Geosite</a> page.</div>
+		</div>
+	</div>
+}
+
+templ manualShuntCard(v ShuntView) {
+	<div class="card" id={ "shunt-" + SlugID(v.Name) }>
+		@shuntHead(v)
+		<div class="entries-section" id={ "entries-" + SlugID(v.Name) } style="display:none">
+			<div id={ "entry-items-" + SlugID(v.Name) }>
+				@EntryList(SlugID(v.Name), v.Name, v.Entries, false)
+			</div>
+			<form
+				hx-post={ shuntPath(v.Name) + "/entries/bulk" }
+				hx-target={ "#shunt-" + SlugID(v.Name) }
+				hx-swap="outerHTML"
+				hx-disabled-elt="find textarea, find button[type='submit']"
+				hx-on::after-request="if(event.detail.successful) this.reset()"
+				class="mt-8"
+			>
+				<div class="flex gap-8 items-center stack-sm">
+					<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8" required></textarea>
+					<button class="btn btn-sm btn-accent" type="submit">
+						Add
+						<span class="htmx-indicator"><span class="spinner"></span></span>
+					</button>
+				</div>
+				<div class="text-muted text-sm mt-8">Prefixes: <span class="mono">full:</span>, <span class="mono">keyword:</span>, <span class="mono">regexp:</span></div>
+			</form>
+		</div>
+	</div>
+}
+
+// GeositeEntryList is the lazily loaded, read-only entry list of a geosite
+// shunt.
+templ GeositeEntryList(shuntSlug string, shuntName string, entries []shunt.Entry, noData string) {
+	if noData != "" {
+		<p class="text-muted text-sm">No entries: { noData }.</p>
+	} else {
+		@EntryList(shuntSlug, shuntName, entries, true)
+	}
 }
 
 templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readOnly bool) {
@@ -204,7 +249,7 @@ templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readO
 			for _, e := range sortedEntries(entries) {
 				<li class="entry-item">
 					<span>{ e.Value }</span>
-					if !readOnly && !e.Valid() {
+					if !e.Valid() {
 						<span class="badge badge-red" title="Invalid entry, ignored by the DNS matcher and ipset">not applied</span>
 					}
 					if !readOnly {

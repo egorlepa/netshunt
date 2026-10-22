@@ -11,6 +11,16 @@ import (
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
+// ShuntView is a shunt as the Shunts page shows it. Count is the number of
+// entries it applies (for a geosite shunt, from the database). NoData is set
+// for a geosite shunt the database has nothing for: "database not
+// downloaded" or "category not in database".
+type ShuntView struct {
+	shunt.Shunt
+	Count  int
+	NoData string
+}
+
 func autoUpdateSchedule(au config.AutoUpdateConfig, fallback string) string {
 	if au.Schedule != "" {
 		return au.Schedule

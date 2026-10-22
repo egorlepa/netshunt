@@ -16,7 +16,55 @@ func (s *Server) handleShuntsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(r, w, templates.ShuntsPage(shunts))
+	s.render(r, w, templates.ShuntsPage(s.shuntViews(shunts)))
+}
+
+// shuntViews pairs each shunt with the entry count it applies and, for a
+// geosite shunt without data, the reason.
+func (s *Server) shuntViews(shunts []shunt.Shunt) []templates.ShuntView {
+	views := make([]templates.ShuntView, len(shunts))
+	for i, sh := range shunts {
+		views[i] = s.shuntView(sh)
+	}
+	return views
+}
+
+func (s *Server) shuntView(sh shunt.Shunt) templates.ShuntView {
+	n, ok := s.Shunts.EntryCount(sh)
+	v := templates.ShuntView{Shunt: sh, Count: n}
+	if !ok {
+		v.NoData = s.geositeNoData()
+	}
+	return v
+}
+
+// geositeNoData names why a geosite shunt has no entries.
+func (s *Server) geositeNoData() string {
+	if s.Geosite == nil || !s.Geosite.FileInfo().Downloaded {
+		return "database not downloaded"
+	}
+	return "category not in database"
+}
+
+// handleShuntEntries renders a shunt's entry list; for a geosite shunt it is
+// the read-only list from the database, loaded when the card is expanded.
+func (s *Server) handleShuntEntries(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	sh, err := s.Shunts.Get(name)
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if !sh.IsGeosite() {
+		s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, false))
+		return
+	}
+	entries, ok := s.Shunts.Entries(*sh)
+	noData := ""
+	if !ok {
+		noData = s.geositeNoData()
+	}
+	s.render(r, w, templates.GeositeEntryList(templates.SlugID(name), name, entries, noData))
 }
 
 func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +74,7 @@ func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.render(r, w, templates.ShuntCard(*sh))
+	s.render(r, w, templates.ShuntCard(s.shuntView(*sh)))
 }
 
 func (s *Server) handleCreateShunt(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +255,7 @@ func (s *Server) renderShuntToggle(w http.ResponseWriter, r *http.Request, name 
 
 func (s *Server) renderShuntList(w http.ResponseWriter, r *http.Request) {
 	shunts, _ := s.Shunts.List()
-	s.render(r, w, templates.ShuntList(shunts))
+	s.render(r, w, templates.ShuntList(s.shuntViews(shunts)))
 }
 
 func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name string) {
@@ -216,7 +264,7 @@ func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.render(r, w, templates.ShuntCard(*sh))
+	s.render(r, w, templates.ShuntCard(s.shuntView(*sh)))
 }
 
 func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name string) {
@@ -225,5 +273,5 @@ func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, sh.Source != ""))
+	s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, sh.IsGeosite()))
 }

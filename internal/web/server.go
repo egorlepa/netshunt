@@ -119,6 +119,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /dashboard-content", s.handleDashboardContent)
 	s.mux.HandleFunc("GET /shunts", s.handleShuntsPage)
 	s.mux.HandleFunc("GET /shunts/{name}", s.handleShuntDetail)
+	s.mux.HandleFunc("GET /shunts/{name}/entries", s.handleShuntEntries)
 	s.mux.HandleFunc("GET /settings", s.handleSettingsPage)
 	s.mux.HandleFunc("GET /diagnostics", s.handleDiagnosticsPage)
 	s.mux.HandleFunc("GET /diagnostics/run", s.handleDiagnosticsRun)
