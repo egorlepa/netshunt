@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -193,8 +194,11 @@ func errorResponse(w http.ResponseWriter, msg string, code int) {
 }
 
 // render writes a templ component to w, logging any failure.
+// render writes a templ component to w. A render cut short because the
+// client went away (closed tab, navigation) is not worth a log line; any
+// other failure means a template bug and stays at Warn.
 func (s *Server) render(r *http.Request, w http.ResponseWriter, c templ.Component) {
-	if err := c.Render(r.Context(), w); err != nil {
+	if err := c.Render(r.Context(), w); err != nil && !errors.Is(err, context.Canceled) {
 		s.Logger.Warn("template render failed", "error", err)
 	}
 }
