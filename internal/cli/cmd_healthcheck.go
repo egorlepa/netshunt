@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/egorlepa/netshunt/internal/geosite"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
@@ -20,13 +22,21 @@ func newTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			results := healthcheck.RunChecks(cmd.Context(), cfg, shunt.NewDefaultStore())
+			results := healthcheck.RunChecks(cmd.Context(), cfg, newStore())
 			if !PrintResults(results) {
 				os.Exit(1)
 			}
 			return nil
 		},
 	}
+}
+
+// newStore returns the shunts store with geosite shunts expanded from the
+// database on disk, so the CLI counts what the daemon applies.
+func newStore() *shunt.Store {
+	store := shunt.NewDefaultStore()
+	store.SetGeositeProvider(geosite.NewIndex(platform.GeositeFile, nil))
+	return store
 }
 
 // PrintResults prints health check results with colored output and returns true if all passed.

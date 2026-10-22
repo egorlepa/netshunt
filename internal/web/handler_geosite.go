@@ -25,6 +25,9 @@ func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, "Download failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Geosite shunts imported before the download (or kept from a deleted
+	// database) take effect now.
+	s.triggerMutation(r.Context())
 
 	toastTrigger(w, "Database downloaded", "success")
 	info, categories, imported := s.loadGeositeState()
@@ -37,7 +40,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	toastTrigger(w, fmt.Sprintf("Database updated, %d shunts refreshed", updated), "success")
+	toastTrigger(w, fmt.Sprintf("Database updated, %d geosite shunts applied", updated), "success")
 	info, categories, imported := s.loadGeositeState()
 	s.render(r, w, templates.GeositeContent(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
 }
@@ -81,9 +84,12 @@ func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-// UpdateGeosite downloads the latest geosite database and resyncs every shunt
-// sourced from it. Safe to call from a background goroutine (scheduler).
-// Returns the number of shunts refreshed.
+// UpdateGeosite downloads the latest geosite database and applies it.
+// Geosite shunts are references, so nothing is rewritten: the index notices
+// the new file by its stat and the mutation rebuilds the matcher from it
+// (domains dropped from a category are swept, new ones seeded). Safe to call
+// from a background goroutine (scheduler). Returns the number of geosite
+// shunts that have data in the new database; the others are logged and stay.
 func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 	if err := geosite.Download(ctx, platform.GeositeFile); err != nil {
 		return 0, fmt.Errorf("download: %w", err)
@@ -96,31 +102,16 @@ func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 
 	var updated int
 	for _, sh := range geositeShunts {
-		category := strings.TrimPrefix(sh.Source, "geosite:")
-		domains, ok := s.Geosite.Entries(category)
-		if !ok {
-			s.Logger.Warn("geosite category missing in update", "category", category)
+		category, _ := sh.GeositeCategory()
+		if _, ok := s.Geosite.Entries(category); !ok {
+			s.Logger.Warn("geosite category missing in update, shunt kept without entries", "shunt", sh.Name, "category", category)
 			continue
 		}
-		skipped, err := s.Shunts.SyncGeositeShunt(sh.Name, sh.Source, domains)
-		if err != nil {
-			s.Logger.Error("failed to sync geosite shunt", "name", sh.Name, "error", err)
-			continue
-		}
-		s.warnGeositeSkipped(sh.Name, skipped)
 		updated++
 	}
 
 	s.triggerMutation(ctx)
 	return updated, nil
-}
-
-// warnGeositeSkipped logs geosite entries left out of a sync because they
-// cannot be applied (e.g. a regexp RE2 does not compile).
-func (s *Server) warnGeositeSkipped(name string, skipped []*shunt.InvalidEntryError) {
-	for _, e := range skipped {
-		s.Logger.Warn("geosite entry skipped", "shunt", name, "value", e.Value, "reason", e.Reason)
-	}
 }
 
 func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
@@ -136,18 +127,17 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source := "geosite:" + strings.ToLower(category)
-	skipped, err := s.Shunts.SyncGeositeShunt(category, source, domains)
-	if err != nil {
+	sh := shunt.Shunt{Name: category, Source: shunt.GeositeSourcePrefix + strings.ToLower(category)}
+	if err := s.Shunts.AddGeositeShunt(sh.Name, sh.Source); err != nil {
 		errorResponse(w, err.Error(), http.StatusConflict)
 		return
 	}
-	s.warnGeositeSkipped(category, skipped)
 
 	s.triggerMutation(r.Context())
-	msg := fmt.Sprintf("Imported %s (%d domains)", category, len(domains)-len(skipped))
-	if len(skipped) > 0 {
-		msg += fmt.Sprintf(", %d invalid skipped", len(skipped))
+	valid, _ := s.Shunts.EntryCount(sh)
+	msg := fmt.Sprintf("Imported %s (%d domains)", category, valid)
+	if skipped := len(domains) - valid; skipped > 0 {
+		msg += fmt.Sprintf(", %d invalid not applied", skipped)
 	}
 	toastTrigger(w, msg, "success")
 	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
@@ -161,6 +151,15 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sh, err := s.Shunts.Get(category)
+	if err != nil {
+		errorResponse(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if !sh.IsGeosite() {
+		errorResponse(w, fmt.Sprintf("shunt %q is not a geosite shunt", category), http.StatusConflict)
+		return
+	}
 	if err := s.Shunts.Delete(category); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return

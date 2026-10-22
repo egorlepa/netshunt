@@ -60,12 +60,17 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 		return nil, fmt.Errorf("init blocklist store: %w", err)
 	}
 
+	// Geosite shunts are references: their entries are read from dlc.dat
+	// through the index whenever the matcher is rebuilt.
+	geositeIndex := geosite.NewIndex(platform.GeositeFile, logger)
+	shunts.SetGeositeProvider(geositeIndex)
+
 	live := config.NewLive(cfg)
 	return &Daemon{
 		Config:     live,
 		Shunts:     shunts,
 		Blocklist:  blocklistStore,
-		Geosite:    geosite.NewIndex(platform.GeositeFile, logger),
+		Geosite:    geositeIndex,
 		Reconciler: NewReconciler(live, shunts, forwarder, blocklistStore, logger),
 		Forwarder:  forwarder,
 		Logger:     logger,
@@ -98,6 +103,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	} else if n > 0 {
 		d.Logger.Info("removed stale healthcheck rules", "count", n)
 	}
+
+	d.normalizeShunts()
 
 	// 1. Initial reconcile - populates matcher + ipset before DNS starts.
 	if err := d.Reconciler.Reconcile(ctx); err != nil {
@@ -148,6 +155,20 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.Logger.Warn("http server shutdown", "error", err)
 	}
 	return nil
+}
+
+// normalizeShunts drops, once, the geosite entries earlier versions copied
+// into shunts.yaml: geosite shunts are references now. The only write to
+// the shunts file at startup, and only when there is something to drop.
+func (d *Daemon) normalizeShunts() {
+	n, m, err := d.Shunts.NormalizeGeosite()
+	switch {
+	case err != nil:
+		d.Logger.Warn("normalise geosite shunts failed", "error", err)
+	case n > 0:
+		d.Logger.Info(fmt.Sprintf("normalised %d geosite shunts, dropped %d copied entries", n, m),
+			"shunts", n, "dropped_entries", m)
+	}
 }
 
 // saveTracker writes the tracker state once more on shutdown, after the

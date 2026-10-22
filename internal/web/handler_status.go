@@ -12,14 +12,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 	cfg := s.Config.Load()
 	ipsetCount := s.Tracker.Members()
 
-	shunts, _ := s.Shunts.List()
-	enabledCount, entryCount := 0, 0
-	for _, sh := range shunts {
-		if sh.Enabled {
-			enabledCount++
-			entryCount += len(sh.Entries)
-		}
-	}
+	shuntCount, enabledCount, entryCount, _ := s.Shunts.Counts()
 
 	trackedDomains, trackedIPs := s.Tracker.Count()
 
@@ -35,7 +28,7 @@ func (s *Server) dashboardData(ctx context.Context) templates.DashboardData {
 
 	return templates.DashboardData{
 		IPSetCount:        ipsetCount,
-		ShuntCount:        len(shunts),
+		ShuntCount:        shuntCount,
 		EnabledShuntCount: enabledCount,
 		EntryCount:        entryCount,
 		TrackedDomains:    trackedDomains,

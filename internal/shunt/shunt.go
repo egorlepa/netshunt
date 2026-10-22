@@ -73,11 +73,31 @@ func (e Entry) DomainValue() string {
 
 // Shunt is a named collection of host entries.
 type Shunt struct {
-	Name        string  `yaml:"name"`
-	Description string  `yaml:"description,omitempty"`
-	Enabled     bool    `yaml:"enabled"`
-	Source      string  `yaml:"source,omitempty"` // e.g. "geosite:netflix"
-	Entries     []Entry `yaml:"entries"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description,omitempty"`
+	Enabled     bool   `yaml:"enabled"`
+	Source      string `yaml:"source,omitempty"` // e.g. "geosite:netflix"
+	// Entries are the shunt's own entries. A geosite shunt has none: it is a
+	// reference, its entries come from the geosite database at use time
+	// (Store.EnabledEntries, Store.Entries).
+	Entries []Entry `yaml:"entries,omitempty"`
+}
+
+// GeositeSourcePrefix marks a Source that references a geosite category.
+const GeositeSourcePrefix = "geosite:"
+
+// GeositeCategory returns the category a geosite shunt references.
+func (s Shunt) GeositeCategory() (string, bool) {
+	if !strings.HasPrefix(s.Source, GeositeSourcePrefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(s.Source, GeositeSourcePrefix), true
+}
+
+// IsGeosite reports whether the shunt references a geosite category.
+func (s Shunt) IsGeosite() bool {
+	_, ok := s.GeositeCategory()
+	return ok
 }
 
 // HasEntry returns true if the shunt contains the given value.

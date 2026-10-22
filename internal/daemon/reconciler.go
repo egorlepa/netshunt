@@ -51,6 +51,10 @@ type Reconciler struct {
 	// next one would otherwise consider those domains already matched.
 	seedAll bool
 
+	// lastGeositeMissing is the set of enabled geosite shunts without data
+	// on the previous run, logged when it changes.
+	lastGeositeMissing string
+
 	// lastRejected is the set of entries the matcher refused on the previous
 	// run, so the warning is logged when it changes, not on every mutation.
 	lastRejected string
@@ -245,6 +249,7 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 	if err != nil {
 		return fmt.Errorf("load entries: %w", err)
 	}
+	r.warnGeositeMissing()
 
 	tracker := r.Forwarder.TrackerRef()
 	// Members whose del failed on an earlier run (cancelled context) are
@@ -332,6 +337,27 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 		r.Logger.Debug("mutation applied", "swept_domains", swept, "seeded_domains", len(seeds))
 	}
 	return nil
+}
+
+// warnGeositeMissing logs the enabled geosite shunts that contribute no
+// entries (database missing or category not in it), once per change.
+func (r *Reconciler) warnGeositeMissing() {
+	missing, err := r.Shunts.GeositeMissing()
+	if err != nil {
+		return
+	}
+	var names []string
+	for _, sh := range missing {
+		names = append(names, sh.Name+" ("+sh.Source+")")
+	}
+	key := strings.Join(names, "\x00")
+	if key == r.lastGeositeMissing {
+		return
+	}
+	r.lastGeositeMissing = key
+	if len(names) > 0 {
+		r.Logger.Warn("geosite shunts without data, not applied", "shunts", strings.Join(names, ", "))
+	}
 }
 
 // warnRejected logs the entries the matcher could not apply (present in

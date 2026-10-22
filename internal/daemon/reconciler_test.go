@@ -281,20 +281,101 @@ func TestMutationDisableEqualsRemoval(t *testing.T) {
 	h.want("198.51.100.1")
 }
 
-func TestMutationGeositeSyncDropsDomains(t *testing.T) {
+// geoProvider is a geosite database whose content the test swaps, as a
+// dlc.dat download does.
+type geoProvider struct {
+	mu   sync.Mutex
+	cats map[string][]string
+}
+
+func (g *geoProvider) Entries(category string) ([]string, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	e, ok := g.cats[strings.ToLower(category)]
+	return e, ok
+}
+
+func (g *geoProvider) set(category string, entries ...string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if entries == nil {
+		delete(g.cats, category)
+		return
+	}
+	g.cats[category] = entries
+}
+
+func (h *harness) geosite() *geoProvider {
+	g := &geoProvider{cats: map[string][]string{}}
+	h.store.SetGeositeProvider(g)
+	return g
+}
+
+// A geosite shunt is a reference: a database update changes what it
+// applies without touching shunts.yaml, at the next mutation. Domains the
+// new data drops are swept (the tracker is keyed by query name, as for any
+// rule), new ones are seeded from the resolve cache.
+func TestMutationGeositeUpdateRebuildsMatcher(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example", "domain:b.example", "full:c.example"})
-	h.do(err)
+	g := h.geosite()
+	g.set("g", "domain:a.example", "domain:b.example", "full:c.example")
+	h.do(h.store.AddGeositeShunt("G", "geosite:g"))
 	h.mutate()
 	h.resolve("x.a.example", "198.51.100.1")
 	h.resolve("x.b.example", "198.51.100.2")
 	h.resolve("c.example", "198.51.100.3")
+	h.resolve("d.example", "198.51.100.4")
 	h.want("198.51.100.1", "198.51.100.2", "198.51.100.3")
 
-	_, err = h.store.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.example"})
-	h.do(err)
+	// The update: b and c dropped, d added.
+	g.set("g", "domain:a.example", "domain:d.example")
+	h.mutate()
+	h.want("198.51.100.1", "198.51.100.4")
+	if !h.fwd.Matcher().Match("www.d.example") || h.fwd.Matcher().Match("x.b.example") {
+		t.Fatal("matcher not rebuilt from the new data")
+	}
+
+	// The category disappears from the database: the shunt stays, applies
+	// nothing, its IPs leave the set.
+	g.set("g")
+	h.mutate()
+	h.want()
+	if _, err := h.store.Get("G"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Deleting the shunt after the category comes back removes its IPs.
+	g.set("g", "domain:a.example")
 	h.mutate()
 	h.want("198.51.100.1")
+	h.do(h.store.Delete("G"))
+	h.mutate()
+	h.want()
+}
+
+func TestGeositeMissingWarnedOnce(t *testing.T) {
+	h := newHarness(t)
+	var buf strings.Builder
+	h.r.Logger = slog.New(slog.NewTextHandler(&lockedWriter{w: &buf}, nil))
+	h.geosite()
+	h.do(h.store.AddGeositeShunt("Z", "geosite:zz-does-not-exist"))
+	h.mutate()
+	h.mutate()
+	if n := strings.Count(buf.String(), "geosite shunts without data"); n != 1 {
+		t.Fatalf("warned %d times:\n%s", n, buf.String())
+	}
+}
+
+// lockedWriter serialises writes from the logger.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 func TestMutationStaticSharedWithDomain(t *testing.T) {

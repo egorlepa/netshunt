@@ -135,21 +135,6 @@ func TestImportRejectsInvalidEntry(t *testing.T) {
 	}
 }
 
-func TestSyncGeositeSkipsInvalid(t *testing.T) {
-	s := tempStore(t)
-	skipped, err := s.SyncGeositeShunt("g", "geosite:g", []string{"domain:a.com", "regexp:(?<=x)y", "full:b.com"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(skipped) != 1 || skipped[0].Value != "regexp:(?<=x)y" {
-		t.Fatalf("skipped = %v", skipped)
-	}
-	sh, _ := s.Get("g")
-	if len(sh.Entries) != 2 {
-		t.Fatalf("entries = %+v", sh.Entries)
-	}
-}
-
 func TestEnabledEntriesCarryShuntName(t *testing.T) {
 	s := tempStore(t)
 	_ = s.Create(shunt.Shunt{Name: "A", Enabled: true, Entries: []shunt.Entry{{Value: "a.com"}}})

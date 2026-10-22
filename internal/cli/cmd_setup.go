@@ -173,7 +173,7 @@ func newSetupCmd() *cobra.Command {
 			}
 
 			// 12. Create default shunt if needed.
-			store := shunt.NewDefaultStore()
+			store := newStore()
 			if err := store.EnsureDefaultShunt(); err != nil {
 				return err
 			}

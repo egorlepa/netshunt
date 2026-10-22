@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -504,20 +505,16 @@ func checkDNSUpstreams(ctx context.Context, ups []dns.Upstream, probe upstreamPr
 	return r
 }
 
+// checkShunts counts the enabled shunts and the entries they apply (geosite
+// shunts expanded). Enabled geosite shunts without data (database missing,
+// category not in it) are a warning naming them: they route nothing.
+// Read-only.
 func checkShunts(shunts *shunt.Store) Result {
 	r := Result{Name: "shunts"}
-	list, err := shunts.List()
+	_, enabled, entries, err := shunts.Counts()
 	if err != nil {
 		r.Detail = err.Error()
 		return r
-	}
-
-	enabled, entries := 0, 0
-	for _, s := range list {
-		if s.Enabled {
-			enabled++
-			entries += len(s.Entries)
-		}
 	}
 
 	if enabled == 0 {
@@ -525,8 +522,27 @@ func checkShunts(shunts *shunt.Store) Result {
 		return r
 	}
 
-	r.Passed = true
 	r.Detail = fmt.Sprintf("%d enabled, %d entries", enabled, entries)
+	missing, err := shunts.GeositeMissing()
+	if err != nil {
+		r.Detail += "; " + err.Error()
+		r.Warn = true
+		return r
+	}
+	if len(missing) > 0 {
+		reason := "category not in database"
+		if _, err := os.Stat(platform.GeositeFile); err != nil {
+			reason = "database not downloaded"
+		}
+		names := make([]string, len(missing))
+		for i, sh := range missing {
+			names[i] = sh.Name + " (" + sh.Source + ")"
+		}
+		r.Warn = true
+		r.Detail += fmt.Sprintf("; geosite shunts without data, %s: %s", reason, strings.Join(names, ", "))
+		return r
+	}
+	r.Passed = true
 	return r
 }
 

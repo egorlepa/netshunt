@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
 // persistHarness is a harness whose tracker persists to a temp file, as the
@@ -129,5 +132,25 @@ func TestDaemonShutdownSavesTracker(t *testing.T) {
 	h2.want("198.51.100.1")
 	if d, _ := h2.fwd.TrackerRef().Count(); d != 1 {
 		t.Fatalf("tracked domains = %d", d)
+	}
+}
+
+func TestDaemonNormalizesGeositeShuntsOnce(t *testing.T) {
+	h := newHarness(t)
+	path := filepath.Join(t.TempDir(), "shunts.yaml")
+	old := "shunts:\n  - name: G\n    enabled: true\n    source: geosite:g\n    entries:\n      - value: domain:g.com\n      - value: domain:h.com\n"
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	d := &Daemon{Forwarder: h.fwd, Shunts: shunt.NewStore(path), Logger: slog.New(slog.NewTextHandler(&lockedWriter{w: &buf}, nil))}
+	d.normalizeShunts()
+	d.normalizeShunts()
+	if n := strings.Count(buf.String(), "normalised 1 geosite shunts, dropped 2 copied entries"); n != 1 {
+		t.Fatalf("log:\n%s", buf.String())
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "g.com") {
+		t.Fatalf("file:\n%s", raw)
 	}
 }
