@@ -14,6 +14,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/geosite"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/platform"
@@ -31,6 +32,7 @@ type Daemon struct {
 	Config     *config.Live
 	Shunts     *shunt.Store
 	Blocklist  *blocklist.Store
+	Geosite    *geosite.Index
 	Reconciler *Reconciler
 	Forwarder  *dns.Forwarder
 	Logger     *slog.Logger
@@ -63,6 +65,7 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 		Config:     live,
 		Shunts:     shunts,
 		Blocklist:  blocklistStore,
+		Geosite:    geosite.NewIndex(platform.GeositeFile, logger),
 		Reconciler: NewReconciler(live, shunts, forwarder, blocklistStore, logger),
 		Forwarder:  forwarder,
 		Logger:     logger,
@@ -107,7 +110,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// 4. Start web server.
-	webServer := web.NewServer(d.Config, d.Shunts, d.Blocklist, d.Forwarder, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
+	webServer := web.NewServer(d.Config, d.Shunts, d.Blocklist, d.Geosite, d.Forwarder, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
 	httpServer := &http.Server{
 		Addr:    d.Config.Load().Daemon.WebListen,
 		Handler: webServer,

@@ -69,7 +69,7 @@ func newSettingsTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	cfg := config.Defaults()
-	return NewServer(config.NewLive(&cfg), nil, nil, fwd, nil, nil, nil, logger, "test")
+	return NewServer(config.NewLive(&cfg), nil, nil, nil, fwd, nil, nil, nil, logger, "test")
 }
 
 // An invalid upstream is rejected with an error toast before anything is

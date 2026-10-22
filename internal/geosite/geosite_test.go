@@ -1,12 +1,19 @@
 package geosite
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
-// buildProtobuf constructs a minimal dlc.dat-compatible protobuf binary
-// for testing the parser without needing a real file.
+// The encoders below build a minimal dlc.dat-compatible protobuf binary
+// for testing the index without needing a real file.
 
 func encodeVarint(v uint64) []byte {
 	buf := make([]byte, binary.MaxVarintLen64)
@@ -59,143 +66,226 @@ func buildGeoSiteList(sites ...[]byte) []byte {
 	return data
 }
 
-func TestParseGeoSiteList(t *testing.T) {
-	data := buildGeoSiteList(
+// fullParse decodes the whole GeoSiteList, the reference the index is
+// checked against.
+func fullParse(t *testing.T, data []byte) []Category {
+	t.Helper()
+	var cats []Category
+	for len(data) > 0 {
+		fieldNum, wireType, n, err := readTag(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = data[n:]
+		if fieldNum == 1 && wireType == 2 {
+			payload, n, err := readBytes(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = data[n:]
+			c, err := parseGeoSite(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cats = append(cats, c)
+			continue
+		}
+		n, err = skipField(data, wireType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = data[n:]
+	}
+	return cats
+}
+
+// buildDomainWithAttr adds an attribute submessage, which the index and the
+// decoder must skip.
+func buildDomainWithAttr(domType DomainType, value, attr string) []byte {
+	msg := buildDomain(domType, value)
+	return append(msg, encodeLenDelim(3, encodeLenDelim(1, []byte(attr)))...)
+}
+
+func sample() []byte {
+	return buildGeoSiteList(
 		buildGeoSite("NETFLIX",
 			buildDomain(DomainRoot, "netflix.com"),
 			buildDomain(DomainFull, "fast.com"),
-			buildDomain(DomainPlain, "nflx"),   // keyword, should be filtered
-			buildDomain(DomainRegex, "nflx.*"), // regex, should be filtered
+			buildDomain(DomainPlain, "nflx"),
+			buildDomainWithAttr(DomainRegex, `^nflx\d+\.net$`, "cn"),
 		),
 		buildGeoSite("GOOGLE",
 			buildDomain(DomainRoot, "google.com"),
 			buildDomain(DomainRoot, "youtube.com"),
 		),
-	)
-
-	db, err := parseGeoSiteList(data)
-	if err != nil {
-		t.Fatalf("parseGeoSiteList: %v", err)
-	}
-	if len(db.Categories) != 2 {
-		t.Fatalf("expected 2 categories, got %d", len(db.Categories))
-	}
-
-	// Check NETFLIX.
-	netflix := db.Categories[0]
-	if netflix.Code != "NETFLIX" {
-		t.Errorf("expected NETFLIX, got %q", netflix.Code)
-	}
-	if len(netflix.Domains) != 4 {
-		t.Errorf("expected 4 domains in NETFLIX, got %d", len(netflix.Domains))
-	}
-
-	// Check GOOGLE.
-	google := db.Categories[1]
-	if google.Code != "GOOGLE" {
-		t.Errorf("expected GOOGLE, got %q", google.Code)
-	}
-	if len(google.Domains) != 2 {
-		t.Errorf("expected 2 domains in GOOGLE, got %d", len(google.Domains))
-	}
-}
-
-func TestExtractEntries(t *testing.T) {
-	data := buildGeoSiteList(
-		buildGeoSite("NETFLIX",
-			buildDomain(DomainRoot, "netflix.com"),
-			buildDomain(DomainFull, "fast.com"),
-			buildDomain(DomainPlain, "nflx"),
-			buildDomain(DomainRegex, "nflx.*"),
-		),
-	)
-
-	db, err := parseGeoSiteList(data)
-	if err != nil {
-		t.Fatalf("parseGeoSiteList: %v", err)
-	}
-
-	// All 4 domain types should be extracted with prefixes.
-	entries, err := ExtractEntries(db, "netflix")
-	if err != nil {
-		t.Fatalf("ExtractEntries: %v", err)
-	}
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 entries, got %d: %v", len(entries), entries)
-	}
-
-	want := []string{
-		"domain:netflix.com",
-		"full:fast.com",
-		"keyword:nflx",
-		"regexp:nflx.*",
-	}
-	for i, w := range want {
-		if entries[i] != w {
-			t.Errorf("entry[%d] = %q, want %q", i, entries[i], w)
-		}
-	}
-
-	// Case-insensitive lookup.
-	entries, err = ExtractEntries(db, "NETFLIX")
-	if err != nil {
-		t.Fatalf("case-insensitive lookup: %v", err)
-	}
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 entries, got %d", len(entries))
-	}
-
-	// Missing category.
-	_, err = ExtractEntries(db, "nonexistent")
-	if err == nil {
-		t.Fatal("expected error for nonexistent category")
-	}
-}
-
-func TestListCategories(t *testing.T) {
-	data := buildGeoSiteList(
-		buildGeoSite("GOOGLE",
-			buildDomain(DomainRoot, "google.com"),
-		),
 		buildGeoSite("AMAZON",
 			buildDomain(DomainRoot, "amazon.com"),
-			buildDomain(DomainRoot, "aws.com"),
 		),
 	)
+}
 
-	db, err := parseGeoSiteList(data)
-	if err != nil {
-		t.Fatalf("parseGeoSiteList: %v", err)
-	}
-
-	infos := ListCategories(db)
-	if len(infos) != 2 {
-		t.Fatalf("expected 2, got %d", len(infos))
-	}
-
-	// Should be sorted alphabetically.
-	if infos[0].Name != "AMAZON" {
-		t.Errorf("expected AMAZON first, got %q", infos[0].Name)
-	}
-	if infos[0].DomainCount != 2 {
-		t.Errorf("expected 2 domains for AMAZON, got %d", infos[0].DomainCount)
-	}
-	if infos[1].Name != "GOOGLE" {
-		t.Errorf("expected GOOGLE second, got %q", infos[1].Name)
+func writeDat(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestEmptyDatabase(t *testing.T) {
-	db, err := parseGeoSiteList(nil)
+func TestIndexCategoriesMatchFullParse(t *testing.T) {
+	data := sample()
+	path := filepath.Join(t.TempDir(), "dlc.dat")
+	writeDat(t, path, data)
+	x := NewIndex(path, nil)
+
+	got, err := x.Categories()
 	if err != nil {
-		t.Fatalf("parseGeoSiteList(nil): %v", err)
+		t.Fatal(err)
 	}
-	if len(db.Categories) != 0 {
-		t.Errorf("expected 0 categories, got %d", len(db.Categories))
+	var want []CategoryInfo
+	for _, c := range fullParse(t, data) {
+		want = append(want, CategoryInfo{Name: c.Code, DomainCount: len(c.Domains)})
+	}
+	slices.SortFunc(want, func(a, b CategoryInfo) int { return strings.Compare(a.Name, b.Name) })
+	if !slices.Equal(got, want) {
+		t.Fatalf("categories = %+v, want %+v", got, want)
+	}
+	fi := x.FileInfo()
+	if !fi.Downloaded || fi.CategoryCount != 3 || fi.LastModified.IsZero() {
+		t.Fatalf("file info = %+v", fi)
+	}
+}
+
+func TestIndexEntriesDecodesOneCategory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dlc.dat")
+	writeDat(t, path, sample())
+	x := NewIndex(path, nil)
+
+	want := []string{"domain:netflix.com", "full:fast.com", "keyword:nflx", `regexp:^nflx\d+\.net$`}
+	for _, name := range []string{"netflix", "NETFLIX", "NetFlix"} {
+		got, ok := x.Entries(name)
+		if !ok || !slices.Equal(got, want) {
+			t.Fatalf("Entries(%q) = %v, %v; want %v", name, got, ok, want)
+		}
+	}
+	if got, ok := x.Entries("amazon"); !ok || !slices.Equal(got, []string{"domain:amazon.com"}) {
+		t.Fatalf("amazon = %v, %v", got, ok)
+	}
+	if got, ok := x.Entries("nonexistent"); ok || got != nil {
+		t.Fatalf("unknown category = %v, %v", got, ok)
+	}
+}
+
+func TestIndexMissingFile(t *testing.T) {
+	x := NewIndex(filepath.Join(t.TempDir(), "dlc.dat"), nil)
+	if fi := x.FileInfo(); fi.Downloaded || fi.CategoryCount != 0 {
+		t.Fatalf("file info = %+v", fi)
+	}
+	if cats, err := x.Categories(); err != nil || len(cats) != 0 {
+		t.Fatalf("categories = %v, %v", cats, err)
+	}
+	if _, ok := x.Entries("netflix"); ok {
+		t.Fatal("entries from a missing file")
+	}
+}
+
+func TestIndexCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dlc.dat")
+	data := sample()
+	writeDat(t, path, data[:len(data)-3])
+	x := NewIndex(path, nil)
+	if _, err := x.Categories(); err == nil {
+		t.Fatal("truncated file indexed without error")
+	}
+	if _, ok := x.Entries("amazon"); ok {
+		t.Fatal("entries from a corrupt file")
+	}
+	if fi := x.FileInfo(); !fi.Downloaded || fi.CategoryCount != 0 {
+		t.Fatalf("file info = %+v", fi)
+	}
+}
+
+func TestIndexReindexesWhenFileChanges(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dlc.dat")
+	writeDat(t, path, sample())
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	x := NewIndex(path, nil)
+	if got, _ := x.Entries("google"); len(got) != 2 {
+		t.Fatalf("google = %v", got)
 	}
 
-	infos := ListCategories(db)
-	if len(infos) != 0 {
-		t.Errorf("expected 0 infos, got %d", len(infos))
+	// Replace the file the way Download does: write a temp file, rename.
+	tmp := path + ".tmp"
+	writeDat(t, tmp, buildGeoSiteList(
+		buildGeoSite("GOOGLE", buildDomain(DomainRoot, "google.com")),
+		buildGeoSite("DUCKDUCKGO", buildDomain(DomainRoot, "duckduckgo.com")),
+	))
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := x.Entries("google"); !ok || !slices.Equal(got, []string{"domain:google.com"}) {
+		t.Fatalf("google after update = %v, %v", got, ok)
+	}
+	if _, ok := x.Entries("netflix"); ok {
+		t.Fatal("netflix survived the update")
+	}
+	if _, ok := x.Entries("duckduckgo"); !ok {
+		t.Fatal("new category not found")
+	}
+	if fi := x.FileInfo(); fi.CategoryCount != 2 {
+		t.Fatalf("file info = %+v", fi)
+	}
+
+	// Removing the file is "not downloaded".
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if fi := x.FileInfo(); fi.Downloaded {
+		t.Fatalf("file info after remove = %+v", fi)
+	}
+	if _, ok := x.Entries("google"); ok {
+		t.Fatal("entries after remove")
+	}
+}
+
+// Indexing allocates per category, never per domain: a category with 5000
+// domains costs the same as one with 5.
+func TestIndexNoPerDomainAllocations(t *testing.T) {
+	build := func(n int) []byte {
+		var ds [][]byte
+		for i := 0; i < n; i++ {
+			ds = append(ds, buildDomain(DomainRoot, fmt.Sprintf("d%d.example.com", i)))
+		}
+		return buildGeoSiteList(buildGeoSite("A", ds...), buildGeoSite("B", ds...))
+	}
+	allocs := func(data []byte) float64 {
+		return testing.AllocsPerRun(20, func() {
+			if _, _, _, err := scanIndex(bytes.NewReader(data), int64(len(data))); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	small, large := allocs(build(5)), allocs(build(5000))
+	if large > small {
+		t.Fatalf("allocs: %v for 5 domains per category, %v for 5000", small, large)
+	}
+	if large > 20 {
+		t.Fatalf("allocs = %v for two categories", large)
+	}
+}
+
+func TestIndexEmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dlc.dat")
+	writeDat(t, path, nil)
+	x := NewIndex(path, nil)
+	cats, err := x.Categories()
+	if err != nil || len(cats) != 0 {
+		t.Fatalf("categories = %v, %v", cats, err)
+	}
+	if fi := x.FileInfo(); !fi.Downloaded {
+		t.Fatalf("file info = %+v", fi)
 	}
 }

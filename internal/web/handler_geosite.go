@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/robfig/cron/v3"
@@ -90,11 +89,6 @@ func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("download: %w", err)
 	}
 
-	db, err := geosite.Parse(platform.GeositeFile)
-	if err != nil {
-		return 0, fmt.Errorf("parse: %w", err)
-	}
-
 	geositeShunts, err := s.Shunts.GeositeShunts()
 	if err != nil {
 		return 0, err
@@ -103,8 +97,8 @@ func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
 	var updated int
 	for _, sh := range geositeShunts {
 		category := strings.TrimPrefix(sh.Source, "geosite:")
-		domains, err := geosite.ExtractEntries(db, category)
-		if err != nil {
+		domains, ok := s.Geosite.Entries(category)
+		if !ok {
 			s.Logger.Warn("geosite category missing in update", "category", category)
 			continue
 		}
@@ -136,15 +130,9 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := geosite.Parse(platform.GeositeFile)
-	if err != nil {
-		errorResponse(w, "Failed to parse database: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	domains, err := geosite.ExtractEntries(db, category)
-	if err != nil {
-		errorResponse(w, err.Error(), http.StatusNotFound)
+	domains, ok := s.Geosite.Entries(category)
+	if !ok {
+		errorResponse(w, fmt.Sprintf("category %q not found", category), http.StatusNotFound)
 		return
 	}
 
@@ -180,35 +168,20 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 
 	s.triggerMutation(r.Context())
 	toastTrigger(w, fmt.Sprintf("Removed %s", category), "success")
-	// Get domain count from db to render the row with correct count.
-	domainCount := 0
-	if db, err := geosite.Parse(platform.GeositeFile); err == nil {
-		if domains, err := geosite.ExtractEntries(db, category); err == nil {
-			domainCount = len(domains)
-		}
-	}
-	cat := geosite.CategoryInfo{Name: category, DomainCount: domainCount}
+	domains, _ := s.Geosite.Entries(category)
+	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
 	s.render(r, w, templates.GeositeCategoryRow(cat, false))
 }
 
 func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, map[string]bool) {
-	var info geosite.FileInfo
-
-	stat, err := os.Stat(platform.GeositeFile)
-	if err != nil {
+	info := s.Geosite.FileInfo()
+	if !info.Downloaded {
 		return info, nil, nil
 	}
-	info.Downloaded = true
-	info.LastModified = stat.ModTime()
-
-	db, err := geosite.Parse(platform.GeositeFile)
+	categories, err := s.Geosite.Categories()
 	if err != nil {
-		s.Logger.Error("failed to parse geosite database", "error", err)
-		return info, nil, nil
+		s.Logger.Error("failed to index geosite database", "error", err)
 	}
-
-	categories := geosite.ListCategories(db)
-	info.CategoryCount = len(categories)
 
 	// Build set of imported categories.
 	imported := make(map[string]bool)

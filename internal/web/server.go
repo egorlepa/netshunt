@@ -15,6 +15,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/geosite"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
@@ -47,6 +48,15 @@ type TrackerStats interface {
 	Members() int
 }
 
+// GeositeIndex is the read side of the geosite database the web server
+// uses: categories and counts for the Geosite page, entries per category.
+// *geosite.Index implements it.
+type GeositeIndex interface {
+	FileInfo() geosite.FileInfo
+	Categories() ([]geosite.CategoryInfo, error)
+	Entries(category string) ([]string, bool)
+}
+
 // LogReader is the interface the web server uses to read recent log entries.
 type LogReader interface {
 	Entries() []platform.LogEntry
@@ -57,6 +67,7 @@ type Server struct {
 	Config     *config.Live
 	Shunts     *shunt.Store
 	Blocklist  *blocklist.Store
+	Geosite    GeositeIndex
 	Forwarder  *dns.Forwarder
 	Reconciler Reconciler
 	Scheduler  Scheduler
@@ -80,11 +91,12 @@ func (s *Server) MarkReady() {
 }
 
 // NewServer creates a web server with all routes registered.
-func NewServer(cfg *config.Live, shunts *shunt.Store, blocklistStore *blocklist.Store, forwarder *dns.Forwarder, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
+func NewServer(cfg *config.Live, shunts *shunt.Store, blocklistStore *blocklist.Store, geositeIndex GeositeIndex, forwarder *dns.Forwarder, reconciler Reconciler, tracker TrackerStats, logs LogReader, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		Config:     cfg,
 		Shunts:     shunts,
 		Blocklist:  blocklistStore,
+		Geosite:    geositeIndex,
 		Forwarder:  forwarder,
 		Reconciler: reconciler,
 		Tracker:    tracker,

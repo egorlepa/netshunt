@@ -30,7 +30,7 @@ func newShuntsTestServer(t *testing.T) (*Server, *shunt.Store, *countingReconcil
 	}
 	rec := &countingReconciler{}
 	cfg := config.Defaults()
-	return NewServer(config.NewLive(&cfg), store, nil, nil, rec, nil, nil, slog.New(slog.DiscardHandler), "test"), store, rec
+	return NewServer(config.NewLive(&cfg), store, nil, nil, nil, rec, nil, nil, slog.New(slog.DiscardHandler), "test"), store, rec
 }
 
 func post(t *testing.T, s *Server, path string, form url.Values) *httptest.ResponseRecorder {

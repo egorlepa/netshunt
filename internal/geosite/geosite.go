@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -79,12 +78,8 @@ type CategoryInfo struct {
 	DomainCount int
 }
 
-// Database holds all parsed geosite categories.
-type Database struct {
-	Categories []Category
-}
-
 // FileInfo holds metadata about the downloaded database file.
+// CategoryCount is 0 when the file is missing or cannot be indexed.
 type FileInfo struct {
 	Downloaded    bool
 	LastModified  time.Time
@@ -172,60 +167,6 @@ func isRetryable(err error) bool {
 		strings.Contains(msg, "status 5")
 }
 
-// Parse reads a dlc.dat file and returns the parsed database.
-func Parse(path string) (*Database, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read geosite file: %w", err)
-	}
-	return parseGeoSiteList(data)
-}
-
-// ListCategories returns sorted category summaries from a parsed database.
-func ListCategories(db *Database) []CategoryInfo {
-	infos := make([]CategoryInfo, len(db.Categories))
-	for i, c := range db.Categories {
-		infos[i] = CategoryInfo{
-			Name:        c.Code,
-			DomainCount: len(c.Domains),
-		}
-	}
-	sort.Slice(infos, func(i, j int) bool {
-		return infos[i].Name < infos[j].Name
-	})
-	return infos
-}
-
-// ExtractEntries returns domain strings with prefixes for all 4 domain types.
-// Each entry uses xray-style prefix notation:
-//   - DomainRoot  → "domain:value"
-//   - DomainFull  → "full:value"
-//   - DomainPlain → "keyword:value"
-//   - DomainRegex → "regexp:value"
-func ExtractEntries(db *Database, category string) ([]string, error) {
-	category = strings.ToLower(category)
-	for _, c := range db.Categories {
-		if strings.ToLower(c.Code) != category {
-			continue
-		}
-		var entries []string
-		for _, d := range c.Domains {
-			switch d.Type {
-			case DomainRoot:
-				entries = append(entries, "domain:"+d.Value)
-			case DomainFull:
-				entries = append(entries, "full:"+d.Value)
-			case DomainPlain:
-				entries = append(entries, "keyword:"+d.Value)
-			case DomainRegex:
-				entries = append(entries, "regexp:"+d.Value)
-			}
-		}
-		return entries, nil
-	}
-	return nil, fmt.Errorf("category %q not found", category)
-}
-
 // Protobuf wire format decoder for the v2fly geosite format.
 //
 // Wire format:
@@ -234,38 +175,6 @@ func ExtractEntries(db *Database, category string) ([]string, error) {
 //   Domain      { Type type = 1; string value = 2; repeated Attribute attribute = 3; }
 //
 // Wire types: 0 = varint, 2 = length-delimited (string, bytes, embedded message)
-
-func parseGeoSiteList(data []byte) (*Database, error) {
-	db := &Database{}
-	for len(data) > 0 {
-		fieldNum, wireType, n, err := readTag(data)
-		if err != nil {
-			return nil, fmt.Errorf("read GeoSiteList tag: %w", err)
-		}
-		data = data[n:]
-
-		if wireType == 2 && fieldNum == 1 {
-			payload, n, err := readBytes(data)
-			if err != nil {
-				return nil, fmt.Errorf("read GeoSite payload: %w", err)
-			}
-			data = data[n:]
-
-			cat, err := parseGeoSite(payload)
-			if err != nil {
-				return nil, fmt.Errorf("parse GeoSite: %w", err)
-			}
-			db.Categories = append(db.Categories, cat)
-		} else {
-			n, err := skipField(data, wireType)
-			if err != nil {
-				return nil, fmt.Errorf("skip GeoSiteList field: %w", err)
-			}
-			data = data[n:]
-		}
-	}
-	return db, nil
-}
 
 func parseGeoSite(data []byte) (Category, error) {
 	var cat Category
