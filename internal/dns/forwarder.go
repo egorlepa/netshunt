@@ -513,9 +513,7 @@ func (f *Forwarder) trackMatched(ctx context.Context, qname string, resp *dns.Ms
 	if key == "" {
 		return
 	}
-	for _, ip := range answerIPs(resp) {
-		f.tracker.Track(ctx, key, ip)
-	}
+	f.tracker.TrackMany(ctx, key, answerIPs(resp))
 	if f.matcher.changedSince(rules) && !f.matcher.Match(key) {
 		f.tracker.RemoveDomain(ctx, key)
 	}

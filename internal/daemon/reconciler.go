@@ -322,9 +322,7 @@ func (r *Reconciler) applyMutationLocked(ctx context.Context, fullSeed bool) (er
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
-		for _, ip := range s.ips {
-			tracker.Track(ctx, s.domain, ip)
-		}
+		tracker.TrackMany(ctx, s.domain, s.ips)
 	}
 
 	// (e) Static IP/CIDR entries share the tracker's reference count with

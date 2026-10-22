@@ -167,37 +167,65 @@ func (t *Tracker) linkLocked(domain, ip string) {
 // conntrack entries with that orig-dst are flushed so existing direct
 // connections reopen through the proxy.
 func (t *Tracker) Track(ctx context.Context, domain, ip string) {
-	t.mu.Lock()
-	if t.presentLocked(ip) {
-		t.linkLocked(domain, ip)
-		t.mu.Unlock()
+	t.TrackMany(ctx, domain, []string{ip})
+}
+
+// TrackMany records every IP of one DNS answer for domain in a single pass:
+// IPs already present only gain the reference; the new ones go to the kernel
+// in one batch and their conntrack entries are flushed with one call. A
+// multi-record answer therefore costs one ipset round trip and one conntrack
+// dump instead of one of each per IP.
+func (t *Tracker) TrackMany(ctx context.Context, domain string, ips []string) {
+	if len(ips) == 0 {
 		return
 	}
+	// Fast path: everything already present.
+	t.mu.Lock()
+	var fresh []string
+	for _, ip := range ips {
+		if t.presentLocked(ip) {
+			t.linkLocked(domain, ip)
+		} else if !slices.Contains(fresh, ip) {
+			fresh = append(fresh, ip)
+		}
+	}
 	t.mu.Unlock()
+	if len(fresh) == 0 {
+		return
+	}
 
 	t.kernelMu.Lock()
 	t.mu.Lock()
-	if t.presentLocked(ip) {
-		// Added by a concurrent caller while we waited for kernelMu.
-		t.linkLocked(domain, ip)
-		t.mu.Unlock()
-		t.kernelMu.Unlock()
-		return
+	// Re-check under kernelMu: a concurrent caller may have added some.
+	toAdd := fresh[:0]
+	for _, ip := range fresh {
+		if t.presentLocked(ip) {
+			t.linkLocked(domain, ip)
+			continue
+		}
+		toAdd = append(toAdd, ip)
 	}
 	t.mu.Unlock()
-
-	if err := t.ipset.Add(ctx, ip); err != nil {
+	if len(toAdd) == 0 {
 		t.kernelMu.Unlock()
-		t.logger.Warn("tracker: ipset add failed", "ip", ip, "domain", domain, "error", err)
 		return
 	}
+
+	ok, failed := t.addMembers(ctx, toAdd)
+	for _, ip := range failed {
+		t.logger.Warn("tracker: ipset add failed", "ip", ip, "domain", domain)
+	}
 	t.mu.Lock()
-	t.linkLocked(domain, ip)
-	delete(t.orphans, ip)
+	for _, ip := range ok {
+		t.linkLocked(domain, ip)
+		delete(t.orphans, ip)
+	}
 	t.mu.Unlock()
 	t.kernelMu.Unlock()
 
-	t.flushConntrack(ctx, []string{ip})
+	if len(ok) > 0 {
+		t.flushConntrack(ctx, ok)
+	}
 }
 
 // RemoveDomain removes all IPs associated with a domain. IPs no longer

@@ -28,6 +28,7 @@ func newDaemonCmd() *cobra.Command {
 				logOut = append(logOut, fileLog)
 			}
 			logger, logBuf := platform.NewLogger(cfg.Daemon.LogLevel, logOut...)
+			platform.RouteStdLog(logger)
 			if logErr != nil {
 				logger.Warn("log file unavailable, logging to web UI buffer only", "path", platform.LogFile, "error", logErr)
 			}
