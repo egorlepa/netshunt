@@ -55,10 +55,10 @@ var downloadClient = &http.Client{
 type DomainType int
 
 const (
-	DomainPlain  DomainType = 0 // keyword match
-	DomainRegex  DomainType = 1 // regex
-	DomainRoot   DomainType = 2 // domain and all subdomains
-	DomainFull   DomainType = 3 // exact match
+	DomainPlain DomainType = 0 // keyword match
+	DomainRegex DomainType = 1 // regex
+	DomainRoot  DomainType = 2 // domain and all subdomains
+	DomainFull  DomainType = 3 // exact match
 )
 
 // Domain is a single entry in a geosite category.

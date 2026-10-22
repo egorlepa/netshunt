@@ -126,13 +126,13 @@ func buildIPK(archSuffix, controlArch string) error {
 
 	now := time.Now()
 
-	// Build data.tar.gz — the filesystem contents.
+	// Build data.tar.gz - the filesystem contents.
 	dataBuf, installedSize, err := buildDataTar(binary, info, now)
 	if err != nil {
 		return fmt.Errorf("build data.tar.gz: %w", err)
 	}
 
-	// Build control.tar.gz — package metadata.
+	// Build control.tar.gz - package metadata.
 	controlBuf, err := buildControlTar(installedSize, controlArch, now)
 	if err != nil {
 		return fmt.Errorf("build control.tar.gz: %w", err)

@@ -142,7 +142,7 @@ func normalizeEntry(s string) string {
 		return s
 	}
 
-	// No prefix — fall back to standard normalization.
+	// No prefix - fall back to standard normalization.
 	return normalizeDomain(s)
 }
 

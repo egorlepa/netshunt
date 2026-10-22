@@ -75,7 +75,7 @@ func pickSample(src []string, n int) []string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// SuffixSet — production blocklist matcher.
+// SuffixSet - production blocklist matcher.
 // ──────────────────────────────────────────────────────────────────────────
 
 func buildSuffixSet(domains []string) *SuffixSet {

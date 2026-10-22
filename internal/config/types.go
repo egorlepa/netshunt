@@ -17,7 +17,7 @@ type Config struct {
 }
 
 // RoutingConfig describes how matched traffic is forwarded.
-// netshunt does not manage the proxy software itself — the user sets up their own.
+// netshunt does not manage the proxy software itself - the user sets up their own.
 type RoutingConfig struct {
 	// LocalPort is the primary transparent proxy port.
 	LocalPort int `yaml:"local_port"`

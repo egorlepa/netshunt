@@ -102,7 +102,7 @@ func (s *Server) handleSwitchProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Drop only TCP conntrack entries whose reply source port is the old proxy
-	// port — these are the live connections still flowing through it. Other
+	// port - these are the live connections still flowing through it. Other
 	// traffic on the router (DNS, LAN-LAN, non-shunted) untouched.
 	// --reply-port-src is only available with -p tcp.
 	if err := platform.RunSilent(ctx, "conntrack", "-D", "-p", "tcp", "--reply-port-src", fmt.Sprintf("%d", oldPort)); err != nil {

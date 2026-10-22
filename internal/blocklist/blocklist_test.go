@@ -14,8 +14,8 @@ import (
 
 // collectStream runs the streaming parser over input and copies each emitted
 // domain into a freshly-allocated string slice for assertion convenience.
-// Production callers never build such a slice — they insert directly into
-// the matcher map — but tests need a stable value to compare.
+// Production callers never build such a slice - they insert directly into
+// the matcher map - but tests need a stable value to compare.
 func collectStream(t *testing.T, input string, format Format) []string {
 	t.Helper()
 	var out []string
@@ -61,7 +61,7 @@ func TestStreamHosts(t *testing.T) {
 255.255.255.255 broadcasthost
 ::1 localhost
 
-# Custom host mappings — should be skipped (not 0.0.0.0/127.0.0.1)
+# Custom host mappings - should be skipped (not 0.0.0.0/127.0.0.1)
 10.0.0.5 internal.example
 
 0.0.0.0 ads.example.com
@@ -197,7 +197,7 @@ func TestDownloadExceedsSizeCap(t *testing.T) {
 	if !strings.Contains(err.Error(), "cap") {
 		t.Errorf("error %q, want one mentioning cap", err)
 	}
-	// dest must not exist — failed download should not leave a partial file.
+	// dest must not exist - failed download should not leave a partial file.
 	if _, statErr := os.Stat(dest); statErr == nil {
 		t.Errorf("dest should not exist after cap failure")
 	}
@@ -294,7 +294,7 @@ func TestStoreRecordFetchPersistsValidators(t *testing.T) {
 		t.Errorf("state not persisted: %+v", st)
 	}
 
-	// Reload from disk — validators must round-trip.
+	// Reload from disk - validators must round-trip.
 	s2, err := NewStore(path, filepath.Join(dir, "cache"))
 	if err != nil {
 		t.Fatalf("reload: %v", err)

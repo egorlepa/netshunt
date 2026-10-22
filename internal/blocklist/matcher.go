@@ -2,13 +2,13 @@ package blocklist
 
 // Stream invokes emit for every normalized domain from every enabled source
 // cache file. Domains are yielded as byte slices that alias the scanner's
-// buffer — emit must string() the slice if it intends to retain it past the
+// buffer - emit must string() the slice if it intends to retain it past the
 // callback.
 //
 // perSource, if non-nil, is called once per source after its file has been
 // fully streamed, with the number of domains emitted from that source
 // (pre-cross-source-dedup). Missing or unreadable cache files are skipped
-// silently — updating the source will populate the cache.
+// silently - updating the source will populate the cache.
 //
 // This is the low-memory apply path: no []string, no dedup map, no
 // []shunt.Entry is built inside this call. The caller's emit closure is

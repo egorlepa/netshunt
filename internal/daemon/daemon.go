@@ -96,7 +96,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.Logger.Info("removed stale healthcheck rules", "count", n)
 	}
 
-	// 1. Initial reconcile — populates matcher + ipset before DNS starts.
+	// 1. Initial reconcile - populates matcher + ipset before DNS starts.
 	if err := d.Reconciler.Reconcile(ctx); err != nil {
 		d.Logger.Error("initial reconcile failed", "error", err)
 	}

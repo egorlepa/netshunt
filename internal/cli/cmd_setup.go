@@ -121,7 +121,7 @@ func newSetupCmd() *cobra.Command {
 				}
 				var n int
 				if _, err := fmt.Sscanf(backup, "%d", &n); err != nil || n < 1 || n > 65535 {
-					fmt.Println("  invalid port — must be 1–65535")
+					fmt.Println("  invalid port - must be 1-65535")
 					continue
 				}
 				if n == cfg.Routing.LocalPort {

@@ -183,7 +183,7 @@ func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Reques
 
 // UpdateAllBlocklistSources fetches every enabled source sequentially and
 // applies the blocklist. Returns success/fail counts. Safe to call from a
-// background goroutine (scheduler) — does not touch the http.Request layer.
+// background goroutine (scheduler) - does not touch the http.Request layer.
 func (s *Server) UpdateAllBlocklistSources(ctx context.Context) (success, failed int) {
 	// Fetches are run sequentially. On routers, parallel downloads spike
 	// flash writes + memory pressure from simultaneous in-flight tmp files

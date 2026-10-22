@@ -403,7 +403,7 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config, label strin
 		r.Detail = fmt.Sprintf("0/%d reachable via proxy (%s: %s)", total, connectivityProbes[0].name, errs[0])
 		r.Warn = !active
 	default:
-		// Partial success: the proxy works but is unstable — flag it.
+		// Partial success: the proxy works but is unstable - flag it.
 		r.Warn = true
 		r.Detail = fmt.Sprintf("%d/%d via proxy (flaky: %s)", ok, total, strings.Join(failed, ", "))
 	}

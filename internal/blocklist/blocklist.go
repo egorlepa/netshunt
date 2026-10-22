@@ -3,7 +3,7 @@
 // "Update" trigger, mirroring the geosite pattern) and cached on disk.
 //
 // The matcher is built by streaming each enabled source's cache file
-// line-by-line directly into the matcher's rule set — no intermediate
+// line-by-line directly into the matcher's rule set - no intermediate
 // []string or []shunt.Entry slice is materialised. This matters on routers
 // where a 1M-entry list would otherwise peak tens of MB of transient heap.
 package blocklist
@@ -28,7 +28,7 @@ type Format int
 const (
 	// FormatDomains: one bare domain per line. Comments start with '#' or '!'.
 	FormatDomains Format = iota
-	// FormatHosts: "/etc/hosts" style lines — "0.0.0.0 domain.tld" or
+	// FormatHosts: "/etc/hosts" style lines - "0.0.0.0 domain.tld" or
 	// "127.0.0.1 domain.tld". Entries not pointing at 0.0.0.0 / 127.0.0.1 are
 	// skipped to avoid capturing unrelated host mappings.
 	FormatHosts
@@ -118,7 +118,7 @@ type DownloadResult struct {
 
 // Download fetches src into destPath atomically, trying src.URL and then
 // each of src.Mirrors until one succeeds. If prevETag or prevLastModified
-// are non-empty they are sent as If-None-Match / If-Modified-Since — on a 304
+// are non-empty they are sent as If-None-Match / If-Modified-Since - on a 304
 // response destPath is not touched and the returned DownloadResult has
 // NotModified=true. The response body is capped at MaxDownloadBytes and
 // streamed directly to disk (never buffered entirely in memory).
@@ -205,7 +205,7 @@ func downloadOnce(ctx context.Context, url, destPath, prevETag, prevLastModified
 // file. emit receives a byte slice that is only valid until the next call;
 // the caller must copy it (e.g. via string(b)) to retain it.
 //
-// This is the low-memory path: no []string is built, no dedup map is kept —
+// This is the low-memory path: no []string is built, no dedup map is kept -
 // dedup happens in whatever target data structure emit writes to.
 func StreamFile(path string, format Format, emit func(domain []byte)) error {
 	f, err := os.Open(path)
@@ -237,7 +237,7 @@ func streamReader(r io.Reader, format Format, emit func([]byte)) error {
 // the line is a comment / unsupported / invalid.
 //
 // Important: the returned slice aliases the scanner's buffer. It is only
-// valid until the next call into the scanner — the emit callback must copy
+// valid until the next call into the scanner - the emit callback must copy
 // before retaining.
 func extractAndNormalize(line []byte, format Format) []byte {
 	line = bytes.TrimSpace(line)
@@ -261,7 +261,7 @@ func extractAndNormalize(line []byte, format Format) []byte {
 		if i := bytes.IndexByte(line, '#'); i >= 0 {
 			line = bytes.TrimSpace(line[:i])
 		}
-		// Fast two-field split — avoids strings.Fields allocation.
+		// Fast two-field split - avoids strings.Fields allocation.
 		idx := bytes.IndexAny(line, " \t")
 		if idx < 0 {
 			return nil

@@ -74,7 +74,7 @@ func TestResolveCacheRefreshMovesToFront(t *testing.T) {
 	c.Remember("a.com", []string{"1"})
 	c.Remember("b.com", []string{"2"})
 	c.Remember("c.com", []string{"3"})
-	// Touch a.com — it becomes most-recent, b.com is now LRU.
+	// Touch a.com - it becomes most-recent, b.com is now LRU.
 	c.Remember("a.com", []string{"1", "1b"})
 	c.Remember("d.com", []string{"4"}) // should evict b.com, not a.com
 

@@ -64,8 +64,8 @@ func TestParseGeoSiteList(t *testing.T) {
 		buildGeoSite("NETFLIX",
 			buildDomain(DomainRoot, "netflix.com"),
 			buildDomain(DomainFull, "fast.com"),
-			buildDomain(DomainPlain, "nflx"),    // keyword, should be filtered
-			buildDomain(DomainRegex, "nflx.*"),   // regex, should be filtered
+			buildDomain(DomainPlain, "nflx"),   // keyword, should be filtered
+			buildDomain(DomainRegex, "nflx.*"), // regex, should be filtered
 		),
 		buildGeoSite("GOOGLE",
 			buildDomain(DomainRoot, "google.com"),

@@ -134,7 +134,7 @@ func SettingsPage(cfg *config.Config) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></div><div class=\"field\"><label>Additional Interfaces <span class=\"text-muted\">(one per line, e.g. awg0 — same shunt as the main interface)</span></label> <textarea name=\"additional_interfaces\" rows=\"2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></div><div class=\"field\"><label>Additional Interfaces <span class=\"text-muted\">(one per line, e.g. awg0 - same shunt as the main interface)</span></label> <textarea name=\"additional_interfaces\" rows=\"2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

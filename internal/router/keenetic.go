@@ -80,7 +80,7 @@ type Interface struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
 	Connected   bool   `json:"connected"`
-	Link        string `json:"link"`   // "up" or "down"
+	Link        string `json:"link"` // "up" or "down"
 	SystemName  string `json:"system-name"`
 }
 
@@ -172,4 +172,3 @@ func (c *Client) saveConfig(ctx context.Context) error {
 	}
 	return nil
 }
-

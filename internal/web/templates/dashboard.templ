@@ -82,7 +82,7 @@ templ ProxySwitch(r config.RoutingConfig) {
 	<span id="proxy-switch">
 		if !r.BackupConfigured() {
 			<strong>primary</strong> <span class="text-muted">({ itoa(r.LocalPort) })</span>
-			<span class="text-muted text-sm"> — backup not configured</span>
+			<span class="text-muted text-sm"> - backup not configured</span>
 		} else {
 			<span class="flex gap-8" style="align-items:center">
 				if !r.UseBackup {

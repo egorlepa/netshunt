@@ -10,7 +10,7 @@ var version = "dev"
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "netshunt",
-		Short: "netshunt — selective traffic routing through proxy/VPN",
+		Short: "netshunt - selective traffic routing through proxy/VPN",
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
 

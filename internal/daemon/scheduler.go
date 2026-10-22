@@ -43,11 +43,11 @@ func NewScheduler(cfg *config.Live, jobs UpdateJobs, logger *slog.Logger) *Sched
 	}
 }
 
-// Start registers cron entries (always, regardless of current enabled flag —
+// Start registers cron entries (always, regardless of current enabled flag -
 // the per-tick handlers re-check the flag at runtime, so toggling auto-update
 // in the UI takes effect immediately).
 //
-// No catch-up runs on boot — jobs only fire at their scheduled time.
+// No catch-up runs on boot - jobs only fire at their scheduled time.
 func (s *Scheduler) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

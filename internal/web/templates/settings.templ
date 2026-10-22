@@ -40,7 +40,7 @@ templ SettingsPage(cfg *config.Config) {
 						<input type="text" name="net_interface" value={ cfg.Network.EntwareInterface }/>
 					</div>
 					<div class="field">
-						<label>Additional Interfaces <span class="text-muted">(one per line, e.g. awg0 — same shunt as the main interface)</span></label>
+						<label>Additional Interfaces <span class="text-muted">(one per line, e.g. awg0 - same shunt as the main interface)</span></label>
 						<textarea name="additional_interfaces" rows="2">{ joinLines(cfg.Network.AdditionalInterfaces) }</textarea>
 					</div>
 					<div class="field">
