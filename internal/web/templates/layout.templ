@@ -108,13 +108,20 @@ templ Layout(title string, activePage string) {
 						setTimeout(function() { if (active === 0 && bar) bar.style.width = "0"; }, 250);
 					}, 200);
 				}
+				// Completion is tied to the XHR itself, not to htmx:afterRequest:
+				// that event is dispatched on the element that fired the request,
+				// and when the request swaps that element out of the DOM (the
+				// dashboard Refresh button lives inside the content it replaces)
+				// the event never bubbles to body and the bar would stay at 90%.
 				document.body.addEventListener("htmx:beforeRequest", function(e) {
 					if (isPoll(e.detail.elt)) return;
 					start();
-				});
-				document.body.addEventListener("htmx:afterRequest", function(e) {
-					if (isPoll(e.detail.elt)) return;
-					done();
+					var xhr = e.detail.xhr;
+					if (xhr && xhr.addEventListener) {
+						xhr.addEventListener("loadend", done, { once: true });
+					} else {
+						done();
+					}
 				});
 			})();
 		</script>
