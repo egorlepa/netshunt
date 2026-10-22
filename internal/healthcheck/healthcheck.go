@@ -77,7 +77,6 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 	add("iptables", func(ctx context.Context) Result { return checkIPTables4(ctx, cfg, platform.DefaultRunner) })
 	// 10. Shunts
 	add("shunts", func(ctx context.Context) Result { return checkShunts(shunts) })
-	add("shunt pipeline", func(ctx context.Context) Result { return checkShuntPipeline(ctx, cfg, shunts) })
 	// 11. Blocklist freshness
 	add("blocklist", func(ctx context.Context) Result { return checkBlocklist(cfg) })
 
@@ -99,101 +98,6 @@ func activeSuffix(active bool) string {
 		return " (active)"
 	}
 	return ""
-}
-
-// ipsInSet reports, for each ip, whether the ipset holds it directly or
-// through a CIDR member. One `ipset list` exec for the whole batch.
-func ipsInSet(ctx context.Context, cfg *config.Config, ips []string) (map[string]bool, error) {
-	entries, err := netfilter.NewIPSet(cfg.IPSet.TableName).List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var nets []*net.IPNet
-	exact := make(map[string]bool)
-	for _, e := range entries {
-		f := strings.Fields(e)
-		if len(f) == 0 {
-			continue
-		}
-		if _, cidr, err := net.ParseCIDR(f[0]); err == nil {
-			nets = append(nets, cidr)
-		} else {
-			exact[f[0]] = true
-		}
-	}
-	out := make(map[string]bool, len(ips))
-	for _, ip := range ips {
-		if exact[ip] {
-			out[ip] = true
-			continue
-		}
-		parsed := net.ParseIP(ip)
-		for _, cidr := range nets {
-			if parsed != nil && cidr.Contains(parsed) {
-				out[ip] = true
-				break
-			}
-		}
-	}
-	return out, nil
-}
-
-// pipelineDomain picks a real shunted domain to resolve: the first enabled
-// suffix or exact domain entry. Keyword and regexp rules are skipped because
-// their value is not a resolvable name. "" when there is none.
-func pipelineDomain(shunts *shunt.Store) string {
-	entries, err := shunts.EnabledEntries()
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		switch e.Type() {
-		case shunt.EntryDomainSuffix, shunt.EntryDomainFull:
-			return e.DomainValue()
-		}
-	}
-	return ""
-}
-
-// checkShuntPipeline is the end-to-end DNS check: a domain the user actually
-// shunts is resolved through the forwarder, and every A record it returns
-// must then be in the kernel ipset. Read-only; it never adds anything to a
-// shunt.
-func checkShuntPipeline(ctx context.Context, cfg *config.Config, shunts *shunt.Store) Result {
-	r := Result{Name: "shunt pipeline"}
-	domain := pipelineDomain(shunts)
-	if domain == "" {
-		r.Warn = true
-		r.Detail = "no domain entry in any enabled shunt to resolve"
-		return r
-	}
-	ips, err := dns.NewResolver(cfg.DNS.ListenAddr).ResolveToStrings(ctx, domain)
-	if err != nil {
-		r.Detail = fmt.Sprintf("%s: resolve failed: %v", domain, err)
-		return r
-	}
-	if len(ips) == 0 {
-		r.Detail = fmt.Sprintf("%s: no A records", domain)
-		return r
-	}
-	in, err := ipsInSet(ctx, cfg, ips)
-	if err != nil {
-		r.Detail = fmt.Sprintf("%s: ipset list: %v", domain, err)
-		return r
-	}
-	var missing []string
-	for _, ip := range ips {
-		if !in[ip] {
-			missing = append(missing, ip)
-		}
-	}
-	if len(missing) > 0 {
-		r.Detail = fmt.Sprintf("%s: %d/%d IPs in ipset, missing %s", domain, len(ips)-len(missing), len(ips), strings.Join(missing, ", "))
-		return r
-	}
-	r.Passed = true
-	r.Detail = fmt.Sprintf("%s: %d/%d IPs in ipset", domain, len(ips), len(ips))
-	return r
 }
 
 func checkService(ctx context.Context, svc service.Service) Result {
