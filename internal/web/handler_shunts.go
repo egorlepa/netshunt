@@ -16,22 +16,29 @@ func (s *Server) handleShuntsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(r, w, templates.ShuntsPage(s.shuntViews(shunts)))
+	members := -1
+	if s.Tracker != nil {
+		members = s.Tracker.Members()
+	}
+	s.render(r, w, templates.ShuntsPage(templates.ShuntsPageData{
+		Shunts:       s.shuntViews(shunts),
+		IPSetMembers: members,
+	}))
 }
 
-// shuntViews pairs each shunt with the entry count it applies and, for a
-// geosite shunt without data, the reason.
+// shuntViews pairs each shunt with the entry count it applies, its position
+// and, for a geosite shunt without data, the reason.
 func (s *Server) shuntViews(shunts []shunt.Shunt) []templates.ShuntView {
 	views := make([]templates.ShuntView, len(shunts))
 	for i, sh := range shunts {
-		views[i] = s.shuntView(sh)
+		views[i] = s.shuntView(sh, i, len(shunts))
 	}
 	return views
 }
 
-func (s *Server) shuntView(sh shunt.Shunt) templates.ShuntView {
+func (s *Server) shuntView(sh shunt.Shunt, pos, total int) templates.ShuntView {
 	n, ok := s.Shunts.EntryCount(sh)
-	v := templates.ShuntView{Shunt: sh, Count: n}
+	v := templates.ShuntView{Shunt: sh, Count: n, Pos: pos, Total: total}
 	if !ok {
 		v.NoData = s.geositeNoData()
 	}
@@ -56,7 +63,7 @@ func (s *Server) handleShuntEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !sh.IsGeosite() {
-		s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, false))
+		s.render(r, w, templates.EntryChips(templates.SlugID(name), name, sh.Entries, false))
 		return
 	}
 	entries, ok := s.Shunts.Entries(*sh)
@@ -68,13 +75,72 @@ func (s *Server) handleShuntEntries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShuntDetail(w http.ResponseWriter, r *http.Request) {
+	s.renderShuntRow(w, r, r.PathValue("name"), false)
+}
+
+// handleUpdateShunt renames a shunt and/or sets its description (form fields
+// name and description; a field left out keeps its value) and answers with
+// the row, expanded, since the edit comes from its open panel. The name is
+// not part of what is applied (entries are), so no mutation runs.
+func (s *Server) handleUpdateShunt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	sh, err := s.Shunts.Get(name)
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.render(r, w, templates.ShuntCard(s.shuntView(*sh)))
+	newName, desc := sh.Name, sh.Description
+	if _, ok := r.Form["name"]; ok {
+		newName = strings.TrimSpace(r.FormValue("name"))
+		if newName == "" {
+			errorResponse(w, "name is required", http.StatusBadRequest)
+			return
+		}
+	}
+	if _, ok := r.Form["description"]; ok {
+		desc = r.FormValue("description")
+	}
+	if err := s.Shunts.UpdateInfo(name, newName, desc); err != nil {
+		code := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, shunt.ErrShuntExists):
+			code = http.StatusConflict
+		case errors.Is(err, shunt.ErrShuntNotFound):
+			code = http.StatusNotFound
+		}
+		errorResponse(w, err.Error(), code)
+		return
+	}
+	msg := "Description saved"
+	if newName != name {
+		msg = fmt.Sprintf("Renamed to %s", newName)
+	}
+	toastTrigger(w, msg, "success")
+	s.renderShuntRow(w, r, newName, true)
+}
+
+// handleReorderShunts stores a new shunt order: form field names, repeated,
+// listing every shunt once. 204 on success, 400 when the names are not
+// exactly the stored shunts. The order does not affect matching, so no
+// mutation runs.
+func (s *Server) handleReorderShunts(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.Shunts.Reorder(r.Form["names"]); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, shunt.ErrOrderMismatch) {
+			code = http.StatusBadRequest
+		}
+		errorResponse(w, err.Error(), code)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleCreateShunt(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +224,7 @@ func (s *Server) handleAddEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.triggerMutation(r.Context())
-	s.renderShuntCard(w, r, name)
+	s.renderShuntRow(w, r, name, true)
 }
 
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +252,7 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.Shunts.AddEntries(name, strings.Split(raw, "\n"))
+	res, err := s.Shunts.AddEntries(name, splitEntries(raw))
 	if err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
@@ -209,7 +275,25 @@ func (s *Server) handleBulkAddEntries(w http.ResponseWriter, r *http.Request) {
 		msg += fmt.Sprintf(", %d rejected: %s", len(res.Rejected), strings.Join(bad, "; "))
 	}
 	toastTrigger(w, msg, typ)
-	s.renderShuntCard(w, r, name)
+	s.renderShuntRow(w, r, name, true)
+}
+
+// splitEntries splits the add-entries text into values: one per line, and
+// within a line separated by commas, except for a regexp: line, where a comma
+// belongs to the pattern (a{1,3}).
+func splitEntries(raw string) []string {
+	var out []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, shunt.PrefixRegexp) {
+			out = append(out, line)
+			continue
+		}
+		for _, v := range strings.Split(line, ",") {
+			out = append(out, strings.TrimSpace(v))
+		}
+	}
+	return out
 }
 
 func (s *Server) handleExportShunts(w http.ResponseWriter, r *http.Request) {
@@ -258,13 +342,22 @@ func (s *Server) renderShuntList(w http.ResponseWriter, r *http.Request) {
 	s.render(r, w, templates.ShuntList(s.shuntViews(shunts)))
 }
 
-func (s *Server) renderShuntCard(w http.ResponseWriter, r *http.Request, name string) {
-	sh, err := s.Shunts.Get(name)
+// renderShuntRow renders one row; open renders it expanded.
+func (s *Server) renderShuntRow(w http.ResponseWriter, r *http.Request, name string, open bool) {
+	shunts, err := s.Shunts.List()
 	if err != nil {
-		errorResponse(w, err.Error(), http.StatusNotFound)
+		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(r, w, templates.ShuntCard(s.shuntView(*sh)))
+	for i, sh := range shunts {
+		if sh.Name == name {
+			v := s.shuntView(sh, i, len(shunts))
+			v.Open = open
+			s.render(r, w, templates.ShuntRow(v))
+			return
+		}
+	}
+	errorResponse(w, fmt.Sprintf("shunt %q not found", name), http.StatusNotFound)
 }
 
 func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name string) {
@@ -273,5 +366,5 @@ func (s *Server) renderEntryList(w http.ResponseWriter, r *http.Request, name st
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.render(r, w, templates.EntryList(templates.SlugID(name), name, sh.Entries, sh.IsGeosite()))
+	s.render(r, w, templates.EntryChipsUpdate(templates.SlugID(name), name, sh.Entries))
 }

@@ -128,6 +128,8 @@ func (s *Server) routes() {
 
 	// Shunt mutations (htmx).
 	s.mux.HandleFunc("POST /shunts", s.handleCreateShunt)
+	s.mux.HandleFunc("PUT /shunts/order", s.handleReorderShunts)
+	s.mux.HandleFunc("PUT /shunts/{name}", s.handleUpdateShunt)
 	s.mux.HandleFunc("DELETE /shunts/{name}", s.handleDeleteShunt)
 	s.mux.HandleFunc("PUT /shunts/{name}/enable", s.handleEnableShunt)
 	s.mux.HandleFunc("PUT /shunts/{name}/disable", s.handleDisableShunt)

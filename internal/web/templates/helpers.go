@@ -19,6 +19,57 @@ type ShuntView struct {
 	shunt.Shunt
 	Count  int
 	NoData string
+	// Pos is the 0-based position in shunts.yaml, Total the number of
+	// shunts; the expanded row shows "Position Pos+1 of Total".
+	Pos, Total int
+	// Open renders the row expanded: set when the row is re-rendered in
+	// answer to an edit made from its own (open) panel.
+	Open bool
+}
+
+// ShuntsPageData is what the Shunts page renders.
+type ShuntsPageData struct {
+	Shunts []ShuntView
+	// IPSetMembers is the tracker's ipset member count, -1 when unknown.
+	IPSetMembers int
+}
+
+// Enabled is the number of enabled shunts.
+func (d ShuntsPageData) Enabled() int {
+	n := 0
+	for _, v := range d.Shunts {
+		if v.Enabled {
+			n++
+		}
+	}
+	return n
+}
+
+// Entries is the number of entries over all shunts (geosite ones counted
+// from the database), as the summary strip shows it.
+func (d ShuntsPageData) Entries() int {
+	n := 0
+	for _, v := range d.Shunts {
+		n += v.Count
+	}
+	return n
+}
+
+// groupDigits formats n with a space between thousands ("3 786"), the way
+// the page script formats counts it recomputes.
+func groupDigits(n int) string {
+	s := strconv.Itoa(n)
+	if n < 0 {
+		return "-" + groupDigits(-n)
+	}
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 func autoUpdateSchedule(au config.AutoUpdateConfig, fallback string) string {

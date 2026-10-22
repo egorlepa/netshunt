@@ -152,16 +152,29 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sh, err := s.Shunts.Get(category)
-	if err != nil {
-		errorResponse(w, err.Error(), http.StatusNotFound)
-		return
+	// The shunt may have been renamed on the Shunts page: find it by its
+	// source first, by the category name second.
+	name := ""
+	geositeShunts, _ := s.Shunts.GeositeShunts()
+	for _, sh := range geositeShunts {
+		if cat, _ := sh.GeositeCategory(); strings.EqualFold(cat, category) {
+			name = sh.Name
+			break
+		}
 	}
-	if !sh.IsGeosite() {
-		errorResponse(w, fmt.Sprintf("shunt %q is not a geosite shunt", category), http.StatusConflict)
-		return
+	if name == "" {
+		sh, err := s.Shunts.Get(category)
+		if err != nil {
+			errorResponse(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if !sh.IsGeosite() {
+			errorResponse(w, fmt.Sprintf("shunt %q is not a geosite shunt", category), http.StatusConflict)
+			return
+		}
+		name = sh.Name
 	}
-	if err := s.Shunts.Delete(category); err != nil {
+	if err := s.Shunts.Delete(name); err != nil {
 		errorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -183,11 +196,20 @@ func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, m
 		s.Logger.Error("failed to index geosite database", "error", err)
 	}
 
-	// Build set of imported categories.
-	imported := make(map[string]bool)
+	// Imported categories, by the shunts' sources: a geosite shunt can be
+	// renamed on the Shunts page.
+	sources := make(map[string]bool)
 	geositeShunts, _ := s.Shunts.GeositeShunts()
 	for _, sh := range geositeShunts {
-		imported[sh.Name] = true
+		if cat, ok := sh.GeositeCategory(); ok {
+			sources[strings.ToLower(cat)] = true
+		}
+	}
+	imported := make(map[string]bool)
+	for _, cat := range categories {
+		if sources[strings.ToLower(cat.Name)] {
+			imported[cat.Name] = true
+		}
 	}
 
 	return info, categories, imported

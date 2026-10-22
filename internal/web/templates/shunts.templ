@@ -2,124 +2,98 @@ package templates
 
 import "github.com/egorlepa/netshunt/internal/shunt"
 
-templ ShuntsPage(shunts []ShuntView) {
+// ShuntsPage is a sticky toolbar over a dense list of shunt rows; a row
+// expands in place into its entries and settings. Search, expand state,
+// drag-and-drop reordering and the optimistic toggle live in
+// /static/shunts.js; every change goes through the htmx endpoints.
+templ ShuntsPage(d ShuntsPageData) {
 	@Layout("Shunts", "shunts") {
-		<div class="flex-between mb-16">
-			<h1>Shunts</h1>
-			<div class="flex gap-8 flex-wrap toolbar-actions">
-				<button id="toggle-all-btn" class="btn btn-sm" onclick="toggleAllEntries()">Expand All</button>
-				<a href="/shunts/export" class="btn btn-sm">Export</a>
-				<button class="btn btn-sm" onclick="document.getElementById('import-form').style.display=document.getElementById('import-form').style.display==='none'?'block':'none'">
-					Import
-				</button>
-				<button class="btn btn-sm btn-accent" onclick="document.getElementById('create-form').style.display='block'">
-					New Shunt
-				</button>
+		<div class="sp" id="shunts-page">
+			<div class="toolbar">
+				<h1>Shunts</h1>
+				<div class="search">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16.5" y2="16.5"></line></svg>
+					<input id="q" type="search" placeholder="Search shunts and entries" autocomplete="off"/>
+					<kbd>/</kbd>
+				</div>
+				<div class="actions">
+					<button type="button" class="btn" id="expand-all" title="Expand all">
+						<span class="btn-text">Expand all</span>
+						<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 9 12 4 17 9"></polyline><polyline points="7 15 12 20 17 15"></polyline></svg>
+					</button>
+					<button type="button" class="btn" data-form="import-form">Import</button>
+					<a class="btn" href="/shunts/export">Export</a>
+					<button type="button" class="btn btn-accent" data-form="create-form">+ New</button>
+				</div>
 			</div>
-		</div>
-		<div id="import-form" class="card mb-16" style="display:none">
-			<h2>Import Shunts</h2>
-			<form
-				hx-post="/shunts/import"
-				hx-target="#shunt-list"
-				hx-swap="innerHTML"
-				hx-encoding="multipart/form-data"
-				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
-				class="mt-8"
-			>
-				<textarea name="body" rows="6" placeholder="Paste shunts YAML here..." required></textarea>
-				<div class="mt-8">
-					<button class="btn btn-accent" type="submit" hx-disabled-elt="this">
-						Import
+			<div id="import-form" class="sp-form" hidden>
+				<form
+					hx-post="/shunts/import"
+					hx-target="#shunt-list"
+					hx-swap="innerHTML"
+					hx-encoding="multipart/form-data"
+					hx-disabled-elt="find button[type='submit']"
+					hx-on::after-request="if(event.detail.successful){this.reset();this.parentNode.hidden=true}"
+				>
+					<textarea name="body" rows="6" placeholder="Paste shunts YAML here (the format Export downloads)" required></textarea>
+					<div class="sp-form-actions">
+						<button class="btn btn-accent" type="submit">
+							Import
+							<span class="htmx-indicator"><span class="spinner"></span></span>
+						</button>
+						<button class="btn btn-ghost" type="button" data-form="import-form">Cancel</button>
+					</div>
+				</form>
+			</div>
+			<div id="create-form" class="sp-form" hidden>
+				<form
+					class="sp-form-row"
+					hx-post="/shunts"
+					hx-target="#shunt-list"
+					hx-swap="innerHTML"
+					hx-disabled-elt="find button[type='submit']"
+					hx-on::after-request="if(event.detail.successful){this.reset();this.parentNode.hidden=true}"
+				>
+					<input type="text" name="name" placeholder="Shunt name" autocomplete="off" required/>
+					<input type="text" name="description" placeholder="Description (optional)" autocomplete="off"/>
+					<button class="btn btn-accent" type="submit">
+						Create
 						<span class="htmx-indicator"><span class="spinner"></span></span>
 					</button>
-				</div>
-			</form>
+					<button class="btn btn-ghost" type="button" data-form="create-form">Cancel</button>
+				</form>
+			</div>
+			<div class="strip">
+				<span><b id="n-on">{ itoa(d.Enabled()) }</b> of <b id="n-all">{ itoa(len(d.Shunts)) }</b> enabled</span>
+				<span><b id="n-entries">{ groupDigits(d.Entries()) }</b> entries</span>
+				if d.IPSetMembers >= 0 {
+					<span><b>{ groupDigits(d.IPSetMembers) }</b> IPs in set</span>
+				}
+				<span id="n-match" hidden><b id="n-match-v">0</b> match</span>
+				<span class="grow"></span>
+				<span>drag the handle to reorder</span>
+			</div>
+			<div class="list" id="shunt-list">
+				@ShuntList(d.Shunts)
+			</div>
+			<div class="empty" id="empty" hidden>Nothing matches.</div>
 		</div>
-		<div id="create-form" class="card mb-16" style="display:none">
-			<h2>Create Shunt</h2>
-			<form
-				hx-post="/shunts"
-				hx-target="#shunt-list"
-				hx-swap="innerHTML"
-				hx-disabled-elt="find button[type='submit']"
-				hx-on::after-request="if(event.detail.successful){this.reset();this.closest('.card').style.display='none'}"
-				class="flex gap-8 mt-8 stack-sm"
-			>
-				<input type="text" name="name" placeholder="Shunt name" required/>
-				<input type="text" name="description" placeholder="Description (optional)"/>
-				<button class="btn btn-accent" type="submit">
-					Create
-					<span class="htmx-indicator"><span class="spinner"></span></span>
-				</button>
-			</form>
-		</div>
-		<div id="shunt-list">
-			@ShuntList(shunts)
-		</div>
-		<script>
-			var _expandedShunts = new Set();
-			function _applyShuntState(card) {
-				var slug = card.id.replace('shunt-', '');
-				var el = card.querySelector('.entries-section');
-				var arrow = card.querySelector('.expand-arrow');
-				var expanded = _expandedShunts.has(slug);
-				if (el) el.style.display = expanded ? '' : 'none';
-				if (arrow) arrow.classList.toggle('expanded', expanded);
-			}
-			function toggleShunt(slug) {
-				if (_expandedShunts.has(slug)) { _expandedShunts.delete(slug); } else { _expandedShunts.add(slug); }
-				var card = document.getElementById('shunt-' + slug);
-				if (card) _applyShuntState(card);
-			}
-			function toggleAllEntries() {
-				var cards = document.querySelectorAll('.card[id^="shunt-"]');
-				var btn = document.getElementById('toggle-all-btn');
-				var anyCollapsed = Array.from(cards).some(function(c) {
-					return !_expandedShunts.has(c.id.replace('shunt-', ''));
-				});
-				cards.forEach(function(c) {
-					var slug = c.id.replace('shunt-', '');
-					if (anyCollapsed) { _expandedShunts.add(slug); } else { _expandedShunts.delete(slug); }
-					_applyShuntState(c);
-				});
-				btn.textContent = anyCollapsed ? 'Collapse All' : 'Expand All';
-			}
-			document.body.addEventListener('htmx:afterSettle', function(e) {
-				var elt = e.detail.elt;
-				if (!elt || !elt.id || !elt.id.startsWith('shunt-')) return;
-				// Only re-expand when the whole card was replaced (add/bulk entry swaps the card outerHTML).
-				// Toggle and entry-only swaps target child elements, so expansion state is preserved as-is.
-				var slug = elt.id.replace('shunt-', '');
-				_expandedShunts.add(slug);
-				var card = document.getElementById('shunt-' + slug);
-				if (card) _applyShuntState(card);
-			});
-			function autoResize(el) {
-				if (!el._minH) el._minH = el.offsetHeight;
-				el.style.height = 'auto';
-				el.style.height = Math.max(el.scrollHeight, el._minH) + 'px';
-			}
-			document.addEventListener('input', function(e) {
-				if (e.target.matches('textarea.auto-resize')) autoResize(e.target);
-			});
-		</script>
+		<script src="/static/shunts.js"></script>
 	}
 }
 
+// ShuntList is the content of #shunt-list: one row per shunt, in file order.
 templ ShuntList(shunts []ShuntView) {
 	if len(shunts) == 0 {
-		<div class="card">
-			<p class="text-muted">No shunts configured. Create one to get started.</p>
-		</div>
+		<div class="empty">No shunts configured. Create one with + New.</div>
 	}
 	for _, s := range shunts {
-		@ShuntCard(s)
+		@ShuntRow(s)
 	}
 }
 
 templ ShuntToggle(s shunt.Shunt) {
-	<label class="toggle" id={ "toggle-" + SlugID(s.Name) }>
+	<label class="tg" id={ "toggle-" + SlugID(s.Name) } data-act="tg">
 		if s.Enabled {
 			<input
 				type="checkbox" autocomplete="off"
@@ -136,97 +110,137 @@ templ ShuntToggle(s shunt.Shunt) {
 				hx-swap="outerHTML"
 			/>
 		}
-		<span class="slider"></span>
+		<i></i>
 	</label>
 }
 
-templ ShuntCard(v ShuntView) {
-	if v.IsGeosite() {
-		@geositeShuntCard(v)
-	} else {
-		@manualShuntCard(v)
-	}
+// ShuntCount is the row head's entry count. oob marks it for an out-of-band
+// swap next to an entry list response.
+templ ShuntCount(name string, n int, oob bool) {
+	<span
+		class="count"
+		id={ "count-" + SlugID(name) }
+		data-n={ itoa(n) }
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ groupDigits(n) }</span>
 }
 
-templ shuntHead(v ShuntView) {
-	<div class="shunt-head mb-8">
-		<div class="shunt-head-main shunt-header" data-shunt={ SlugID(v.Name) } onclick="toggleShunt(this.dataset.shunt)">
-			<span class="expand-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
-			<div class="shunt-title">
-				<div class="shunt-name-row">
-					<h2>{ v.Name }</h2>
-					if v.IsGeosite() {
-						<span class="badge badge-yellow" title={ v.Source }>geosite</span>
-					}
-					<span class="entry-count">{ itoa(v.Count) } entries</span>
-					if v.NoData != "" {
-						<span class="badge badge-red" title="This shunt routes nothing until the geosite database has the category">{ v.NoData }</span>
-					}
+templ kvCount(name string, n int, oob bool) {
+	<b
+		id={ "kvcount-" + SlugID(name) }
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ groupDigits(n) }</b>
+}
+
+// ShuntRow is one shunt: the 44 px head and the panel it expands into.
+templ ShuntRow(v ShuntView) {
+	<div
+		id={ "shunt-" + SlugID(v.Name) }
+		class={ "row", templ.KV("on", v.Enabled), templ.KV("nodata", v.NoData != ""), templ.KV("open", v.Open) }
+		data-name={ v.Name }
+		data-desc={ v.Description }
+		data-source={ v.Source }
+	>
+		<div class="head">
+			<span class="handle" data-act="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.8"></circle><circle cx="15" cy="6" r="1.8"></circle><circle cx="9" cy="12" r="1.8"></circle><circle cx="15" cy="12" r="1.8"></circle><circle cx="9" cy="18" r="1.8"></circle><circle cx="15" cy="18" r="1.8"></circle></svg></span>
+			<span class="dot"></span>
+			<span class="name">
+				<span class="t">{ v.Name }</span>
+				if v.IsGeosite() {
+					<span class="badge" title={ v.Source }>geosite</span>
+				}
+				if v.NoData != "" {
+					<span class="badge red" title="This shunt routes nothing until the geosite database has the category">{ v.NoData }</span>
+				}
+			</span>
+			@ShuntCount(v.Name, v.Count, false)
+			if v.Description == "" && v.IsGeosite() {
+				<span class="desc src">{ v.Source }</span>
+			} else {
+				<span class="desc">{ v.Description }</span>
+			}
+			@ShuntToggle(v.Shunt)
+			<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
+		</div>
+		<div class="panel">
+			<div class="entries">
+				<div class="efilter">
+					<input type="search" placeholder={ "Filter " + groupDigits(v.Count) + " entries" } data-act="efilter" autocomplete="off"/>
+					<span class="count" data-role="ecount"></span>
 				</div>
 				if v.IsGeosite() {
-					<div class="shunt-desc text-muted text-sm mono">{ v.Source }</div>
+					<div
+						class="chips ro"
+						id={ "entry-items-" + SlugID(v.Name) }
+						hx-get={ shuntPath(v.Name) + "/entries" }
+						hx-trigger="intersect once"
+						hx-swap="innerHTML"
+					>
+						<span class="none">Loading entries... <span class="spinner"></span></span>
+					</div>
+					<div class="hint">Read-only: this shunt is the geosite category <code>{ v.Source }</code>. Managed from the <a href="/geosite">Geosite</a> page.</div>
+				} else {
+					<div class="chips" id={ "entry-items-" + SlugID(v.Name) }>
+						@EntryChips(SlugID(v.Name), v.Name, v.Entries, false)
+					</div>
+					<form
+						class="add"
+						hx-post={ shuntPath(v.Name) + "/entries/bulk" }
+						hx-target={ "#shunt-" + SlugID(v.Name) }
+						hx-swap="outerHTML"
+						hx-disabled-elt="find textarea, find button[type='submit']"
+					>
+						<textarea name="values" rows="1" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8" autocomplete="off" required></textarea>
+						<button class="btn btn-accent" type="submit">Add</button>
+					</form>
+					<div class="hint">Prefixes: <code>full:</code> <code>keyword:</code> <code>regexp:</code>. Several at once, separated by commas or newlines.</div>
 				}
-				if v.Description != "" {
-					<div class="shunt-desc text-muted text-sm">{ v.Description }</div>
-				}
 			</div>
-		</div>
-		<div class="shunt-controls">
-			@ShuntToggle(v.Shunt)
-			<button
-				class="btn btn-sm btn-danger"
-				hx-delete={ shuntPath(v.Name) }
-				hx-target={ "#shunt-" + SlugID(v.Name) }
-				hx-swap="outerHTML"
-				hx-confirm={ "Delete shunt \"" + v.Name + "\"?" }
-			>Delete</button>
-		</div>
-	</div>
-}
-
-// geositeShuntCard is a reference to a geosite category: the entries come
-// from the database and are loaded only when the card is expanded.
-templ geositeShuntCard(v ShuntView) {
-	<div class="card" id={ "shunt-" + SlugID(v.Name) }>
-		@shuntHead(v)
-		<div class="entries-section" id={ "entries-" + SlugID(v.Name) } style="display:none">
-			<div
-				id={ "entry-items-" + SlugID(v.Name) }
-				hx-get={ shuntPath(v.Name) + "/entries" }
-				hx-trigger="intersect once"
-				hx-swap="innerHTML"
-			>
-				<p class="text-muted text-sm">Loading entries... <span class="spinner"></span></p>
-			</div>
-			<div class="text-muted text-sm mt-8">Read-only: managed from the <a href="/geosite">Geosite</a> page.</div>
-		</div>
-	</div>
-}
-
-templ manualShuntCard(v ShuntView) {
-	<div class="card" id={ "shunt-" + SlugID(v.Name) }>
-		@shuntHead(v)
-		<div class="entries-section" id={ "entries-" + SlugID(v.Name) } style="display:none">
-			<div id={ "entry-items-" + SlugID(v.Name) }>
-				@EntryList(SlugID(v.Name), v.Name, v.Entries, false)
-			</div>
-			<form
-				hx-post={ shuntPath(v.Name) + "/entries/bulk" }
-				hx-target={ "#shunt-" + SlugID(v.Name) }
-				hx-swap="outerHTML"
-				hx-disabled-elt="find textarea, find button[type='submit']"
-				hx-on::after-request="if(event.detail.successful) this.reset()"
-				class="mt-8"
-			>
-				<div class="flex gap-8 items-center stack-sm">
-					<textarea name="values" class="auto-resize" rows="2" placeholder="domain.com, 1.2.3.4, 10.0.0.0/8" required></textarea>
-					<button class="btn btn-sm btn-accent" type="submit">
-						Add
-						<span class="htmx-indicator"><span class="spinner"></span></span>
-					</button>
+			<div class="meta">
+				<form
+					hx-put={ shuntPath(v.Name) }
+					hx-trigger="change, submit"
+					hx-target={ "#shunt-" + SlugID(v.Name) }
+					hx-swap="outerHTML"
+				>
+					<div class="field">
+						<label for={ "name-" + SlugID(v.Name) }>Name</label>
+						<input type="text" id={ "name-" + SlugID(v.Name) } name="name" value={ v.Name } autocomplete="off" required data-act="rename"/>
+					</div>
+					<div class="field">
+						<label for={ "desc-" + SlugID(v.Name) }>Description</label>
+						<input type="text" id={ "desc-" + SlugID(v.Name) } name="description" value={ v.Description } placeholder="Optional" autocomplete="off" data-act="redesc"/>
+					</div>
+				</form>
+				<div class="kv">
+					<span>Entries</span>
+					@kvCount(v.Name, v.Count, false)
+					<span>Position</span>
+					<b data-role="pos">{ itoa(v.Pos + 1) } of { itoa(v.Total) }</b>
+					if v.IsGeosite() {
+						<span>Source</span>
+						<b class="src">{ v.Source }</b>
+					}
 				</div>
-				<div class="text-muted text-sm mt-8">Prefixes: <span class="mono">full:</span>, <span class="mono">keyword:</span>, <span class="mono">regexp:</span></div>
-			</form>
+				<div class="danger">
+					<button type="button" class="btn btn-sm btn-danger" data-act="arm">Delete shunt</button>
+					<span class="confirm">
+						Delete "{ v.Name }"?
+						<button
+							type="button"
+							class="btn btn-sm btn-danger"
+							hx-delete={ shuntPath(v.Name) }
+							hx-target={ "#shunt-" + SlugID(v.Name) }
+							hx-swap="outerHTML"
+						>Delete</button>
+						<button type="button" class="btn btn-sm btn-ghost" data-act="disarm">Cancel</button>
+					</span>
+				</div>
+			</div>
 		</div>
 	</div>
 }
@@ -235,33 +249,39 @@ templ manualShuntCard(v ShuntView) {
 // shunt.
 templ GeositeEntryList(shuntSlug string, shuntName string, entries []shunt.Entry, noData string) {
 	if noData != "" {
-		<p class="text-muted text-sm">No entries: { noData }.</p>
+		<span class="none">No entries: { noData }.</span>
 	} else {
-		@EntryList(shuntSlug, shuntName, entries, true)
+		@EntryChips(shuntSlug, shuntName, entries, true)
 	}
 }
 
-templ EntryList(shuntSlug string, shuntName string, entries []shunt.Entry, readOnly bool) {
+// EntryChipsUpdate is the answer to an entry removal: the chips plus the
+// new count for the row head and the panel, swapped out of band.
+templ EntryChipsUpdate(shuntSlug string, shuntName string, entries []shunt.Entry) {
+	@EntryChips(shuntSlug, shuntName, entries, false)
+	@ShuntCount(shuntName, len(entries), true)
+	@kvCount(shuntName, len(entries), true)
+}
+
+templ EntryChips(shuntSlug string, shuntName string, entries []shunt.Entry, readOnly bool) {
 	if len(entries) == 0 {
-		<p class="text-muted text-sm">No entries yet.</p>
-	} else {
-		<ul class="entry-list">
-			for _, e := range sortedEntries(entries) {
-				<li class="entry-item">
-					<span>{ e.Value }</span>
-					if !e.Valid() {
-						<span class="badge badge-red" title="Invalid entry, ignored by the DNS matcher and ipset">not applied</span>
-					}
-					if !readOnly {
-						<button
-							class="btn btn-sm btn-danger"
-							hx-delete={ entryPath(shuntName, e.Value) }
-							hx-target={ "#entry-items-" + shuntSlug }
-							hx-swap="innerHTML"
-						>&times;</button>
-					}
-				</li>
+		<span class="none">No entries yet.</span>
+	}
+	for _, e := range sortedEntries(entries) {
+		<span class="chip" data-v={ e.Value }>
+			<span>{ e.Value }</span>
+			if !e.Valid() {
+				<span class="badge red" title="Invalid entry, ignored by the DNS matcher and ipset">not applied</span>
 			}
-		</ul>
+			if !readOnly {
+				<button
+					type="button"
+					title="Remove"
+					hx-delete={ entryPath(shuntName, e.Value) }
+					hx-target={ "#entry-items-" + shuntSlug }
+					hx-swap="innerHTML"
+				>&times;</button>
+			}
+		</span>
 	}
 }

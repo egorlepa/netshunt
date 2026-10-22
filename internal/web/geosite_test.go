@@ -90,7 +90,7 @@ func TestShuntsPageGeositeCardIsLazy(t *testing.T) {
 	if strings.Contains(body, "netflix.com<") || strings.Contains(body, "fast.com") {
 		t.Fatal("geosite entries rendered inline")
 	}
-	if !strings.Contains(body, "3 entries") || !strings.Contains(body, `hx-get="/shunts/NETFLIX/entries"`) ||
+	if !strings.Contains(body, `data-n="3"`) || !strings.Contains(body, `hx-get="/shunts/NETFLIX/entries"`) ||
 		!strings.Contains(body, "geosite:netflix") {
 		t.Fatalf("geosite card:\n%s", body)
 	}
@@ -119,7 +119,7 @@ func TestShuntsPageGeositeNoDataBadges(t *testing.T) {
 	_ = store.AddGeositeShunt("zz-nocat", "geosite:zz-does-not-exist")
 
 	body := do(t, s, http.MethodGet, "/shunts").Body.String()
-	if !strings.Contains(body, "category not in database") || !strings.Contains(body, "0 entries") {
+	if !strings.Contains(body, "category not in database") || !strings.Contains(body, `data-n="0"`) {
 		t.Fatalf("missing-category badge:\n%s", body)
 	}
 	if body := do(t, s, http.MethodGet, "/shunts/zz-nocat/entries").Body.String(); !strings.Contains(body, "category not in database") {
@@ -189,5 +189,36 @@ func TestGeositePageFromIndex(t *testing.T) {
 	gs.downloaded = false
 	if body := do(t, s, http.MethodGet, "/geosite").Body.String(); !strings.Contains(body, "Download Database") {
 		t.Fatal("no download prompt without a database")
+	}
+}
+
+func TestGeositePageFollowsRenamedShunt(t *testing.T) {
+	s, store, _, rec, _ := newGeositeTestServer(t)
+	if resp := do(t, s, http.MethodPost, "/geosite/import/DUCKDUCKGO"); resp.Code != http.StatusOK {
+		t.Fatalf("import: %d", resp.Code)
+	}
+	if err := store.UpdateInfo("DUCKDUCKGO", "Search", ""); err != nil {
+		t.Fatal(err)
+	}
+	body := do(t, s, http.MethodGet, "/geosite").Body.String()
+	if strings.Count(body, "Imported") != 1 {
+		t.Fatalf("renamed reference not shown as imported:\n%s", body)
+	}
+	// Importing again does not add a second reference.
+	if resp := do(t, s, http.MethodPost, "/geosite/import/DUCKDUCKGO"); resp.Code != http.StatusOK {
+		t.Fatalf("re-import: %d", resp.Code)
+	}
+	if _, err := store.Get("DUCKDUCKGO"); err == nil {
+		t.Fatal("second reference created under the category name")
+	}
+	resp := do(t, s, http.MethodDelete, "/geosite/import/DUCKDUCKGO")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("remove: %d", resp.Code)
+	}
+	if _, err := store.Get("Search"); err == nil {
+		t.Fatal("renamed reference survived remove")
+	}
+	if rec.mutations != 3 {
+		t.Fatalf("mutations %d", rec.mutations)
 	}
 }
