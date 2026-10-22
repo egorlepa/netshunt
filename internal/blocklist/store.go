@@ -3,20 +3,20 @@ package blocklist
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/egorlepa/netshunt/internal/platform"
 	"gopkg.in/yaml.v3"
 )
 
 // SourceState is the persisted per-source state.
 type SourceState struct {
-	ID           string    `yaml:"id"`
-	Enabled      bool      `yaml:"enabled"`
-	LastFetched  time.Time `yaml:"last_fetched,omitempty"`
-	DomainCount  int       `yaml:"domain_count,omitempty"`
-	LastError    string    `yaml:"last_error,omitempty"`
+	ID          string    `yaml:"id"`
+	Enabled     bool      `yaml:"enabled"`
+	LastFetched time.Time `yaml:"last_fetched,omitempty"`
+	DomainCount int       `yaml:"domain_count,omitempty"`
+	LastError   string    `yaml:"last_error,omitempty"`
 	// ETag and LastModified carry validators returned by upstream so the next
 	// fetch can issue a conditional GET (If-None-Match / If-Modified-Since).
 	ETag         string `yaml:"etag,omitempty"`
@@ -31,7 +31,7 @@ type Meta struct {
 // Store persists per-source state to a YAML file and provides thread-safe
 // accessors. Cache files live under a separate directory passed to Reload.
 type Store struct {
-	path    string
+	path     string
 	cacheDir string
 
 	mu   sync.RWMutex
@@ -84,18 +84,11 @@ func (s *Store) load() error {
 // saveLocked writes the current meta atomically to disk. Must be called with
 // s.mu held.
 func (s *Store) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
-		return fmt.Errorf("create blocklist dir: %w", err)
-	}
 	data, err := yaml.Marshal(s.meta)
 	if err != nil {
 		return fmt.Errorf("marshal blocklist meta: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("write blocklist meta: %w", err)
-	}
-	return os.Rename(tmp, s.path)
+	return platform.WriteFileAtomic(s.path, data, 0644)
 }
 
 // State returns a copy of the SourceState for the given id, or zero value + false.

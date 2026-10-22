@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -35,16 +34,11 @@ func parse(data []byte) (*Config, error) {
 
 // Save writes the config to disk.
 func Save(cfg *Config) error {
-	if err := os.MkdirAll(filepath.Dir(platform.ConfigFile), 0755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-
-	if err := os.WriteFile(platform.ConfigFile, data, 0644); err != nil {
+	if err := platform.WriteFileAtomic(platform.ConfigFile, data, 0644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -428,12 +427,9 @@ func (s *Store) load() ([]Shunt, error) {
 }
 
 func (s *Store) save(shunts []Shunt) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
-		return fmt.Errorf("create shunts dir: %w", err)
-	}
 	data, err := yaml.Marshal(shuntsFile{Shunts: shunts})
 	if err != nil {
 		return fmt.Errorf("marshal shunts: %w", err)
 	}
-	return os.WriteFile(s.path, data, 0644)
+	return platform.WriteFileAtomic(s.path, data, 0644)
 }
