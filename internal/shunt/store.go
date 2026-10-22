@@ -32,6 +32,17 @@ type GeositeProvider interface {
 // ErrGeositeManaged is returned for entry mutations on a geosite shunt.
 var ErrGeositeManaged = errors.New("geosite shunts are managed from the Geosite page")
 
+// ErrShuntExists is returned when a create or rename would give two shunts
+// the same name.
+var ErrShuntExists = errors.New("shunt already exists")
+
+// ErrShuntNotFound is returned when the named shunt does not exist.
+var ErrShuntNotFound = errors.New("shunt not found")
+
+// ErrOrderMismatch is returned by Reorder when the names are not exactly the
+// stored shunts, each once.
+var ErrOrderMismatch = errors.New("order must name every shunt exactly once")
+
 // Store manages shunts with file-backed persistence.
 //
 // A geosite shunt (Source "geosite:<category>") is stored as a reference
@@ -136,11 +147,87 @@ func (s *Store) Create(sh Shunt) error {
 	}
 	for _, existing := range shunts {
 		if existing.Name == sh.Name {
-			return fmt.Errorf("shunt %q already exists", sh.Name)
+			return fmt.Errorf("%w: %q", ErrShuntExists, sh.Name)
 		}
 	}
 	shunts = append(shunts, sh)
 	return s.save(shunts)
+}
+
+// UpdateInfo renames a shunt and sets its description (both trimmed). The
+// name is only the shunt's key in shunts.yaml and the web UI: the matcher,
+// the tracker and the ipset are keyed by entries, so nothing has to be
+// re-applied after it. Renaming onto another shunt's name is ErrShuntExists.
+// Nothing is written when neither changes.
+func (s *Store) UpdateInfo(name, newName, description string) error {
+	newName = strings.TrimSpace(newName)
+	description = strings.TrimSpace(description)
+	if newName == "" {
+		return errors.New("name is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	shunts, err := s.load()
+	if err != nil {
+		return err
+	}
+	idx := -1
+	for i := range shunts {
+		switch shunts[i].Name {
+		case name:
+			idx = i
+		case newName:
+			return fmt.Errorf("%w: %q", ErrShuntExists, newName)
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("%w: %q", ErrShuntNotFound, name)
+	}
+	if shunts[idx].Name == newName && shunts[idx].Description == description {
+		return nil
+	}
+	shunts[idx].Name = newName
+	shunts[idx].Description = description
+	return s.save(shunts)
+}
+
+// Reorder puts the shunts in the order of names, which must list every
+// stored shunt exactly once (ErrOrderMismatch otherwise). The order is the
+// order of shunts.yaml and of the Shunts page; it has no effect on matching
+// (it only decides which shunt EnabledEntries credits a duplicate entry to),
+// so nothing has to be re-applied. Nothing is written when it is unchanged.
+func (s *Store) Reorder(names []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	shunts, err := s.load()
+	if err != nil {
+		return err
+	}
+	if len(names) != len(shunts) {
+		return fmt.Errorf("%w: got %d names for %d shunts", ErrOrderMismatch, len(names), len(shunts))
+	}
+	idx := make(map[string]int, len(shunts))
+	for i, sh := range shunts {
+		idx[sh.Name] = i
+	}
+	out := make([]Shunt, 0, len(shunts))
+	used := make([]bool, len(shunts))
+	changed := false
+	for pos, n := range names {
+		i, ok := idx[n]
+		if !ok || used[i] {
+			return fmt.Errorf("%w: unknown or repeated name %q", ErrOrderMismatch, n)
+		}
+		used[i] = true
+		changed = changed || i != pos
+		out = append(out, shunts[i])
+	}
+	if !changed {
+		return nil
+	}
+	return s.save(out)
 }
 
 // Update replaces an existing shunt entirely.
@@ -566,6 +653,12 @@ func (s *Store) AddGeositeShunt(name, source string) error {
 		}
 		shunts[i].Source = source
 		return s.save(shunts)
+	}
+	// A renamed reference to the same category counts as imported.
+	for _, sh := range shunts {
+		if sh.Source == source {
+			return nil
+		}
 	}
 	shunts = append(shunts, Shunt{Name: name, Enabled: true, Source: source})
 	return s.save(shunts)

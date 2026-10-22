@@ -1,6 +1,7 @@
 package shunt_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -337,5 +338,112 @@ func TestStoreCachesAndReloadsOnExternalChange(t *testing.T) {
 	sh, _ := s.Get("hand")
 	if len(sh.Entries) != 2 {
 		t.Fatalf("cache after save = %+v", sh.Entries)
+	}
+}
+
+func names(t *testing.T, s *shunt.Store) []string {
+	t.Helper()
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, sh := range list {
+		out = append(out, sh.Name)
+	}
+	return out
+}
+
+func TestReorder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shunts.yaml")
+	s := shunt.NewStore(path)
+	for _, n := range []string{"A", "B", "C"} {
+		_ = s.Create(shunt.Shunt{Name: n, Enabled: true, Entries: []shunt.Entry{{Value: strings.ToLower(n) + ".com"}}})
+	}
+	if err := s.Reorder([]string{"C", "A", "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(names(t, s), ","); got != "C,A,B" {
+		t.Fatalf("order %s", got)
+	}
+	// The new order is on disk, not only in the cache.
+	if got := strings.Join(names(t, shunt.NewStore(path)), ","); got != "C,A,B" {
+		t.Fatalf("order on disk %s", got)
+	}
+	sh, _ := s.Get("A")
+	if len(sh.Entries) != 1 || sh.Entries[0].Value != "a.com" {
+		t.Fatalf("entries moved with the shunt: %+v", sh.Entries)
+	}
+
+	for _, bad := range [][]string{
+		{"C", "A"},           // missing
+		{"C", "A", "B", "D"}, // extra
+		{"C", "A", "A"},      // repeated
+		{"C", "A", "X"},      // unknown
+		nil,
+	} {
+		if err := s.Reorder(bad); !errors.Is(err, shunt.ErrOrderMismatch) {
+			t.Errorf("%v: err %v, want ErrOrderMismatch", bad, err)
+		}
+	}
+	if got := strings.Join(names(t, s), ","); got != "C,A,B" {
+		t.Fatalf("order after rejected reorders %s", got)
+	}
+}
+
+func TestUpdateInfo(t *testing.T) {
+	s := tempStore(t)
+	_ = s.Create(shunt.Shunt{Name: "A", Enabled: true, Entries: []shunt.Entry{{Value: "a.com"}}})
+	_ = s.Create(shunt.Shunt{Name: "B", Enabled: false})
+
+	if err := s.UpdateInfo("A", "  Alpha ", " first "); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get("A"); err == nil {
+		t.Fatal("old name still resolves")
+	}
+	sh, err := s.Get("Alpha")
+	if err != nil || sh.Description != "first" || !sh.Enabled || len(sh.Entries) != 1 {
+		t.Fatalf("renamed shunt %+v, %v", sh, err)
+	}
+	if got := strings.Join(names(t, s), ","); got != "Alpha,B" {
+		t.Fatalf("rename moved the shunt: %s", got)
+	}
+	entries, _ := s.EnabledEntries()
+	if len(entries) != 1 || entries[0].Shunt != "Alpha" {
+		t.Fatalf("enabled entries %+v", entries)
+	}
+
+	if err := s.UpdateInfo("Alpha", "B", ""); !errors.Is(err, shunt.ErrShuntExists) {
+		t.Fatalf("rename onto B: %v", err)
+	}
+	if err := s.UpdateInfo("nope", "x", ""); !errors.Is(err, shunt.ErrShuntNotFound) {
+		t.Fatalf("unknown: %v", err)
+	}
+	if err := s.UpdateInfo("Alpha", "  ", ""); err == nil {
+		t.Fatal("blank name accepted")
+	}
+	// Description only.
+	if err := s.UpdateInfo("Alpha", "Alpha", ""); err != nil {
+		t.Fatal(err)
+	}
+	if sh, _ := s.Get("Alpha"); sh.Description != "" {
+		t.Fatalf("description %q", sh.Description)
+	}
+}
+
+func TestAddGeositeShuntKeepsRenamedReference(t *testing.T) {
+	s := tempStore(t)
+	if err := s.AddGeositeShunt("NETFLIX", "geosite:netflix"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateInfo("NETFLIX", "Streaming", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddGeositeShunt("NETFLIX", "geosite:netflix"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(names(t, s), ","); got != "Streaming" {
+		t.Fatalf("second reference created: %s", got)
 	}
 }
