@@ -21,6 +21,64 @@ type IPSetOps interface {
 	List(ctx context.Context) ([]string, error)
 }
 
+// IPSetBatchOps is implemented by ipsets that can apply many members in one
+// process (`ipset restore`). The tracker uses it for every multi-member
+// change (static sets, sweeps, repair); the DNS path stays one Add per IP.
+type IPSetBatchOps interface {
+	AddBatch(ctx context.Context, members []string) error
+	DelBatch(ctx context.Context, members []string) error
+}
+
+// addMembers adds members to the kernel set and returns those that are now
+// present and those that failed. One batch exec when the set supports it;
+// since restore applies a prefix and stops on the first error, a failed
+// batch is retried member by member (idempotent with -exist) so the result
+// is exact.
+func (t *Tracker) addMembers(ctx context.Context, members []string) (ok, failed []string) {
+	if len(members) == 0 {
+		return nil, nil
+	}
+	if b, can := t.ipset.(IPSetBatchOps); can && len(members) > 1 {
+		if err := b.AddBatch(ctx, members); err == nil {
+			return members, nil
+		} else {
+			t.logger.Warn("tracker: ipset batch add failed, retrying one by one", "members", len(members), "error", err)
+		}
+	}
+	for _, m := range members {
+		if err := t.ipset.Add(ctx, m); err != nil {
+			t.logger.Warn("tracker: ipset add failed", "member", m, "error", err)
+			failed = append(failed, m)
+			continue
+		}
+		ok = append(ok, m)
+	}
+	return ok, failed
+}
+
+// delMembers is the removal counterpart of addMembers.
+func (t *Tracker) delMembers(ctx context.Context, members []string) (ok, failed []string) {
+	if len(members) == 0 {
+		return nil, nil
+	}
+	if b, can := t.ipset.(IPSetBatchOps); can && len(members) > 1 {
+		if err := b.DelBatch(ctx, members); err == nil {
+			return members, nil
+		} else {
+			t.logger.Warn("tracker: ipset batch del failed, retrying one by one", "members", len(members), "error", err)
+		}
+	}
+	for _, m := range members {
+		if err := t.ipset.Del(ctx, m); err != nil {
+			t.logger.Warn("tracker: ipset del failed", "member", m, "error", err)
+			failed = append(failed, m)
+			continue
+		}
+		ok = append(ok, m)
+	}
+	return ok, failed
+}
+
 // Tracker owns the kernel ipset: every member of the set is either an IP a
 // DNS answer resolved for a tracked domain, or a static IP/CIDR entry from an
 // enabled shunt. The in-memory maps are the source of truth for what the
@@ -178,16 +236,17 @@ func (t *Tracker) RemoveDomain(ctx context.Context, domain string) {
 // RetryOrphans (every mutation) or Repair (full reconcile) removes it.
 // Caller holds kernelMu.
 func (t *Tracker) delMembersLocked(ctx context.Context, members []string) {
-	for _, m := range members {
-		if err := t.ipset.Del(ctx, m); err != nil {
-			t.logger.Warn("tracker: ipset del failed", "member", m, "error", err)
-			t.mu.Lock()
-			if !t.presentLocked(m) {
-				t.orphans[m] = struct{}{}
-			}
-			t.mu.Unlock()
+	_, failed := t.delMembers(ctx, members)
+	if len(failed) == 0 {
+		return
+	}
+	t.mu.Lock()
+	for _, m := range failed {
+		if !t.presentLocked(m) {
+			t.orphans[m] = struct{}{}
 		}
 	}
+	t.mu.Unlock()
 }
 
 // RetryOrphans deletes members whose earlier `ipset del` failed and that
@@ -205,14 +264,7 @@ func (t *Tracker) RetryOrphans(ctx context.Context) {
 	}
 	t.mu.Unlock()
 	slices.Sort(todo)
-	var done []string
-	for _, m := range todo {
-		if err := t.ipset.Del(ctx, m); err != nil {
-			t.logger.Warn("tracker: orphan ipset del failed", "member", m, "error", err)
-			continue
-		}
-		done = append(done, m)
-	}
+	done, _ := t.delMembers(ctx, todo)
 	t.mu.Lock()
 	for _, m := range done {
 		delete(t.orphans, m)
@@ -317,14 +369,7 @@ func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) 
 		return
 	}
 
-	var added []string
-	for _, m := range toAdd {
-		if err := t.ipset.Add(ctx, m); err != nil {
-			t.logger.Warn("tracker: ipset add failed", "member", m, "error", err)
-			continue
-		}
-		added = append(added, m)
-	}
+	added, _ := t.addMembers(ctx, toAdd)
 	t.mu.Lock()
 	for _, m := range added {
 		t.static[m] = struct{}{}
@@ -374,38 +419,25 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 	t.logger.Info("ipset members", "kernel", len(kernel), "tracked", len(known),
 		"missing", len(missing), "unknown", len(unknown))
 
-	var failed []string
-	for _, m := range missing {
-		if err := t.ipset.Add(ctx, m); err != nil {
-			t.logger.Warn("tracker: repair add failed, forgetting member", "member", m, "error", err)
-			failed = append(failed, m)
-			continue
-		}
-		added++
-	}
+	okAdd, failed := t.addMembers(ctx, missing)
+	added = len(okAdd)
 	if len(failed) > 0 {
+		t.logger.Warn("tracker: repair could not re-add members, forgetting them", "count", len(failed))
 		t.mu.Lock()
 		for _, m := range failed {
 			t.forgetLocked(m)
 		}
 		t.mu.Unlock()
 	}
-	for _, m := range unknown {
-		if err := t.ipset.Del(ctx, m); err != nil {
-			t.logger.Warn("tracker: repair del failed", "member", m, "error", err)
-			continue
-		}
-		removed++
-	}
+	okDel, _ := t.delMembers(ctx, unknown)
+	removed = len(okDel)
 
 	// Re-added members may have carried direct connections during the gap;
 	// removed ones may carry proxied connections. Either way, reopen them.
-	for _, m := range missing {
-		if !slices.Contains(failed, m) {
-			t.flushConntrack(ctx, m)
-		}
+	for _, m := range okAdd {
+		t.flushConntrack(ctx, m)
 	}
-	for _, m := range unknown {
+	for _, m := range okDel {
 		t.flushConntrack(ctx, m)
 	}
 	return added, removed, nil

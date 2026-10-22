@@ -44,3 +44,25 @@ func TestListParsesMembers(t *testing.T) {
 		t.Fatalf("List = %v", got)
 	}
 }
+
+func TestAddBatchUsesRestoreStdin(t *testing.T) {
+	run := runnertest.New()
+	s := &IPSet{Name: "bypass", Runner: run}
+	if err := s.AddBatch(context.Background(), []string{"1.2.3.4", "10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DelBatch(context.Background(), []string{"5.6.7.8"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddBatch(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	wantCalls := []string{"ipset restore -! <<stdin", "ipset restore -! <<stdin"}
+	if got := run.Calls(); !slices.Equal(got, wantCalls) {
+		t.Fatalf("calls = %v, want %v", got, wantCalls)
+	}
+	wantIn := []string{"add bypass 1.2.3.4\nadd bypass 10.0.0.0/8\n", "del bypass 5.6.7.8\n"}
+	if got := run.Inputs(); !slices.Equal(got, wantIn) {
+		t.Fatalf("inputs = %q, want %q", got, wantIn)
+	}
+}

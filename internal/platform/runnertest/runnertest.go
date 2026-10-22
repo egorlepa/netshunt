@@ -20,6 +20,7 @@ type Response struct {
 type Fake struct {
 	mu        sync.Mutex
 	calls     []string
+	inputs    []string // stdin of each RunInput call, in order
 	responses map[string]Response
 
 	// Handler, when set, answers every command. handled=false falls through
@@ -75,6 +76,22 @@ func (f *Fake) Run(_ context.Context, name string, args ...string) (string, erro
 func (f *Fake) RunSilent(ctx context.Context, name string, args ...string) error {
 	_, err := f.Run(ctx, name, args...)
 	return err
+}
+
+// RunInput implements platform.Runner. The command line is recorded with a
+// " <<stdin" suffix and the stdin text is kept in Inputs.
+func (f *Fake) RunInput(ctx context.Context, input string, name string, args ...string) (string, error) {
+	f.mu.Lock()
+	f.inputs = append(f.inputs, input)
+	f.mu.Unlock()
+	return f.Run(ctx, name, append(args, "<<stdin")...)
+}
+
+// Inputs returns the stdin text of every RunInput call in order.
+func (f *Fake) Inputs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.inputs...)
 }
 
 // Calls returns every recorded command line in order.

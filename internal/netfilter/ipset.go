@@ -50,6 +50,36 @@ func (s *IPSet) Del(ctx context.Context, entry string) error {
 	return platform.OrDefault(s.Runner).RunSilent(ctx, "ipset", "del", s.Name, entry, "-exist")
 }
 
+// AddBatch adds every member in one `ipset restore` process. With -exist
+// (-!) members already present are not errors. restore is not transactional:
+// on an error the lines before the failing one are applied and the rest are
+// not, so callers fall back to per-member calls to learn the exact state.
+func (s *IPSet) AddBatch(ctx context.Context, members []string) error {
+	return s.restore(ctx, "add", members)
+}
+
+// DelBatch removes every member in one `ipset restore` process; see AddBatch.
+func (s *IPSet) DelBatch(ctx context.Context, members []string) error {
+	return s.restore(ctx, "del", members)
+}
+
+func (s *IPSet) restore(ctx context.Context, op string, members []string) error {
+	if len(members) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, m := range members {
+		b.WriteString(op)
+		b.WriteByte(' ')
+		b.WriteString(s.Name)
+		b.WriteByte(' ')
+		b.WriteString(m)
+		b.WriteByte('\n')
+	}
+	_, err := platform.OrDefault(s.Runner).RunInput(ctx, b.String(), "ipset", "restore", "-!")
+	return err
+}
+
 // List returns all entries in the table.
 func (s *IPSet) List(ctx context.Context) ([]string, error) {
 	out, err := platform.OrDefault(s.Runner).Run(ctx, "ipset", "list", s.Name, "-output", "plain")

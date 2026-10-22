@@ -19,6 +19,48 @@ type fakeIPSet struct {
 	failAdd map[string]bool
 	// failDelOnCancel makes Del fail when its context is done.
 	failDelOnCancel bool
+	// failBatch makes every batch call fail after applying nothing, like a
+	// restore that errored on its first line; batches counts batch calls.
+	failBatch bool
+	batches   int
+}
+
+func (f *fakeIPSet) AddBatch(ctx context.Context, members []string) error {
+	f.mu.Lock()
+	f.batches++
+	fail := f.failBatch
+	f.mu.Unlock()
+	if fail {
+		return errors.New("batch add failed")
+	}
+	for _, m := range members {
+		if err := f.Add(ctx, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeIPSet) DelBatch(ctx context.Context, members []string) error {
+	f.mu.Lock()
+	f.batches++
+	fail := f.failBatch
+	f.mu.Unlock()
+	if fail {
+		return errors.New("batch del failed")
+	}
+	for _, m := range members {
+		if err := f.Del(ctx, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeIPSet) batchCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.batches
 }
 
 func newFakeIPSet() *fakeIPSet {
@@ -508,5 +550,85 @@ func TestTrackerOrphanReTrackedIsNotDeleted(t *testing.T) {
 	tr.RetryOrphans(ctx)
 	if !fs.has("198.51.100.1") {
 		t.Fatal("member tracked again must stay")
+	}
+}
+
+func TestSetStaticUsesOneBatchPerDirection(t *testing.T) {
+	ip := newFakeIPSet()
+	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tr.flushConntrack = func(context.Context, string) {}
+	ctx := context.Background()
+
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"})
+	if got := ip.batchCount(); got != 1 {
+		t.Fatalf("batches after add = %d, want 1", got)
+	}
+	for _, m := range []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"} {
+		if !ip.has(m) {
+			t.Fatalf("%s not in set", m)
+		}
+	}
+	tr.SetStatic(ctx, nil)
+	if got := ip.batchCount(); got != 2 {
+		t.Fatalf("batches after del = %d, want 2", got)
+	}
+	if ip.has("10.2.0.0/16") {
+		t.Fatal("static member survived removal")
+	}
+	// A single member goes through the plain Add, no batch.
+	tr.SetStatic(ctx, []string{"10.9.0.0/16"})
+	if got := ip.batchCount(); got != 2 {
+		t.Fatalf("single member used a batch: %d", got)
+	}
+}
+
+func TestBatchFailureFallsBackPerMember(t *testing.T) {
+	ip := newFakeIPSet()
+	ip.failBatch = true
+	ip.failAdd["10.2.0.0/16"] = true
+	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tr.flushConntrack = func(context.Context, string) {}
+	ctx := context.Background()
+
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"})
+	if ip.batchCount() != 1 {
+		t.Fatalf("batch not attempted")
+	}
+	if !ip.has("10.1.0.0/16") || !ip.has("10.3.0.0/16") || ip.has("10.2.0.0/16") {
+		t.Fatalf("fallback result wrong: %v", ip.members)
+	}
+	if tr.Members() != 2 {
+		t.Fatalf("Members = %d, want 2 (the failed add must not be believed present)", tr.Members())
+	}
+	// The next SetStatic retries the failed member.
+	ip.failAdd = map[string]bool{}
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"})
+	if !ip.has("10.2.0.0/16") || tr.Members() != 3 {
+		t.Fatal("failed member not retried")
+	}
+}
+
+func TestRepairUsesBatches(t *testing.T) {
+	ip := newFakeIPSet()
+	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tr.flushConntrack = func(context.Context, string) {}
+	ctx := context.Background()
+	tr.Track(ctx, "a.example", "1.1.1.1")
+	tr.Track(ctx, "b.example", "2.2.2.2")
+	tr.Track(ctx, "c.example", "3.3.3.3")
+	ip.set("3.3.3.3", "9.9.9.9", "8.8.8.8") // 1.1.1.1 and 2.2.2.2 missing, two unknown
+	before := ip.batchCount()
+	added, removed, err := tr.Repair(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 2 || removed != 2 {
+		t.Fatalf("added=%d removed=%d", added, removed)
+	}
+	if ip.batchCount()-before != 2 {
+		t.Fatalf("repair batches = %d, want 2", ip.batchCount()-before)
+	}
+	if !ip.has("1.1.1.1") || ip.has("9.9.9.9") {
+		t.Fatal("repair did not converge")
 	}
 }

@@ -17,6 +17,9 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) (string, error)
 	// RunSilent executes a command and only reports whether it failed.
 	RunSilent(ctx context.Context, name string, args ...string) error
+	// RunInput executes a command with stdin fed from input and returns its
+	// trimmed stdout. Used for batch commands such as `ipset restore`.
+	RunInput(ctx context.Context, input string, name string, args ...string) (string, error)
 }
 
 // ExecRunner is the Runner that spawns real processes.
@@ -30,6 +33,19 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string,
 // RunSilent implements Runner.
 func (ExecRunner) RunSilent(ctx context.Context, name string, args ...string) error {
 	return RunSilent(ctx, name, args...)
+}
+
+// RunInput implements Runner.
+func (ExecRunner) RunInput(ctx context.Context, input string, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = strings.NewReader(input)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, stderr.String())
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // DefaultRunner is used wherever no Runner was injected.
