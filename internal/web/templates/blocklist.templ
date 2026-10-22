@@ -42,7 +42,7 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpda
 			hx-disabled-elt="find input[name='enabled']"
 		>
 			<label>
-				<input type="checkbox" name="enabled" if enabled { checked } value="1"/>
+				<input type="checkbox" autocomplete="off" name="enabled" if enabled { checked } value="1"/>
 				Enable DNS blocking
 				<span id="blocklist-enabled-spinner" class="htmx-indicator"><span class="spinner"></span></span>
 			</label>
@@ -73,7 +73,7 @@ templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpda
 				class="flex gap-8 items-center flex-wrap"
 			>
 				<label class="flex gap-8 items-center">
-					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
+					<input type="checkbox" autocomplete="off" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
 					Auto-update enabled sources
 				</label>
 				<label class="text-muted text-sm ml-8">cron</label>
@@ -116,7 +116,7 @@ templ BlocklistSourceRow(sv SourceView) {
 	<tr id={ "src-" + SlugID(sv.Preset.ID) } data-id={ sv.Preset.ID }>
 		<td data-col="enabled">
 			<input
-				type="checkbox"
+				type="checkbox" autocomplete="off"
 				name="enabled"
 				if sv.State.Enabled { checked }
 				hx-put={ "/blocklist/sources/" + sv.Preset.ID + "/enabled" }

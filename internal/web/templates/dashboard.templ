@@ -94,7 +94,7 @@ templ ProxySwitch(r config.RoutingConfig) {
 				<label class="toggle" title="Switch between primary and backup proxy">
 					if r.UseBackup {
 						<input
-							type="checkbox" checked
+							type="checkbox" autocomplete="off" checked
 							hx-post="/actions/switch-proxy"
 							hx-target="#proxy-switch"
 							hx-swap="outerHTML"
@@ -102,7 +102,7 @@ templ ProxySwitch(r config.RoutingConfig) {
 						/>
 					} else {
 						<input
-							type="checkbox"
+							type="checkbox" autocomplete="off"
 							hx-post="/actions/switch-proxy"
 							hx-target="#proxy-switch"
 							hx-swap="outerHTML"

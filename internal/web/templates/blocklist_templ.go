@@ -95,7 +95,7 @@ func BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpdat
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"flex-between mb-16\"><h1>Blocklist</h1><button class=\"btn btn-accent\" hx-post=\"/blocklist/update\" hx-target=\"#blocklist-content\" hx-swap=\"innerHTML\" hx-indicator=\"#blocklist-spinner\">Update Enabled Sources <span id=\"blocklist-spinner\" class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></div><div class=\"card mb-16\"><form hx-put=\"/blocklist/enabled\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#blocklist-enabled-spinner\" hx-disabled-elt=\"find input[name='enabled']\"><label><input type=\"checkbox\" name=\"enabled\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"flex-between mb-16\"><h1>Blocklist</h1><button class=\"btn btn-accent\" hx-post=\"/blocklist/update\" hx-target=\"#blocklist-content\" hx-swap=\"innerHTML\" hx-indicator=\"#blocklist-spinner\">Update Enabled Sources <span id=\"blocklist-spinner\" class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></div><div class=\"card mb-16\"><form hx-put=\"/blocklist/enabled\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#blocklist-enabled-spinner\" hx-disabled-elt=\"find input[name='enabled']\"><label><input type=\"checkbox\" autocomplete=\"off\" name=\"enabled\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -135,7 +135,7 @@ func BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpdat
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, ">0.0.0.0 / :: sinkhole</option></select> <span id=\"blocklist-response-spinner\" class=\"htmx-indicator\"><span class=\"spinner\"></span></span></form></div><div class=\"mt-8\"><form hx-put=\"/blocklist/auto-update\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#blocklist-au-spinner\" class=\"flex gap-8 items-center flex-wrap\"><label class=\"flex gap-8 items-center\"><input type=\"checkbox\" name=\"enabled\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, ">0.0.0.0 / :: sinkhole</option></select> <span id=\"blocklist-response-spinner\" class=\"htmx-indicator\"><span class=\"spinner\"></span></span></form></div><div class=\"mt-8\"><form hx-put=\"/blocklist/auto-update\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#blocklist-au-spinner\" class=\"flex gap-8 items-center flex-wrap\"><label class=\"flex gap-8 items-center\"><input type=\"checkbox\" autocomplete=\"off\" name=\"enabled\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -236,7 +236,7 @@ func BlocklistSourceRow(sv SourceView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><td data-col=\"enabled\"><input type=\"checkbox\" name=\"enabled\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><td data-col=\"enabled\"><input type=\"checkbox\" autocomplete=\"off\" name=\"enabled\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

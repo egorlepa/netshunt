@@ -61,7 +61,7 @@ templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, 
 				class="flex gap-8 items-center flex-wrap"
 			>
 				<label class="flex gap-8 items-center">
-					<input type="checkbox" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
+					<input type="checkbox" autocomplete="off" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
 					Auto-update database
 				</label>
 				<label class="text-muted text-sm ml-8">cron</label>

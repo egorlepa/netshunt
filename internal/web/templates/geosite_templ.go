@@ -106,7 +106,7 @@ func GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, c
 			return templ_7745c5c3_Err
 		}
 		if info.Downloaded {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card mb-16\"><form hx-put=\"/geosite/auto-update\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#geosite-au-spinner\" class=\"flex gap-8 items-center flex-wrap\"><label class=\"flex gap-8 items-center\"><input type=\"checkbox\" name=\"enabled\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card mb-16\"><form hx-put=\"/geosite/auto-update\" hx-trigger=\"change\" hx-swap=\"none\" hx-indicator=\"#geosite-au-spinner\" class=\"flex gap-8 items-center flex-wrap\"><label class=\"flex gap-8 items-center\"><input type=\"checkbox\" autocomplete=\"off\" name=\"enabled\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

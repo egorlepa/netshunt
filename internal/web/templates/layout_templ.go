@@ -42,7 +42,7 @@ func Layout(title string, activePage string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - netshunt</title><link rel=\"stylesheet\" href=\"/static/style.css\"><script src=\"/static/htmx.min.js\"></script></head><body><div id=\"nprogress\"><div class=\"bar\"></div></div><nav><div class=\"container\"><span class=\"brand\">netshunt</span> <input type=\"checkbox\" id=\"nav-toggle\"> <label class=\"nav-burger\" for=\"nav-toggle\" aria-label=\"Toggle navigation\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"></line><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"></line></svg></label><div class=\"nav-links\"><a href=\"/\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - netshunt</title><link rel=\"stylesheet\" href=\"/static/style.css\"><script src=\"/static/htmx.min.js\"></script></head><body><div id=\"nprogress\"><div class=\"bar\"></div></div><nav><div class=\"container\"><span class=\"brand\">netshunt</span> <input type=\"checkbox\" autocomplete=\"off\" id=\"nav-toggle\"> <label class=\"nav-burger\" for=\"nav-toggle\" aria-label=\"Toggle navigation\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"></line><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"></line></svg></label><div class=\"nav-links\"><a href=\"/\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

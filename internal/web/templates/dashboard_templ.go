@@ -311,12 +311,12 @@ func ProxySwitch(r config.RoutingConfig) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if r.UseBackup {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<input type=\"checkbox\" checked hx-post=\"/actions/switch-proxy\" hx-target=\"#proxy-switch\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<input type=\"checkbox\" autocomplete=\"off\" checked hx-post=\"/actions/switch-proxy\" hx-target=\"#proxy-switch\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<input type=\"checkbox\" hx-post=\"/actions/switch-proxy\" hx-target=\"#proxy-switch\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<input type=\"checkbox\" autocomplete=\"off\" hx-post=\"/actions/switch-proxy\" hx-target=\"#proxy-switch\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

@@ -122,7 +122,7 @@ templ ShuntToggle(s shunt.Shunt) {
 	<label class="toggle" id={ "toggle-" + SlugID(s.Name) }>
 		if s.Enabled {
 			<input
-				type="checkbox"
+				type="checkbox" autocomplete="off"
 				checked
 				hx-put={ shuntPath(s.Name) + "/disable" }
 				hx-target={ "#toggle-" + SlugID(s.Name) }
@@ -130,7 +130,7 @@ templ ShuntToggle(s shunt.Shunt) {
 			/>
 		} else {
 			<input
-				type="checkbox"
+				type="checkbox" autocomplete="off"
 				hx-put={ shuntPath(s.Name) + "/enable" }
 				hx-target={ "#toggle-" + SlugID(s.Name) }
 				hx-swap="outerHTML"
