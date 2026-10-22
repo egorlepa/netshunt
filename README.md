@@ -52,6 +52,11 @@ netshunt setup
 
 System dependencies (`ipset`, `iptables`, `conntrack`) are installed automatically as opkg dependencies.
 
+## Known Limitations
+
+- **DNS that bypasses the router is invisible.** Routing decisions are made from the DNS answers the built-in forwarder sees. A client that resolves names elsewhere (browser or OS DNS-over-HTTPS, Android Private DNS, a hard-coded resolver over IPv6, applications with pinned IP addresses) connects to addresses netshunt never learned about, and that traffic goes direct. Blocking port 853 or known DoH endpoints on the router would only cover part of it, so netshunt does not try; disable private DNS on the clients instead, or add the addresses as static IP/CIDR entries.
+- **IPv4 only.** AAAA queries are answered empty on purpose; a network with global IPv6 would route around the proxy.
+
 ## Building from Source
 
 Requires Go 1.25+ and [Mage](https://magefile.org/).
