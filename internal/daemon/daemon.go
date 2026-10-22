@@ -42,7 +42,13 @@ type Daemon struct {
 
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
 func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *platform.LogBuffer, version string) (*Daemon, error) {
-	tracker := dns.NewTracker(netfilter.NewIPSet(cfg.IPSet.TableName), logger)
+	// One netlink-backed ipset and conntrack for the process, shared by the
+	// tracker (members, flows) and the reconciler (table creation).
+	ipset := netfilter.NewIPSet(cfg.IPSet.TableName, netfilter.WithLogger(logger))
+	conntrack := netfilter.NewConntrack(netfilter.WithLogger(logger))
+	logger.Info("netfilter backends", "ipset", ipset.Backend(), "conntrack", conntrack.Backend())
+	tracker := dns.NewTracker(ipset, logger)
+	tracker.Conntrack = conntrack
 	tracker.EnablePersistence(platform.TrackerFile, trackerSaveInterval)
 	forwarder, err := dns.NewForwarder(cfg.DNS.ListenAddr, dns.ConfigUpstreams(cfg.DNS), tracker, logger)
 	if err != nil {
@@ -71,7 +77,7 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 		Shunts:     shunts,
 		Blocklist:  blocklistStore,
 		Geosite:    geositeIndex,
-		Reconciler: NewReconciler(live, shunts, forwarder, blocklistStore, logger),
+		Reconciler: NewReconciler(live, shunts, forwarder, blocklistStore, ipset, logger),
 		Forwarder:  forwarder,
 		Logger:     logger,
 		LogBuf:     logBuf,

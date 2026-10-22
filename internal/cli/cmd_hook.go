@@ -57,7 +57,9 @@ func newHookFsCmd() *cobra.Command {
 				return err
 			}
 			ctx := cmd.Context()
-			return netfilter.NewIPSet(cfg.IPSet.TableName).EnsureTable(ctx)
+			ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+			defer ipset.Close()
+			return ipset.EnsureTable(ctx)
 		},
 	}
 }

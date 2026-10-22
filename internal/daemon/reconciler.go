@@ -65,11 +65,12 @@ type Reconciler struct {
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
-func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, logger *slog.Logger) *Reconciler {
+// ipset is the same set the forwarder's tracker drives.
+func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forwarder, blocklistStore *blocklist.Store, ipset *netfilter.IPSet, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		Config:    cfg,
 		Shunts:    shunts,
-		IPSet:     netfilter.NewIPSet(cfg.Load().IPSet.TableName),
+		IPSet:     ipset,
 		Forwarder: forwarder,
 		Mode:      routing.New(cfg, logger),
 		Blocklist: blocklistStore,

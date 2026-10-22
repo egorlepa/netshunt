@@ -44,6 +44,7 @@ func newUninstallCmd() *cobra.Command {
 			// 3. Flush and destroy ipset table.
 			fmt.Println("Removing ipset table...")
 			ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+			defer ipset.Close()
 			_ = ipset.Flush(ctx)
 			_ = ipset.Destroy(ctx)
 

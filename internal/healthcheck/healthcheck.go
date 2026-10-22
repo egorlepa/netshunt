@@ -357,7 +357,9 @@ func checkProxyConnectivity(ctx context.Context, cfg *config.Config, label strin
 
 func checkIPSet4(ctx context.Context, cfg *config.Config) Result {
 	r := Result{Name: "ipset"}
+	// Runs inside the daemon too (web diagnostics): release the socket.
 	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+	defer ipset.Close()
 	count, err := ipset.Count(ctx)
 	if err != nil {
 		r.Detail = fmt.Sprintf("table %q: %v", cfg.IPSet.TableName, err)

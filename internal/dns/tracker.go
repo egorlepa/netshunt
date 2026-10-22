@@ -3,13 +3,12 @@ package dns
 import (
 	"context"
 	"log/slog"
-	"net"
 	"net/netip"
 	"slices"
 	"strings"
 	"sync"
 
-	"github.com/egorlepa/netshunt/internal/platform"
+	"github.com/egorlepa/netshunt/internal/netfilter"
 )
 
 // IPSetOps is the subset of netfilter.IPSet the Tracker drives. It exists so
@@ -27,6 +26,13 @@ type IPSetOps interface {
 type IPSetBatchOps interface {
 	AddBatch(ctx context.Context, members []string) error
 	DelBatch(ctx context.Context, members []string) error
+}
+
+// ConntrackOps drops conntrack flows whose original destination lies in
+// any of the members (IPs or CIDRs), in one call per tracker operation.
+// netfilter.Conntrack implements it; tests substitute a recorder.
+type ConntrackOps interface {
+	FlushDst(ctx context.Context, members []string) error
 }
 
 // addMembers adds members to the kernel set and returns those that are now
@@ -109,12 +115,10 @@ type Tracker struct {
 	ipset   IPSetOps
 	logger  *slog.Logger
 
-	// Runner executes conntrack; nil means platform.DefaultRunner.
-	Runner platform.Runner
-
-	// flushConntrack drops conntrack entries for a member (IP or CIDR).
-	// Replaceable in tests.
-	flushConntrack func(ctx context.Context, member string)
+	// Conntrack drops the flows of members whose kernel membership changed.
+	// NewTracker sets an exec-only netfilter.Conntrack; the daemon injects
+	// its netlink one.
+	Conntrack ConntrackOps
 
 	// persist, when set, saves the domain map to disk (EnablePersistence).
 	persist *persister
@@ -123,14 +127,14 @@ type Tracker struct {
 // NewTracker creates a Tracker that manages the given ipset table.
 func NewTracker(ipset IPSetOps, logger *slog.Logger) *Tracker {
 	t := &Tracker{
-		forward: make(map[string][]string),
-		reverse: make(map[string][]string),
-		static:  make(map[string]struct{}),
-		orphans: make(map[string]struct{}),
-		ipset:   ipset,
-		logger:  logger,
+		forward:   make(map[string][]string),
+		reverse:   make(map[string][]string),
+		static:    make(map[string]struct{}),
+		orphans:   make(map[string]struct{}),
+		ipset:     ipset,
+		logger:    logger,
+		Conntrack: &netfilter.Conntrack{},
 	}
-	t.flushConntrack = t.runConntrackFlush
 	return t
 }
 
@@ -193,7 +197,7 @@ func (t *Tracker) Track(ctx context.Context, domain, ip string) {
 	t.mu.Unlock()
 	t.kernelMu.Unlock()
 
-	t.flushConntrack(ctx, ip)
+	t.flushConntrack(ctx, []string{ip})
 }
 
 // RemoveDomain removes all IPs associated with a domain. IPs no longer
@@ -226,9 +230,7 @@ func (t *Tracker) RemoveDomain(ctx context.Context, domain string) {
 
 	// Drop live connections to these IPs so clients reconnect directly (no
 	// longer through the proxy) on the next request.
-	for _, ip := range toRemove {
-		t.flushConntrack(ctx, ip)
-	}
+	t.flushConntrack(ctx, toRemove)
 }
 
 // delMembersLocked execs ipset del for each member. A failed del leaves an
@@ -271,9 +273,7 @@ func (t *Tracker) RetryOrphans(ctx context.Context) {
 	}
 	t.mu.Unlock()
 	t.kernelMu.Unlock()
-	for _, m := range done {
-		t.flushConntrack(ctx, m)
-	}
+	t.flushConntrack(ctx, done)
 }
 
 // Domains returns a snapshot of every tracked domain (the lowercase DNS
@@ -381,12 +381,7 @@ func (t *Tracker) setStatic(ctx context.Context, values []string, presume bool) 
 	t.delMembersLocked(ctx, toRemove)
 	t.kernelMu.Unlock()
 
-	for _, m := range ok {
-		t.flushConntrack(ctx, m)
-	}
-	for _, m := range toRemove {
-		t.flushConntrack(ctx, m)
-	}
+	t.flushConntrack(ctx, slices.Concat(ok, toRemove))
 	return len(ok), len(toRemove)
 }
 
@@ -437,12 +432,7 @@ func (t *Tracker) Repair(ctx context.Context) (added, removed int, err error) {
 
 	// Re-added members may have carried direct connections during the gap;
 	// removed ones may carry proxied connections. Either way, reopen them.
-	for _, m := range okAdd {
-		t.flushConntrack(ctx, m)
-	}
-	for _, m := range okDel {
-		t.flushConntrack(ctx, m)
-	}
+	t.flushConntrack(ctx, slices.Concat(okAdd, okDel))
 	return added, removed, nil
 }
 
@@ -518,17 +508,15 @@ func canonicalMember(v string) (string, bool) {
 	return a.String(), true
 }
 
-// runConntrackFlush drops conntrack entries whose orig-dst falls within the
-// given IP or CIDR. Best-effort; logged at debug on failure (commonly the
-// "no matches" exit code).
-func (t *Tracker) runConntrackFlush(ctx context.Context, member string) {
-	args := []string{"-D", "--orig-dst", member}
-	if p, err := netip.ParsePrefix(member); err == nil {
-		mask := net.IP(net.CIDRMask(p.Bits(), 32)).String()
-		args = []string{"-D", "--orig-dst", p.Masked().Addr().String(), "--mask-dst", mask}
+// flushConntrack drops the conntrack flows of members whose kernel
+// membership just changed, in one call. Best-effort; a failure is logged at
+// debug (with exec, commonly the "no matches" exit code).
+func (t *Tracker) flushConntrack(ctx context.Context, members []string) {
+	if len(members) == 0 {
+		return
 	}
-	if err := platform.OrDefault(t.Runner).RunSilent(ctx, "conntrack", args...); err != nil {
-		t.logger.Debug("conntrack flush returned non-zero (likely no matches)", "member", member, "error", err)
+	if err := t.Conntrack.FlushDst(ctx, members); err != nil {
+		t.logger.Debug("conntrack flush incomplete", "members", len(members), "error", err)
 	}
 }
 

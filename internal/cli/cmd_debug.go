@@ -53,6 +53,7 @@ func debugServices(ctx context.Context) {
 func debugIPSet(ctx context.Context, cfg *config.Config) {
 	fmt.Println("--- IPSet ---")
 	ipset := netfilter.NewIPSet(cfg.IPSet.TableName)
+	defer ipset.Close()
 	entries, err := ipset.List(ctx)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

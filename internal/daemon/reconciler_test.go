@@ -120,7 +120,7 @@ func newHarness(t *testing.T) *harness {
 	run := runnertest.New()
 	ips := newFakeIPSet()
 	tracker := dns.NewTracker(ips, logger)
-	tracker.Runner = run
+	tracker.Conntrack = &netfilter.Conntrack{Runner: run}
 	fwd, err := dns.NewForwarder(":0", dns.ConfigUpstreams(config.DNSConfig{}), tracker, logger)
 	if err != nil {
 		t.Fatal(err)

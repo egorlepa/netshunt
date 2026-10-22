@@ -137,16 +137,26 @@ func (f *fakeIPSet) set(members ...string) {
 	}
 }
 
-// conntrackLog records conntrack flushes instead of exec'ing conntrack.
+// conntrackLog records conntrack flushes instead of deleting flows: every
+// batch call with its member list, and the members flattened.
 type conntrackLog struct {
 	mu      sync.Mutex
+	batches [][]string
 	flushed []string
 }
 
-func (c *conntrackLog) flush(_ context.Context, m string) {
+func (c *conntrackLog) FlushDst(_ context.Context, members []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.flushed = append(c.flushed, m)
+	c.batches = append(c.batches, slices.Clone(members))
+	c.flushed = append(c.flushed, members...)
+	return nil
+}
+
+func (c *conntrackLog) calls() [][]string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.batches)
 }
 
 func (c *conntrackLog) count(m string) int {
@@ -165,7 +175,7 @@ func newTestTracker() (*Tracker, *fakeIPSet, *conntrackLog) {
 	fs := newFakeIPSet()
 	ct := &conntrackLog{}
 	tr := NewTracker(fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	tr.flushConntrack = ct.flush
+	tr.Conntrack = ct
 	return tr, fs, ct
 }
 
@@ -556,7 +566,7 @@ func TestTrackerOrphanReTrackedIsNotDeleted(t *testing.T) {
 func TestSetStaticUsesOneBatchPerDirection(t *testing.T) {
 	ip := newFakeIPSet()
 	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	tr.flushConntrack = func(context.Context, string) {}
+	tr.Conntrack = &conntrackLog{}
 	ctx := context.Background()
 
 	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"})
@@ -587,7 +597,7 @@ func TestBatchFailureFallsBackPerMember(t *testing.T) {
 	ip.failBatch = true
 	ip.failAdd["10.2.0.0/16"] = true
 	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	tr.flushConntrack = func(context.Context, string) {}
+	tr.Conntrack = &conntrackLog{}
 	ctx := context.Background()
 
 	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16"})
@@ -611,7 +621,7 @@ func TestBatchFailureFallsBackPerMember(t *testing.T) {
 func TestRepairUsesBatches(t *testing.T) {
 	ip := newFakeIPSet()
 	tr := NewTracker(ip, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	tr.flushConntrack = func(context.Context, string) {}
+	tr.Conntrack = &conntrackLog{}
 	ctx := context.Background()
 	tr.Track(ctx, "a.example", "1.1.1.1")
 	tr.Track(ctx, "b.example", "2.2.2.2")
@@ -630,5 +640,49 @@ func TestRepairUsesBatches(t *testing.T) {
 	}
 	if !ip.has("1.1.1.1") || ip.has("9.9.9.9") {
 		t.Fatal("repair did not converge")
+	}
+}
+
+func TestConntrackFlushedOncePerOperation(t *testing.T) {
+	tr, fs, ct := newTestTracker()
+	ctx := context.Background()
+
+	tr.Track(ctx, "a.example", "1.1.1.1")
+	tr.Track(ctx, "a.example", "1.1.1.2")
+	tr.Track(ctx, "b.example", "1.1.1.2") // already present: no flush
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "1.1.1.1"})
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "10.2.0.0/16", "1.1.1.1"}) // no change: no call
+	tr.RemoveDomain(ctx, "a.example")                                    // 1.1.1.1 static, 1.1.1.2 held by b
+	tr.RemoveDomain(ctx, "b.example")                                    // 1.1.1.2 leaves
+	tr.SetStatic(ctx, []string{"10.3.0.0/16"})                           // +10.3, -10.1 -10.2 -1.1.1.1
+
+	fs.set("10.3.0.0/16", "9.9.9.9") // nothing missing, one unknown
+	tr.Track(ctx, "c.example", "2.2.2.2")
+	fs.set("10.3.0.0/16", "9.9.9.9") // 2.2.2.2 missing again
+	if _, _, err := tr.Repair(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	want := [][]string{
+		{"1.1.1.1"},
+		{"1.1.1.2"},
+		{"10.1.0.0/16", "10.2.0.0/16"}, // 1.1.1.1 already held by a domain
+		{"1.1.1.2"},
+		{"10.3.0.0/16", "1.1.1.1", "10.1.0.0/16", "10.2.0.0/16"},
+		{"2.2.2.2"},
+		{"2.2.2.2", "9.9.9.9"}, // repair: re-added, then deleted
+	}
+	got := ct.calls()
+	if len(got) != len(want) {
+		t.Fatalf("conntrack calls = %v, want %v", got, want)
+	}
+	for i := range want {
+		g := slices.Clone(got[i])
+		w := slices.Clone(want[i])
+		slices.Sort(g)
+		slices.Sort(w)
+		if !slices.Equal(g, w) {
+			t.Errorf("call %d = %v, want %v", i, got[i], want[i])
+		}
 	}
 }
