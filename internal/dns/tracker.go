@@ -571,6 +571,36 @@ func (t *Tracker) Flush(ctx context.Context) error {
 	return nil
 }
 
+// FlushDynamic drops every domain -> IP mapping and deletes from the kernel
+// set the members only those mappings explained; static entries and the IPs
+// they hold stay. The conntrack flows of the removed members are flushed so
+// clients reconnect directly until the next DNS answer tracks the IPs
+// again. Returns the number of members removed from the kernel set.
+func (t *Tracker) FlushDynamic(ctx context.Context) int {
+	t.kernelMu.Lock()
+	t.mu.Lock()
+	var toRemove []string
+	for ip := range t.reverse {
+		if _, isStatic := t.static[ip]; !isStatic {
+			toRemove = append(toRemove, ip)
+		}
+	}
+	if len(t.forward) > 0 {
+		t.markDirty()
+	}
+	t.forward = make(map[string][]string)
+	t.reverse = make(map[string][]string)
+	t.mu.Unlock()
+
+	slices.Sort(toRemove)
+	t.delMembersLocked(ctx, toRemove)
+	t.kernelMu.Unlock()
+
+	t.flushConntrack(ctx, toRemove)
+	t.logger.Info("tracker flushed", "removed", len(toRemove))
+	return len(toRemove)
+}
+
 // Count returns the number of tracked domains and the unique IPs they
 // reference. Static entries are not counted.
 func (t *Tracker) Count() (domains int, ips int) {

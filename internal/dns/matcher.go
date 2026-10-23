@@ -9,11 +9,35 @@ import (
 )
 
 // matcherRules holds an immutable snapshot of domain matching rules.
+// Each map value and the parallel name slices hold the name of the shunt
+// the rule came from (the first one, when several shunts carry the same
+// rule), for the activity feed.
 type matcherRules struct {
-	suffixes map[string]struct{}
-	exact    map[string]struct{}
-	keywords []string
-	regexps  []*regexp.Regexp
+	suffixes     map[string]string
+	exact        map[string]string
+	keywords     []string
+	keywordShunt []string
+	regexps      []*regexp.Regexp
+	regexpShunt  []string
+}
+
+// MatchKind is the kind of rule a name matched.
+type MatchKind int
+
+const (
+	MatchSuffix MatchKind = iota
+	MatchExact
+	MatchKeyword
+	MatchRegexp
+)
+
+// MatchInfo describes the rule a name matched: the shunt it belongs to, its
+// kind and its value (the suffix, the exact name, the keyword or the
+// pattern).
+type MatchInfo struct {
+	Shunt string
+	Kind  MatchKind
+	Rule  string
 }
 
 // Matcher tests domain names against a set of rules loaded from shunt entries.
@@ -27,8 +51,8 @@ type Matcher struct {
 func NewMatcher() *Matcher {
 	m := &Matcher{}
 	m.rules.Store(&matcherRules{
-		suffixes: make(map[string]struct{}),
-		exact:    make(map[string]struct{}),
+		suffixes: make(map[string]string),
+		exact:    make(map[string]string),
 	})
 	return m
 }
@@ -39,17 +63,22 @@ func (m *Matcher) Match(domain string) bool {
 	return m.rules.Load().match(domain)
 }
 
+// Lookup is Match that also says which rule matched.
+func (m *Matcher) Lookup(domain string) (MatchInfo, bool) {
+	return m.rules.Load().lookup(domain)
+}
+
 // firstMatch returns the first of names that matches a loaded rule ("" when
-// none does) and the rules it used, so a caller can tell afterwards whether
-// an Update happened in between.
-func (m *Matcher) firstMatch(names []string) (string, *matcherRules) {
+// none does), the rule it matched and the rules it used, so a caller can
+// tell afterwards whether an Update happened in between.
+func (m *Matcher) firstMatch(names []string) (string, MatchInfo, *matcherRules) {
 	r := m.rules.Load()
 	for _, n := range names {
-		if r.match(n) {
-			return n, r
+		if info, ok := r.lookup(n); ok {
+			return n, info, r
 		}
 	}
-	return "", r
+	return "", MatchInfo{}, r
 }
 
 // changedSince reports whether the rules were replaced after r was loaded.
@@ -58,18 +87,24 @@ func (m *Matcher) changedSince(r *matcherRules) bool {
 }
 
 func (r *matcherRules) match(domain string) bool {
+	_, ok := r.lookup(domain)
+	return ok
+}
 
+// lookup checks exact, suffix, keyword and regexp rules in that order and
+// returns the first rule that matches.
+func (r *matcherRules) lookup(domain string) (MatchInfo, bool) {
 	// Exact match.
-	if _, ok := r.exact[domain]; ok {
-		return true
+	if sh, ok := r.exact[domain]; ok {
+		return MatchInfo{Shunt: sh, Kind: MatchExact, Rule: domain}, true
 	}
 
 	// Suffix match: walk up parent domains.
 	// For "a.b.example.com", check "a.b.example.com", "b.example.com", "example.com".
 	d := domain
 	for {
-		if _, ok := r.suffixes[d]; ok {
-			return true
+		if sh, ok := r.suffixes[d]; ok {
+			return MatchInfo{Shunt: sh, Kind: MatchSuffix, Rule: d}, true
 		}
 		i := strings.IndexByte(d, '.')
 		if i < 0 {
@@ -79,20 +114,20 @@ func (r *matcherRules) match(domain string) bool {
 	}
 
 	// Keyword match.
-	for _, kw := range r.keywords {
+	for i, kw := range r.keywords {
 		if strings.Contains(domain, kw) {
-			return true
+			return MatchInfo{Shunt: r.keywordShunt[i], Kind: MatchKeyword, Rule: kw}, true
 		}
 	}
 
 	// Regexp match.
-	for _, re := range r.regexps {
+	for i, re := range r.regexps {
 		if re.MatchString(domain) {
-			return true
+			return MatchInfo{Shunt: r.regexpShunt[i], Kind: MatchRegexp, Rule: re.String()}, true
 		}
 	}
 
-	return false
+	return MatchInfo{}, false
 }
 
 // Snapshot returns a Matcher frozen on the current rules. Later Update calls
@@ -109,8 +144,14 @@ func (m *Matcher) Snapshot() *Matcher {
 // or keyword with characters no DNS name has) are skipped and returned.
 func (m *Matcher) Update(entries []shunt.Entry) (rejected []shunt.Entry) {
 	r := &matcherRules{
-		suffixes: make(map[string]struct{}),
-		exact:    make(map[string]struct{}),
+		suffixes: make(map[string]string),
+		exact:    make(map[string]string),
+	}
+	// setOnce keeps the first shunt that carries a rule.
+	setOnce := func(m map[string]string, k, shunt string) {
+		if _, ok := m[k]; !ok {
+			m[k] = shunt
+		}
 	}
 
 	for _, orig := range entries {
@@ -128,6 +169,7 @@ func (m *Matcher) Update(entries []shunt.Entry) (rejected []shunt.Entry) {
 				continue
 			}
 			r.regexps = append(r.regexps, re)
+			r.regexpShunt = append(r.regexpShunt, orig.Shunt)
 			continue
 		}
 		if shunt.Validate(e.Value) != nil {
@@ -136,11 +178,12 @@ func (m *Matcher) Update(entries []shunt.Entry) (rejected []shunt.Entry) {
 		}
 		switch e.Type() {
 		case shunt.EntryDomainSuffix:
-			r.suffixes[strings.ToLower(e.DomainValue())] = struct{}{}
+			setOnce(r.suffixes, strings.ToLower(e.DomainValue()), orig.Shunt)
 		case shunt.EntryDomainFull:
-			r.exact[strings.ToLower(e.DomainValue())] = struct{}{}
+			setOnce(r.exact, strings.ToLower(e.DomainValue()), orig.Shunt)
 		case shunt.EntryDomainKeyword:
 			r.keywords = append(r.keywords, strings.ToLower(e.DomainValue()))
+			r.keywordShunt = append(r.keywordShunt, orig.Shunt)
 		}
 	}
 

@@ -50,6 +50,7 @@ type Forwarder struct {
 	blockResp  atomic.Int32
 	tracker    *Tracker
 	cache      *ResolveCache
+	activity   *Activity
 	udpServer  *dns.Server
 	tcpServer  *dns.Server
 	logger     *slog.Logger
@@ -68,6 +69,7 @@ func NewForwarder(listenAddr string, upstreams []Upstream, tracker *Tracker, log
 		blocklist:  NewBlocklistMatcher(),
 		tracker:    tracker,
 		cache:      NewResolveCache(resolveCacheCap),
+		activity:   NewActivity(),
 		logger:     logger,
 	}
 	clients, err := newDoHClients(upstreams)
@@ -236,6 +238,11 @@ func (f *Forwarder) TrackerRef() *Tracker {
 	return f.tracker
 }
 
+// Activity returns the log of recent shunt-matched answers.
+func (f *Forwarder) Activity() *Activity {
+	return f.activity
+}
+
 // ResolveCache returns the forwarder's recent-resolutions cache for the
 // reconciler to seed ipset entries when a new shunt rule is added.
 func (f *Forwarder) ResolveCache() *ResolveCache {
@@ -280,10 +287,11 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 		return
 	}
 
+	client := clientIP(w.RemoteAddr())
 	cacheable := r.Opcode == dns.OpcodeQuery && qclass == dns.ClassINET
 	if cacheable {
 		if resp := f.cachedResponse(qname, qtype); resp != nil {
-			f.trackMatched(ctx, qname, resp)
+			f.trackMatched(ctx, client, qname, resp)
 			f.reply(w, r, resp)
 			return
 		}
@@ -315,7 +323,8 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	if cacheable {
 		f.storeResponse(qname, qtype, resp)
 	}
-	f.RecordAnswer(ctx, qname, resp)
+	f.trackMatched(ctx, client, qname, resp)
+	f.cacheResolved(qname, resp)
 
 	f.reply(w, r, resp)
 }
@@ -326,7 +335,7 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 // regardless of a match, so that a later shunt mutation can retroactively
 // seed the ipset for IPs the client already cached.
 func (f *Forwarder) RecordAnswer(ctx context.Context, qname string, resp *dns.Msg) {
-	f.trackMatched(ctx, qname, resp)
+	f.trackMatched(ctx, "", qname, resp)
 	f.cacheResolved(qname, resp)
 }
 
@@ -505,18 +514,23 @@ func (f *Forwarder) cacheResolved(qname string, resp *dns.Msg) {
 // tracked: a mutation that removed the rule may have swept the tracker
 // before Track ran, and the IPs would otherwise stay in the ipset with no
 // rule explaining them.
-func (f *Forwarder) trackMatched(ctx context.Context, qname string, resp *dns.Msg) {
+//
+// Every match is also recorded in the activity log with the client's IP
+// ("" when unknown).
+func (f *Forwarder) trackMatched(ctx context.Context, client, qname string, resp *dns.Msg) {
 	if resp.Rcode != dns.RcodeSuccess || len(resp.Answer) == 0 {
 		return
 	}
-	key, rules := f.matcher.firstMatch(answerNames(qname, resp))
+	key, info, rules := f.matcher.firstMatch(answerNames(qname, resp))
 	if key == "" {
 		return
 	}
 	f.tracker.TrackMany(ctx, key, answerIPs(resp))
 	if f.matcher.changedSince(rules) && !f.matcher.Match(key) {
 		f.tracker.RemoveDomain(ctx, key)
+		return
 	}
+	f.activity.Record(client, qname, key, info)
 }
 
 // writeMsg packs and writes a DNS message, logging any failure.

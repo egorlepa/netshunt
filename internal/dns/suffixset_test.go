@@ -77,3 +77,47 @@ func TestBuildSuffixSetCopiesReusedBuffer(t *testing.T) {
 		t.Errorf("Match allocates %v times", n)
 	}
 }
+
+func TestSuffixSetMatchSuffixAndSize(t *testing.T) {
+	s := BuildSuffixSet(func(add func([]byte)) {
+		for _, d := range []string{"doubleclick.net", "ads.example.com", "example.com", "tracker.io"} {
+			add([]byte(d))
+		}
+	})
+	tests := []struct {
+		q, want string
+		ok      bool
+	}{
+		{"stats.g.doubleclick.net", "doubleclick.net", true},
+		{"doubleclick.net", "doubleclick.net", true},
+		{"x.ads.example.com", "example.com", true}, // shortest stored suffix
+		{"notdoubleclick.net", "", false},
+		{"io", "", false},
+		{"", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := s.MatchSuffix(tt.q)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("MatchSuffix(%q) = %q %v, want %q %v", tt.q, got, ok, tt.want, tt.ok)
+		}
+		if s.Match(tt.q) != tt.ok {
+			t.Errorf("Match(%q) disagrees", tt.q)
+		}
+	}
+	// data: the reversed entries with their dots; offsets: 5 uint32.
+	if got, want := s.SizeBytes(), len("doubleclick.net.ads.example.com.example.com.tracker.io.")+4*5; got != want {
+		t.Errorf("SizeBytes = %d, want %d", got, want)
+	}
+	if (&SuffixSet{}).SizeBytes() != 0 {
+		t.Error("empty set has a size")
+	}
+
+	m := NewBlocklistMatcher()
+	if !m.BuiltAt().IsZero() {
+		t.Error("BuiltAt before any build")
+	}
+	m.Replace(func(add func([]byte)) { add([]byte("doubleclick.net")) })
+	if sfx, ok := m.MatchSuffix("ad.doubleclick.net"); !ok || sfx != "doubleclick.net" || m.BuiltAt().IsZero() || m.SizeBytes() == 0 {
+		t.Errorf("matcher: %q %v built=%v size=%d", sfx, ok, m.BuiltAt(), m.SizeBytes())
+	}
+}

@@ -686,3 +686,43 @@ func TestConntrackFlushedOncePerOperation(t *testing.T) {
 		}
 	}
 }
+
+func TestTrackerFlushDynamicKeepsStatics(t *testing.T) {
+	tr, fs, ct := newTestTracker()
+	ctx := context.Background()
+	tr.SetStatic(ctx, []string{"10.1.0.0/16", "192.0.2.1"})
+	tr.TrackMany(ctx, "a.com", []string{"192.0.2.1", "192.0.2.2"}) // .1 shared with a static
+	tr.TrackMany(ctx, "b.com", []string{"192.0.2.3"})
+	ct.batches, ct.flushed = nil, nil
+
+	if n := tr.FlushDynamic(ctx); n != 2 {
+		t.Fatalf("removed %d, want 2", n)
+	}
+	if d, ips := tr.Count(); d != 0 || ips != 0 {
+		t.Errorf("count after flush: %d domains %d ips", d, ips)
+	}
+	for _, m := range []string{"10.1.0.0/16", "192.0.2.1"} {
+		if !fs.has(m) {
+			t.Errorf("static %s removed", m)
+		}
+	}
+	for _, m := range []string{"192.0.2.2", "192.0.2.3"} {
+		if fs.has(m) {
+			t.Errorf("dynamic %s kept", m)
+		}
+		if ct.count(m) != 1 {
+			t.Errorf("conntrack for %s flushed %d times", m, ct.count(m))
+		}
+	}
+	if ct.count("192.0.2.1") != 0 {
+		t.Error("conntrack flushed for a member that stays")
+	}
+	if tr.Members() != 2 {
+		t.Errorf("members %d, want 2", tr.Members())
+	}
+	// The next answer tracks the IP again.
+	tr.Track(ctx, "b.com", "192.0.2.3")
+	if !fs.has("192.0.2.3") {
+		t.Error("re-track after flush did not add")
+	}
+}

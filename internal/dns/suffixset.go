@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // SuffixSet is a compact, immutable set of domain suffixes optimised for the
@@ -36,9 +37,27 @@ func (s *SuffixSet) at(i int) []byte {
 // Match reports whether any stored entry is a domain-suffix of query.
 // query should be lowercase, no trailing dot. Zero allocations on hot path.
 func (s *SuffixSet) Match(query string) bool {
+	return s.matchLen(query) > 0
+}
+
+// MatchSuffix returns the shortest stored entry that is a domain-suffix of
+// query (the one Match finds first), and whether there is one.
+func (s *SuffixSet) MatchSuffix(query string) (string, bool) {
+	n := s.matchLen(query)
+	if n == 0 {
+		return "", false
+	}
+	// n bytes of the reversed form are n bytes of query's tail ("example.com"
+	// reversed is "com.example." for the same length plus the dot).
+	return query[len(query)-(n-1):], true
+}
+
+// matchLen returns the length of the reverse-labeled form (trailing dot
+// included) of the shortest stored suffix of query, 0 when none matches.
+func (s *SuffixSet) matchLen(query string) int {
 	n := s.Len()
 	if n == 0 || query == "" {
-		return false
+		return 0
 	}
 	var buf [256]byte
 	q := reverseLabelsAppend(buf[:0], query)
@@ -51,10 +70,15 @@ func (s *SuffixSet) Match(query string) bool {
 			return bytes.Compare(s.at(j), cand) >= 0
 		})
 		if idx < n && bytes.Equal(s.at(idx), cand) {
-			return true
+			return i + 1
 		}
 	}
-	return false
+	return 0
+}
+
+// SizeBytes is the memory the set's data and offset table take.
+func (s *SuffixSet) SizeBytes() int {
+	return cap(s.data) + 4*cap(s.offsets)
 }
 
 // BuildSuffixSet constructs a SuffixSet from a streaming callback. The build
@@ -162,7 +186,8 @@ func reverseLabelsAppendBytes(dst, d []byte) []byte {
 // BlocklistMatcher is a thread-safe wrapper around SuffixSet supporting
 // atomic replacement (for blocklist refresh) and lock-free reads.
 type BlocklistMatcher struct {
-	set atomic.Pointer[SuffixSet]
+	set     atomic.Pointer[SuffixSet]
+	builtAt atomic.Int64 // UnixNano of the last Replace, 0 before
 }
 
 // NewBlocklistMatcher returns a matcher with an empty set installed.
@@ -183,7 +208,28 @@ func (m *BlocklistMatcher) Match(domain string) bool {
 func (m *BlocklistMatcher) Replace(build func(add func(domain []byte))) int {
 	s := BuildSuffixSet(build)
 	m.set.Store(s)
+	m.builtAt.Store(time.Now().UnixNano())
 	return s.Len()
+}
+
+// MatchSuffix returns the stored suffix that blocks domain, if any.
+func (m *BlocklistMatcher) MatchSuffix(domain string) (string, bool) {
+	return m.set.Load().MatchSuffix(domain)
+}
+
+// SizeBytes is the memory of the active set (data plus offsets).
+func (m *BlocklistMatcher) SizeBytes() int {
+	return m.set.Load().SizeBytes()
+}
+
+// BuiltAt is when the active set was installed, zero before the first
+// Replace.
+func (m *BlocklistMatcher) BuiltAt() time.Time {
+	ns := m.builtAt.Load()
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns)
 }
 
 // Len returns the number of entries in the active set.
