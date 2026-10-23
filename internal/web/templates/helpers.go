@@ -6,8 +6,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/egorlepa/netshunt/internal/config"
+	"github.com/a-h/templ"
+
+	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
@@ -72,11 +76,10 @@ func groupDigits(n int) string {
 	return b.String()
 }
 
-func autoUpdateSchedule(au config.AutoUpdateConfig, fallback string) string {
-	if au.Schedule != "" {
-		return au.Schedule
-	}
-	return fallback
+// Num renders a count with the thousands gap element between groups
+// ("3<i class="k"></i>786"), the way the page scripts format counts.
+func Num(n int) templ.Component {
+	return templ.Raw(strings.ReplaceAll(groupDigits(n), " ", `<i class="k"></i>`))
 }
 
 // SlugID converts a string to a unique, CSS-safe HTML ID fragment via hex encoding.
@@ -85,13 +88,6 @@ func SlugID(s string) string {
 }
 
 func itoa(n int) string {
-	return strconv.Itoa(n)
-}
-
-func itoaOrEmpty(n int) string {
-	if n == 0 {
-		return ""
-	}
 	return strconv.Itoa(n)
 }
 
@@ -113,17 +109,6 @@ func sortedEntries(entries []shunt.Entry) []shunt.Entry {
 	return sorted
 }
 
-func logLevelClass(level string) string {
-	switch level {
-	case "ERROR":
-		return "log-level text-red"
-	case "WARN":
-		return "log-level text-yellow"
-	default:
-		return "log-level text-muted"
-	}
-}
-
 // shuntPath returns the URL path for a shunt, with the name escaped so names
 // with spaces, slashes or '#' survive the round trip.
 func shuntPath(name string) string {
@@ -135,4 +120,66 @@ func shuntPath(name string) string {
 // back in PathValue, '%2F' included.
 func entryPath(shunt, value string) string {
 	return shuntPath(shunt) + "/entries/" + url.PathEscape(value)
+}
+
+// splitHealth returns the failed checks (not passed, not a warning) and the
+// warnings of a healthcheck run, in check order.
+func splitHealth(res []healthcheck.Result) (failing, warning []healthcheck.Result) {
+	for _, r := range res {
+		switch {
+		case r.Passed:
+		case r.Warn:
+			warning = append(warning, r)
+		default:
+			failing = append(failing, r)
+		}
+	}
+	return failing, warning
+}
+
+// plural renders "1 check failing" / "3 checks failing".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
+}
+
+// sentence ends s with a period unless it already ends with punctuation.
+func sentence(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.HasSuffix(s, ".") || strings.HasSuffix(s, "!") || strings.HasSuffix(s, "?") {
+		return s
+	}
+	return s + "."
+}
+
+// seconds renders a check duration as "0.31 s".
+func seconds(d time.Duration) string {
+	return strconv.FormatFloat(d.Seconds(), 'f', 2, 64) + " s"
+}
+
+// logAttrs returns the structured attributes of a log entry; entries
+// without them (none today) are split from the formatted text.
+func logAttrs(e platform.LogEntry) []platform.LogAttr {
+	if len(e.KV) > 0 || e.Attrs == "" {
+		return e.KV
+	}
+	var out []platform.LogAttr
+	for _, line := range strings.Split(e.Attrs, "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		out = append(out, platform.LogAttr{Key: k, Value: v})
+	}
+	return out
+}
+
+// attrsText is the attributes of a log entry on one line, for search and
+// the tooltip.
+func attrsText(e platform.LogEntry) string {
+	kv := logAttrs(e)
+	parts := make([]string, len(kv))
+	for i, a := range kv {
+		parts[i] = a.Key + "=" + a.Value
+	}
+	return strings.Join(parts, " ")
 }

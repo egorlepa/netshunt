@@ -3,8 +3,10 @@ package web
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -15,9 +17,39 @@ import (
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
+// geositePreviewCap bounds the domains a category preview shows.
+const geositePreviewCap = 500
+
 func (s *Server) handleGeositePage(w http.ResponseWriter, r *http.Request) {
-	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositePage(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositePage(s.geositePageData()))
+}
+
+func (s *Server) geositePageData() templates.GeositePageData {
+	info, categories, used := s.loadGeositeState()
+	au := s.Config.Load().Geosite.AutoUpdate
+	schedule := au.Schedule
+	if schedule == "" {
+		schedule = config.DefaultGeositeSchedule
+	}
+	return templates.GeositePageData{
+		Info:         info,
+		AutoEnabled:  au.Enabled,
+		Schedule:     schedule,
+		ScheduleText: templates.ScheduleText(schedule, au.Enabled, time.Now()),
+		Categories:   categories,
+		Used:         used,
+	}
+}
+
+// handleGeositeEntries is the lazy preview of a category: its first
+// geositePreviewCap entries.
+func (s *Server) handleGeositeEntries(w http.ResponseWriter, r *http.Request) {
+	entries, ok := s.Geosite.Entries(r.PathValue("category"))
+	if !ok {
+		errorResponse(w, fmt.Sprintf("category %q not found", r.PathValue("category")), http.StatusNotFound)
+		return
+	}
+	s.render(r, w, templates.GeositePreview(entries[:min(len(entries), geositePreviewCap)], len(entries)))
 }
 
 func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
@@ -30,8 +62,7 @@ func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
 	s.triggerMutation(r.Context())
 
 	toastTrigger(w, "Database downloaded", "success")
-	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositeContent(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositeContent(s.geositePageData()))
 }
 
 func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
@@ -41,8 +72,7 @@ func (s *Server) handleGeositeUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	toastTrigger(w, fmt.Sprintf("Database updated, %d geosite shunts applied", updated), "success")
-	info, categories, imported := s.loadGeositeState()
-	s.render(r, w, templates.GeositeContent(info, s.Config.Load().Geosite.AutoUpdate, categories, imported))
+	s.render(r, w, templates.GeositeContent(s.geositePageData()))
 }
 
 func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +111,7 @@ func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request)
 	}
 
 	toastTrigger(w, "Auto-update settings applied", "success")
-	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, templates.ScheduleText(schedule, enabled, time.Now()))
 }
 
 // UpdateGeosite downloads the latest geosite database and applies it.
@@ -142,7 +172,12 @@ func (s *Server) handleGeositeImport(w http.ResponseWriter, r *http.Request) {
 	}
 	toastTrigger(w, msg, "success")
 	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
-	s.render(r, w, templates.GeositeCategoryRow(cat, true))
+	_, _, used := s.loadGeositeState()
+	name := used[category]
+	if name == "" {
+		name = category
+	}
+	s.render(r, w, templates.GeositeCategoryRow(cat, name))
 }
 
 func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
@@ -183,10 +218,12 @@ func (s *Server) handleGeositeRemove(w http.ResponseWriter, r *http.Request) {
 	toastTrigger(w, fmt.Sprintf("Removed %s", category), "success")
 	domains, _ := s.Geosite.Entries(category)
 	cat := geosite.CategoryInfo{Name: category, DomainCount: len(domains)}
-	s.render(r, w, templates.GeositeCategoryRow(cat, false))
+	s.render(r, w, templates.GeositeCategoryRow(cat, ""))
 }
 
-func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, map[string]bool) {
+// loadGeositeState returns the database info, its categories, and for each
+// category a shunt references, that shunt's name.
+func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, map[string]string) {
 	info := s.Geosite.FileInfo()
 	if !info.Downloaded {
 		return info, nil, nil
@@ -196,21 +233,23 @@ func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, m
 		s.Logger.Error("failed to index geosite database", "error", err)
 	}
 
-	// Imported categories, by the shunts' sources: a geosite shunt can be
-	// renamed on the Shunts page.
-	sources := make(map[string]bool)
+	// Used categories, by the shunts' sources: a geosite shunt can be
+	// renamed on the Shunts page. The first shunt of a category wins.
+	sources := make(map[string]string)
 	geositeShunts, _ := s.Shunts.GeositeShunts()
 	for _, sh := range geositeShunts {
 		if cat, ok := sh.GeositeCategory(); ok {
-			sources[strings.ToLower(cat)] = true
+			if _, dup := sources[strings.ToLower(cat)]; !dup {
+				sources[strings.ToLower(cat)] = sh.Name
+			}
 		}
 	}
-	imported := make(map[string]bool)
+	used := make(map[string]string)
 	for _, cat := range categories {
-		if sources[strings.ToLower(cat.Name)] {
-			imported[cat.Name] = true
+		if name, ok := sources[strings.ToLower(cat.Name)]; ok {
+			used[cat.Name] = name
 		}
 	}
 
-	return info, categories, imported
+	return info, categories, used
 }

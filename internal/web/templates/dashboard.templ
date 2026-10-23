@@ -1,123 +1,93 @@
 package templates
 
-import "github.com/egorlepa/netshunt/internal/config"
+import "github.com/egorlepa/netshunt/internal/healthcheck"
 
-type DashboardData struct {
-	IPSetCount        int
-	ShuntCount        int
-	EnabledShuntCount int
-	EntryCount        int
-	TrackedDomains    int
-	TrackedIPs        int
-	BlocklistProblems []string
-	Routing           config.RoutingConfig
-	Version           string
+// DashboardStats is the dashboard strip; /api/activity sends it too.
+type DashboardStats struct {
+	IPs     int    `json:"ips"`     // tracker members (the kernel set as the tracker knows it)
+	Domains int    `json:"domains"` // tracked domains
+	Shunts  int    `json:"shunts"`  // enabled shunts
+	Entries int    `json:"entries"` // entries of the enabled shunts
+	KSDrops uint64 `json:"ks_drops"`
 }
 
-templ Dashboard(data DashboardData) {
+// Dashboard is the health line, the strip, the live feed of matched answers
+// and the last hour's bars. The feed, the bars and the strip are kept
+// current by /static/dashboard.js from /api/activity; the health line
+// polls /dashboard/health.
+templ Dashboard(st DashboardStats) {
 	@Layout("Dashboard", "dashboard") {
-		<div class="flex-between mb-16">
-			<h1>Dashboard</h1>
-			<div class="flex gap-8" style="align-items:center">
-				<span id="dash-poll-indicator" class="htmx-indicator"><span class="spinner"></span></span>
-				<span class="text-muted text-sm">v{ data.Version }</span>
+		<div id="dashboard">
+			<div class="toolbar plain">
+				<h1>Dashboard</h1>
+				<div class="actions">
+					<label class="chk"><input type="checkbox" id="live" checked autocomplete="off"/> live</label>
+				</div>
+			</div>
+			<div
+				id="hero-wrap"
+				hx-get="/dashboard/health"
+				hx-trigger="load, every 60s [document.visibilityState === 'visible' && document.getElementById('live').checked]"
+				hx-swap="innerHTML"
+			>
+				<div class="hero">
+					<div>
+						<div class="state"><span class="dot spin"></span><span>Running checks</span></div>
+					</div>
+					<div class="side"><a href="/diagnostics">Diagnostics</a></div>
+				</div>
+			</div>
+			<div class="strip" id="dash-strip">
+				@DashboardStrip(st)
+			</div>
+			<div class="two wide">
+				<div class="card">
+					<div class="ch">Now routing <span class="muted">matched DNS answers, newest first</span><span class="grow"></span><span class="muted" id="feedn"></span></div>
+					<div class="feed" id="feed"><div class="empty">No matched answers yet.</div></div>
+				</div>
+				<div class="card">
+					<div class="ch">Shunt activity <span class="muted">queries, last hour</span></div>
+					<div class="bars" id="bars"><div class="empty">Nothing yet.</div></div>
+					<div class="ch mid">Clients <span class="muted">last hour</span></div>
+					<div class="bars" id="clients"><div class="empty">Nothing yet.</div></div>
+				</div>
 			</div>
 		</div>
-		<div id="dashboard-content" hx-get="/dashboard-content" hx-trigger="every 10s" hx-swap="innerHTML" hx-indicator="#dash-poll-indicator">
-			@DashboardContent(data)
-		</div>
+		<script src="/static/dashboard.js"></script>
 	}
 }
 
-templ DashboardContent(data DashboardData) {
-	if len(data.BlocklistProblems) > 0 {
-		<div class="card">
-			<div class="flex-between mb-16">
-				<h2>Blocklist needs attention</h2>
-				<a class="btn btn-sm" href="/blocklist">Open blocklist</a>
+templ DashboardStrip(st DashboardStats) {
+	<span><b data-k="ips">@Num(st.IPs)</b> IPs in set</span>
+	<span><b data-k="domains">@Num(st.Domains)</b> tracked domains</span>
+	<span title="enabled shunts and their entries"><b data-k="shunts">@Num(st.Shunts)</b> shunts, <b data-k="entries">@Num(st.Entries)</b> entries</span>
+	<span title="packets the kill switch dropped: shunted addresses that tried to leave directly"><b data-k="ks_drops">@Num(int(st.KSDrops))</b> kill switch drops</span>
+}
+
+// DashboardHealth is the hero line for a healthcheck run: green when every
+// check passed, red with the failing checks listed otherwise, yellow when
+// only warnings are left.
+templ DashboardHealth(res []healthcheck.Result) {
+	{{ failing, warning := splitHealth(res) }}
+	<div class={ "hero", templ.KV("bad", len(failing) > 0) }>
+		<div>
+			<div class="state">
+				if len(failing) > 0 {
+					<span class="dot bad"></span><span>{ plural(len(failing), "check failing", "checks failing") }</span>
+				} else if len(warning) > 0 {
+					<span class="dot warn"></span><span>{ "All checks passing, " + plural(len(warning), "warning", "warnings") }</span>
+				} else {
+					<span class="dot on"></span><span>All checks passing</span>
+				}
 			</div>
-			for _, p := range data.BlocklistProblems {
-				<div class="text-red text-sm">{ p }</div>
+			if len(failing) > 0 || len(warning) > 0 {
+				<div class="sub">
+					for _, r := range append(failing, warning...) {
+						<b>{ r.Name }</b>: { sentence(r.Detail) }
+					}
+				</div>
 			}
 		</div>
-	}
-	<div class="card">
-		<div class="flex-between mb-16">
-			<h2>Overview</h2>
-			<button class="btn btn-sm" hx-get="/dashboard-content" hx-target="#dashboard-content" hx-swap="innerHTML">
-				Refresh
-				<span class="htmx-indicator"><span class="spinner"></span></span>
-			</button>
-		</div>
-		<div class="stat-grid">
-			<div class="stat">
-				<div class="stat-label">IPSet entries</div>
-				<div class="stat-value">{ itoa(data.IPSetCount) }</div>
-			</div>
-			<div class="stat">
-				<div class="stat-label">Shunts enabled</div>
-				<div class="stat-value">{ itoa(data.EnabledShuntCount) } <span class="stat-sub">/ { itoa(data.ShuntCount) }</span></div>
-			</div>
-			<div class="stat">
-				<div class="stat-label">Host entries</div>
-				<div class="stat-value">{ itoa(data.EntryCount) }</div>
-			</div>
-			<div class="stat">
-				<div class="stat-label">Tracked domains</div>
-				<div class="stat-value">{ itoa(data.TrackedDomains) }</div>
-			</div>
-			<div class="stat">
-				<div class="stat-label">Tracked IPs</div>
-				<div class="stat-value">{ itoa(data.TrackedIPs) }</div>
-			</div>
-		</div>
+		<div class="side"><a href="/diagnostics">Diagnostics</a></div>
 	</div>
-	<div class="card">
-		<h2 class="mb-16">Active proxy</h2>
-		@ProxySwitch(data.Routing)
-	</div>
-}
-
-templ ProxySwitch(r config.RoutingConfig) {
-	<span id="proxy-switch">
-		if !r.BackupConfigured() {
-			<strong>primary</strong> <span class="text-muted">({ itoa(r.LocalPort) })</span>
-			<span class="text-muted text-sm"> - backup not configured</span>
-		} else {
-			<span class="flex gap-8" style="align-items:center">
-				if !r.UseBackup {
-					<strong>primary</strong>
-				} else {
-					<span class="text-muted">primary</span>
-				}
-				<span class="text-muted">({ itoa(r.LocalPort) })</span>
-				<label class="toggle" title="Switch between primary and backup proxy">
-					if r.UseBackup {
-						<input
-							type="checkbox" autocomplete="off" checked
-							hx-post="/actions/switch-proxy"
-							hx-target="#proxy-switch"
-							hx-swap="outerHTML"
-							hx-disabled-elt="this"
-						/>
-					} else {
-						<input
-							type="checkbox" autocomplete="off"
-							hx-post="/actions/switch-proxy"
-							hx-target="#proxy-switch"
-							hx-swap="outerHTML"
-							hx-disabled-elt="this"
-						/>
-					}
-					<span class="slider"></span>
-				</label>
-				if r.UseBackup {
-					<strong>backup</strong>
-				} else {
-					<span class="text-muted">backup</span>
-				}
-				<span class="text-muted">({ itoa(r.BackupPort) })</span>
-			</span>
-		}
-	</span>
 }

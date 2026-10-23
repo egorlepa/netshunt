@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -170,7 +171,7 @@ func TestGeositeImportCreatesReferenceAndRemoveDeletesIt(t *testing.T) {
 	if _, err := store.Get("DUCKDUCKGO"); err == nil {
 		t.Fatal("shunt survived remove")
 	}
-	if !strings.Contains(resp.Body.String(), "Import") {
+	if !strings.Contains(resp.Body.String(), "Add as shunt") || strings.Contains(resp.Body.String(), "in shunts") {
 		t.Fatalf("row after remove:\n%s", resp.Body.String())
 	}
 	if resp := do(t, s, http.MethodDelete, "/geosite/import/manual"); resp.Code != http.StatusConflict {
@@ -182,12 +183,18 @@ func TestGeositePageFromIndex(t *testing.T) {
 	s, store, gs, _, _ := newGeositeTestServer(t)
 	_ = store.AddGeositeShunt("NETFLIX", "geosite:netflix")
 	body := do(t, s, http.MethodGet, "/geosite").Body.String()
-	if !strings.Contains(body, `data-name="DUCKDUCKGO"`) || !strings.Contains(body, `data-name="NETFLIX"`) ||
-		strings.Count(body, "Imported") != 1 {
+	if !strings.Contains(body, `data-name="DUCKDUCKGO" data-used=""`) || !strings.Contains(body, `data-name="NETFLIX" data-used="NETFLIX"`) ||
+		strings.Count(body, ">in shunts<") != 1 || strings.Count(body, "Add as shunt") != 1 ||
+		strings.Contains(body, `as "NETFLIX"`) {
 		t.Fatalf("geosite page:\n%s", body)
 	}
+	for _, want := range []string{"<b>2</b> categories", "<b>5</b> domains", "<b>1</b> used as shunts", `id="gq"`, `id="gused"`, "weekly, Sun 04:00, next in "} {
+		if !strings.Contains(body, want) {
+			t.Errorf("geosite page lacks %s", want)
+		}
+	}
 	gs.downloaded = false
-	if body := do(t, s, http.MethodGet, "/geosite").Body.String(); !strings.Contains(body, "Download Database") {
+	if body := do(t, s, http.MethodGet, "/geosite").Body.String(); !strings.Contains(body, "Download database") {
 		t.Fatal("no download prompt without a database")
 	}
 }
@@ -201,8 +208,9 @@ func TestGeositePageFollowsRenamedShunt(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := do(t, s, http.MethodGet, "/geosite").Body.String()
-	if strings.Count(body, "Imported") != 1 {
-		t.Fatalf("renamed reference not shown as imported:\n%s", body)
+	if strings.Count(body, ">in shunts<") != 1 || !strings.Contains(body, `as &#34;Search&#34;`) && !strings.Contains(body, `as "Search"`) ||
+		!strings.Contains(body, `href="/shunts?q=Search"`) {
+		t.Fatalf("renamed reference not shown as used:\n%s", body)
 	}
 	// Importing again does not add a second reference.
 	if resp := do(t, s, http.MethodPost, "/geosite/import/DUCKDUCKGO"); resp.Code != http.StatusOK {
@@ -220,5 +228,53 @@ func TestGeositePageFollowsRenamedShunt(t *testing.T) {
 	}
 	if rec.mutations != 3 {
 		t.Fatalf("mutations %d", rec.mutations)
+	}
+}
+
+func TestGeositeImportAnswersUsedRow(t *testing.T) {
+	s, _, _, _, _ := newGeositeTestServer(t)
+	body := do(t, s, http.MethodPost, "/geosite/import/NETFLIX").Body.String()
+	if !strings.Contains(body, ">in shunts<") || !strings.Contains(body, `class="dot on"`) || strings.Contains(body, "Add as shunt") {
+		t.Fatalf("row after add:\n%s", body)
+	}
+}
+
+func TestGeositeEntriesPreview(t *testing.T) {
+	s, _, gs, _, _ := newGeositeTestServer(t)
+	resp := do(t, s, http.MethodGet, "/geosite/categories/NETFLIX/entries")
+	body := resp.Body.String()
+	if resp.Code != http.StatusOK || !strings.Contains(body, "domain:netflix.com") || !strings.Contains(body, "full:fast.com") || strings.Contains(body, "First ") {
+		t.Fatalf("preview %d:\n%s", resp.Code, body)
+	}
+	// Lower case works too: the index looks categories up case-insensitively.
+	if resp := do(t, s, http.MethodGet, "/geosite/categories/netflix/entries"); resp.Code != http.StatusOK {
+		t.Fatalf("lower case: %d", resp.Code)
+	}
+
+	big := make([]string, geositePreviewCap+20)
+	for i := range big {
+		big[i] = fmt.Sprintf("domain:d%d.example", i)
+	}
+	gs.cats["BIG"] = big
+	body = do(t, s, http.MethodGet, "/geosite/categories/BIG/entries").Body.String()
+	if n := strings.Count(body, `class="chip"`); n != geositePreviewCap {
+		t.Errorf("chips %d, want %d", n, geositePreviewCap)
+	}
+	if !strings.Contains(body, "First 500 of 520.") || strings.Contains(body, "d500.example") {
+		t.Errorf("cap note missing or too many entries")
+	}
+	if resp := do(t, s, http.MethodGet, "/geosite/categories/NOPE/entries"); resp.Code != http.StatusNotFound {
+		t.Fatalf("unknown category: %d", resp.Code)
+	}
+}
+
+func TestGeositeAutoUpdateAnswersScheduleText(t *testing.T) {
+	s, _, _, _, _ := newGeositeTestServer(t)
+	req := httptest.NewRequest(http.MethodPut, "/geosite/auto-update", strings.NewReader("schedule=bad"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid cron: %d", rec.Code)
 	}
 }

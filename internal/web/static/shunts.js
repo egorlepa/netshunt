@@ -24,6 +24,8 @@
     return esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + term.length)) + '</mark>' + esc(s.slice(i + term.length));
   }
   function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+  // fmtH is fmt with the thousands gap element the server renders.
+  function fmtH(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '<i class="k"></i>'); }
   function term() { return q.value.trim().toLowerCase(); }
   function toast(message, type) { htmx.trigger(document.body, 'showToast', { message: message, type: type || 'success' }); }
   function flash(row) { row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); }
@@ -49,7 +51,7 @@
       c.firstElementChild.innerHTML = t && hit ? hl(v, t).replace(/<mark>/g, '<em>').replace(/<\/mark>/g, '</em>') : esc(v);
     });
     var ec = row.querySelector('[data-role=ecount]');
-    if (ec) ec.textContent = t ? n + ' of ' + fmt(chips.length) : '';
+    if (ec) ec.innerHTML = t ? n + ' of ' + fmtH(chips.length) : '';
   }
 
   // An open row's entry filter takes the global search term when the term
@@ -84,7 +86,7 @@
       row.classList.toggle('hidden', !hit);
       if (hit) shown++;
       if (row.classList.contains('on')) on++;
-      var c = row.querySelector('.head .count');
+      var c = row.querySelector('.head .num');
       entries += c ? +c.dataset.n || 0 : 0;
       row.querySelector('.name .t').innerHTML = hl(name, t);
       var d = row.querySelector('.head .desc');
@@ -95,9 +97,10 @@
     });
     document.getElementById('n-on').textContent = on;
     document.getElementById('n-all').textContent = all.length;
-    document.getElementById('n-entries').textContent = fmt(entries);
-    document.getElementById('n-match').hidden = !t;
-    document.getElementById('n-match-v').textContent = shown;
+    document.getElementById('n-entries').innerHTML = fmtH(entries);
+    var nm = document.getElementById('n-match');
+    nm.hidden = !t;
+    nm.innerHTML = t ? '<b>' + shown + '</b> of ' + all.length : '';
     var nothing = all.length > 0 && shown === 0;
     document.getElementById('empty').hidden = !nothing;
     if (list()) list().classList.toggle('none', nothing);
@@ -275,7 +278,7 @@
   document.addEventListener('pointermove', function (ev) {
     if (!drag) return;
     place(ev);
-    var top = page.querySelector('.toolbar').getBoundingClientRect().bottom + 24;
+    var top = page.querySelector('.listbar').getBoundingClientRect().bottom + 24;
     if (ev.clientY < top) window.scrollBy(0, -10); else if (ev.clientY > innerHeight - 56) window.scrollBy(0, 10);
     var l = list();
     var others = rows().filter(function (el) { return el !== drag.row && !el.classList.contains('hidden'); });
@@ -337,6 +340,12 @@
       htmx.ajax('GET', '/shunts', { target: '#shunt-list', select: '#shunt-list', swap: 'outerHTML' });
     });
   }
+
+  // Links from other pages: /shunts?q=NAME prefills the search,
+  // /shunts?import=1 opens the import form.
+  var params = new URLSearchParams(location.search);
+  if (params.get('q')) q.value = params.get('q');
+  if (params.get('import')) toggleForm('import-form');
 
   refresh(true);
 })();

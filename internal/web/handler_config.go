@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
-	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
@@ -74,47 +76,33 @@ func (s *Server) handleActionReconcile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) handleSwitchProxy(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	cfg, err := config.Load()
+// handleExportConfig downloads config.yaml as it is on disk (the live
+// config, marshalled, when the file cannot be read).
+func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
+	data, err := os.ReadFile(s.configFile)
 	if err != nil {
-		errorResponse(w, err.Error(), http.StatusInternalServerError)
+		data, err = yaml.Marshal(s.Config.Load())
+		if err != nil {
+			errorResponse(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=netshunt-config.yaml")
+	_, _ = w.Write(data)
+}
+
+// handleFlushTracker drops every DNS-tracked domain -> IP mapping and the
+// kernel members only they explained; static entries stay. The IPs come
+// back on the next DNS answer for their domains.
+func (s *Server) handleFlushTracker(w http.ResponseWriter, r *http.Request) {
+	if s.Tracker == nil {
+		errorResponse(w, "tracker not available", http.StatusServiceUnavailable)
 		return
 	}
-	if cfg.Routing.BackupPort <= 0 {
-		errorResponse(w, "Backup port not configured", http.StatusBadRequest)
-		return
-	}
-
-	oldPort := cfg.Routing.ActivePort()
-	cfg.Routing.UseBackup = !cfg.Routing.UseBackup
-	if err := config.Save(cfg); err != nil {
-		errorResponse(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.Config.Store(cfg)
-
-	if err := s.Reconciler.SwitchProxy(ctx); err != nil {
-		s.Logger.Error("switch proxy failed", "error", err)
-		errorResponse(w, "Switch failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Drop only TCP conntrack entries whose reply source port is the old proxy
-	// port - these are the live connections still flowing through it. Other
-	// traffic on the router (DNS, LAN-LAN, non-shunted) untouched.
-	// --reply-port-src is only available with -p tcp.
-	if err := platform.RunSilent(ctx, "conntrack", "-D", "-p", "tcp", "--reply-port-src", fmt.Sprintf("%d", oldPort)); err != nil {
-		s.Logger.Debug("conntrack flush returned non-zero (likely no matches)", "old_port", oldPort, "error", err)
-	}
-
-	target := "primary"
-	if cfg.Routing.UseBackup {
-		target = "backup"
-	}
-	toastTrigger(w, "Switched to "+target+" proxy ("+fmt.Sprintf("%d", cfg.Routing.ActivePort())+")", "success")
-	s.render(r, w, templates.ProxySwitch(cfg.Routing))
+	n := s.Tracker.FlushDynamic(r.Context())
+	toastTrigger(w, fmt.Sprintf("Tracker flushed: %d IPs removed", n), "success")
+	w.WriteHeader(http.StatusOK)
 }
 
 // applyDNSUpstreams hands cfg's upstream list to the running forwarder,
@@ -133,13 +121,7 @@ func settingsFromForm(cfg *config.Config, r *http.Request) error {
 	if v := r.FormValue("routing_local_port"); v != "" {
 		_, _ = fmt.Sscanf(v, "%d", &cfg.Routing.LocalPort)
 	}
-	cfg.Routing.BackupPort = 0
-	if v := r.FormValue("routing_backup_port"); v != "" {
-		_, _ = fmt.Sscanf(v, "%d", &cfg.Routing.BackupPort)
-	}
-	if cfg.Routing.BackupPort <= 0 {
-		cfg.Routing.UseBackup = false
-	}
+	// backup_port is no longer edited here; a value in config.yaml is kept.
 
 	// DNS.
 	if v := r.FormValue("dns_listen_addr"); v != "" {

@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -16,8 +18,76 @@ import (
 )
 
 func (s *Server) handleBlocklistPage(w http.ResponseWriter, r *http.Request) {
+	s.render(r, w, templates.BlocklistPage(s.blocklistPageData()))
+}
+
+func (s *Server) blocklistPageData() templates.BlocklistPageData {
 	bl := s.Config.Load().Blocklist
-	s.render(r, w, templates.BlocklistPage(bl.Enabled, bl.Response, bl.AutoUpdate, s.blocklistSourceViews()))
+	schedule := bl.AutoUpdate.Schedule
+	if schedule == "" {
+		schedule = config.DefaultBlocklistSchedule
+	}
+	now := time.Now()
+	return templates.BlocklistPageData{
+		Enabled:      bl.Enabled,
+		Response:     bl.Response,
+		AutoEnabled:  bl.AutoUpdate.Enabled,
+		Schedule:     schedule,
+		ScheduleText: templates.ScheduleText(schedule, bl.AutoUpdate.Enabled, now),
+		Sources:      s.blocklistSourceViews(),
+		Stats:        s.blocklistStats(),
+		Now:          now,
+	}
+}
+
+// blocklistStats reads the forwarder's live blocklist matcher.
+func (s *Server) blocklistStats() templates.BlocklistStats {
+	if s.Forwarder == nil {
+		return templates.BlocklistStats{}
+	}
+	m := s.Forwarder.Blocklist()
+	return templates.BlocklistStats{Domains: m.Len(), AppliedAt: m.BuiltAt(), MemBytes: m.SizeBytes()}
+}
+
+// renderBlocklistStrip answers a change that may rebuild the matcher with
+// the strip, swapped out of band (the request itself swaps nothing).
+func (s *Server) renderBlocklistStrip(w http.ResponseWriter, r *http.Request) {
+	s.render(r, w, templates.BlocklistStrip(s.blocklistStats(), true))
+}
+
+// handleBlocklistCheck answers "Test a domain" from the live matcher; no
+// DNS query is sent.
+func (s *Server) handleBlocklistCheck(w http.ResponseWriter, r *http.Request) {
+	domain := normalizeCheckDomain(r.URL.Query().Get("domain"))
+	if domain == "" {
+		errorResponse(w, "Type a domain", http.StatusBadRequest)
+		return
+	}
+	var suffix string
+	var blocked bool
+	if s.Forwarder != nil {
+		suffix, blocked = s.Forwarder.Blocklist().MatchSuffix(domain)
+	}
+	s.render(r, w, templates.BlocklistCheck(domain, suffix, blocked, s.Config.Load().Blocklist.Enabled))
+}
+
+// normalizeCheckDomain turns what people paste (a URL, upper case, a
+// trailing dot) into the lowercase query name the forwarder matches.
+func normalizeCheckDomain(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if i := strings.Index(v, "://"); i >= 0 {
+		v = v[i+3:]
+	}
+	if i := strings.IndexAny(v, "/?#"); i >= 0 {
+		v = v[:i]
+	}
+	if i := strings.LastIndexByte(v, '@'); i >= 0 {
+		v = v[i+1:]
+	}
+	if h, _, err := net.SplitHostPort(v); err == nil {
+		v = h
+	}
+	return strings.TrimSuffix(v, ".")
 }
 
 func (s *Server) handleBlocklistToggleEnabled(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +118,7 @@ func (s *Server) handleBlocklistToggleEnabled(w http.ResponseWriter, r *http.Req
 	} else {
 		toastTrigger(w, "Blocklist disabled", "success")
 	}
-	w.WriteHeader(http.StatusOK)
+	s.renderBlocklistStrip(w, r)
 }
 
 func (s *Server) handleBlocklistResponse(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +171,7 @@ func (s *Server) handleBlocklistSourceToggle(w http.ResponseWriter, r *http.Requ
 		errorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	s.renderBlocklistStrip(w, r)
 }
 
 func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +201,8 @@ func (s *Server) handleBlocklistSourceUpdate(w http.ResponseWriter, r *http.Requ
 		msg = fmt.Sprintf("%s unchanged (%d domains)", preset.Name, count)
 	}
 	toastTrigger(w, msg, "success")
-	s.render(r, w, templates.BlocklistSourceRow(templates.SourceView{Preset: *preset, State: st}))
+	s.render(r, w, templates.BlocklistSourceRow(templates.SourceView{Preset: *preset, State: st}, time.Now()))
+	s.renderBlocklistStrip(w, r)
 }
 
 func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request) {
@@ -144,8 +215,7 @@ func (s *Server) handleBlocklistUpdateAll(w http.ResponseWriter, r *http.Request
 	} else {
 		toastTrigger(w, fmt.Sprintf("Updated %d, %d failed", success, failed), "error")
 	}
-	bl := s.Config.Load().Blocklist
-	s.render(r, w, templates.BlocklistContent(bl.Enabled, bl.Response, bl.AutoUpdate, s.blocklistSourceViews()))
+	s.render(r, w, templates.BlocklistContent(s.blocklistPageData()))
 }
 
 // blocklistUpdateTimeout bounds a UI-triggered update once it no longer
@@ -197,7 +267,7 @@ func (s *Server) handleBlocklistAutoUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	toastTrigger(w, "Auto-update settings applied", "success")
-	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, templates.ScheduleText(schedule, enabled, time.Now()))
 }
 
 // UpdateAllBlocklistSources fetches every enabled source sequentially and

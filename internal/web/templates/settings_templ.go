@@ -8,8 +8,15 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/egorlepa/netshunt/internal/config"
+import (
+	"strings"
 
+	"github.com/egorlepa/netshunt/internal/config"
+)
+
+// SettingsPage is one form of full-width groups; the sticky save bar shows
+// whether anything differs from the loaded values (/static/settings.js).
+// The Maintenance group is outside the saved values.
 func SettingsPage(cfg *config.Config) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -43,177 +50,183 @@ func SettingsPage(cfg *config.Config) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"mb-16\">Settings</h1><form hx-put=\"/settings\" hx-swap=\"none\" hx-disabled-elt=\"find button[type='submit']\"><div class=\"card mb-16\"><h2>Routing</h2><div class=\"field\"><label>Local Port</label> <input type=\"number\" name=\"routing_local_port\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"settings\"><div class=\"toolbar plain\"><h1>Settings</h1><div class=\"actions\"><a class=\"btn\" href=\"/settings/export\" download>Export</a></div></div><form id=\"sform\" hx-put=\"/settings\" hx-swap=\"none\" hx-disabled-elt=\"find .savebar button\"><div class=\"group\"><h2>Routing</h2><div class=\"field narrow\"><label for=\"s-port\">Proxy port</label><div class=\"h\">Local transparent proxy. TCP via REDIRECT, UDP via TPROXY. A dead port fails closed.</div><div class=\"c\"><input id=\"s-port\" class=\"mono\" type=\"number\" name=\"routing_local_port\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(cfg.Routing.LocalPort))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 13, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 27, Col: 128}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" min=\"1\" max=\"65535\"></div><div class=\"field\"><label>Backup Port <span class=\"text-muted\">(optional, enables manual failover)</span></label> <input type=\"number\" name=\"routing_backup_port\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" min=\"1\" max=\"65535\" autocomplete=\"off\"></div></div><div class=\"field\"><label for=\"s-excl\">Excluded networks</label><div class=\"h\">IPv4 CIDRs that never go through the proxy, one per line. The kill switch returns early for these.</div><div class=\"c\"><textarea id=\"s-excl\" name=\"excluded_networks\" rows=\"3\" spellcheck=\"false\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
-			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(itoaOrEmpty(cfg.Routing.BackupPort))
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(joinLines(cfg.ExcludedNetworks))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 17, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 32, Col: 129}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" min=\"0\" max=\"65535\" placeholder=\"0 = disabled\"></div><div class=\"field\"><label>Excluded Networks <span class=\"text-muted\">(one IPv4 CIDR per line, bypasses tunnel)</span></label> <textarea name=\"excluded_networks\" rows=\"4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</textarea></div></div></div><div class=\"group\"><h2>DNS</h2><div class=\"field narrow\"><label for=\"s-listen\">Forwarder listen</label><div class=\"h\">Address the built-in forwarder binds. Clients are redirected here on every intercepted interface.</div><div class=\"c\"><input id=\"s-listen\" class=\"mono\" type=\"text\" name=\"dns_listen_addr\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(joinLines(cfg.ExcludedNetworks))
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.DNS.ListenAddr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 21, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 40, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</textarea></div></div><div class=\"grid-2 mb-16\"><div class=\"card\"><h2>DNS</h2><div class=\"field\"><label>Forwarder Listen Address</label> <input type=\"text\" name=\"dns_listen_addr\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" autocomplete=\"off\" spellcheck=\"false\"></div></div><div class=\"field\"><label for=\"s-up\">DoH upstreams</label><div class=\"h\">Every query is sent to all of them, the first valid answer wins. URL with an IP host, then the TLS name. Empty = defaults.</div><div class=\"c\"><textarea id=\"s-up\" name=\"dns_upstreams\" rows=\"3\" spellcheck=\"false\" placeholder=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.DNS.ListenAddr)
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(config.FormatDNSUpstreams(config.DefaultDNSUpstreams()))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 29, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 46, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></div><div class=\"field\"><label>DNS Upstreams <span class=\"text-muted\">(DNS-over-HTTPS, one per line: URL with an IP host, then the TLS name; empty = defaults)</span></label> <textarea name=\"dns_upstreams\" rows=\"3\" placeholder=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(config.FormatDNSUpstreams(config.DefaultDNSUpstreams()))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(config.FormatDNSUpstreams(cfg.DNS.Upstreams))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 33, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 46, Col: 194}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</textarea><div class=\"after\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(config.FormatDNSUpstreams(cfg.DNS.Upstreams))
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(upstreamsNote(cfg.DNS))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 33, Col: 164}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 47, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</textarea></div></div><div class=\"card\"><h2>Network</h2><div class=\"field\"><label>Entware Interface</label> <input type=\"text\" name=\"net_interface\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div></div></div><div class=\"group\"><h2>Network</h2><div class=\"field narrow\"><label for=\"s-if\">Entware interface</label><div class=\"h\">The LAN bridge whose traffic is intercepted.</div><div class=\"c\"><input id=\"s-if\" class=\"mono\" type=\"text\" name=\"net_interface\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Network.EntwareInterface)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 40, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 56, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></div><div class=\"field\"><label>Additional Interfaces <span class=\"text-muted\">(one per line, e.g. awg0 - same shunt as the main interface)</span></label> <textarea name=\"additional_interfaces\" rows=\"2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" autocomplete=\"off\" spellcheck=\"false\"></div></div><div class=\"field narrow\"><label for=\"s-add\">Additional interfaces</label><div class=\"h\">One per line. A VPN TUN here gets the same shunts, e.g. awg0.</div><div class=\"c\"><textarea id=\"s-add\" name=\"additional_interfaces\" rows=\"2\" spellcheck=\"false\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(joinLines(cfg.Network.AdditionalInterfaces))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 44, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 61, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</textarea></div><div class=\"field\"><label>IPSet Table Name</label> <input type=\"text\" name=\"ipset_table\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</textarea></div></div><div class=\"field narrow\"><label for=\"s-ipset\">ipset name</label><div class=\"h\">hash:net set shared by every interface and the kill switch.</div><div class=\"c\"><input id=\"s-ipset\" class=\"mono\" type=\"text\" name=\"ipset_table\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.IPSet.TableName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 48, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 66, Col: 112}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></div></div></div><div class=\"card mb-16\"><h2>Daemon</h2><div class=\"field\"><label>Web Listen Address</label> <input type=\"text\" name=\"web_listen\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" autocomplete=\"off\" spellcheck=\"false\"></div></div></div><div class=\"group\"><h2>Daemon</h2><div class=\"field narrow\"><label for=\"s-web\">Web listen</label><div class=\"h\">This UI and the HTTP API. Reachable from LAN and awg0.</div><div class=\"c\"><input id=\"s-web\" class=\"mono\" type=\"text\" name=\"web_listen\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(cfg.Daemon.WebListen)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 56, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 74, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"></div><div class=\"field\"><label>Log Level</label> <select name=\"log_level\"><option value=\"debug\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" autocomplete=\"off\" spellcheck=\"false\"></div></div><div class=\"field narrow\"><label for=\"s-log\">Log level</label><div class=\"h\">Debug also routes library logs into the file.</div><div class=\"c\"><select id=\"s-log\" name=\"log_level\" autocomplete=\"off\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if cfg.Daemon.LogLevel == "debug" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " selected")
+			for _, l := range []string{"debug", "info", "warn", "error"} {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<option value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var13 string
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(l)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 82, Col: 26}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if cfg.Daemon.LogLevel == l {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " selected")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, ">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var14 string
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(l)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `templates/settings.templ`, Line: 82, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, ">debug</option> <option value=\"info\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if cfg.Daemon.LogLevel == "info" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, ">info</option> <option value=\"warn\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if cfg.Daemon.LogLevel == "warn" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ">warn</option> <option value=\"error\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if cfg.Daemon.LogLevel == "error" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, ">error</option></select></div></div><button class=\"btn btn-accent\" type=\"submit\">Save &amp; Apply <span class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</select></div></div></div><div class=\"group\" id=\"maint\"><h2>Maintenance</h2><div class=\"field\"><label>Shunts</label><div class=\"h\">YAML export and import live on the Shunts page.</div><div class=\"c btns\"><a class=\"btn btn-sm\" href=\"/shunts/export\" download>Export shunts</a> <a class=\"btn btn-sm\" href=\"/shunts?import=1\">Import</a></div></div><div class=\"field\"><label>Danger zone</label><div class=\"h\">Flushing the tracker drops every dynamic IP; they come back on the next DNS answer.</div><div class=\"c btns\"><div class=\"danger\"><button type=\"button\" class=\"btn btn-sm btn-danger\" data-act=\"arm\">Flush tracker</button> <span class=\"confirm\">Drop every DNS-tracked IP from the set? <button type=\"button\" class=\"btn btn-sm btn-danger\" hx-post=\"/actions/flush-tracker\" hx-swap=\"none\" hx-disabled-elt=\"this\" data-act=\"flush\">Flush</button> <button type=\"button\" class=\"btn btn-sm btn-ghost\" data-act=\"disarm\">Cancel</button></span></div></div></div></div><div class=\"savebar\" id=\"savebar\"><span class=\"grow\"></span> <button class=\"btn btn-ghost\" type=\"button\" id=\"discard\">Discard</button> <button class=\"btn btn-accent\" type=\"submit\">Save and apply <span class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></div></form></div><script src=\"/static/settings.js\"></script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -225,6 +238,18 @@ func SettingsPage(cfg *config.Config) templ.Component {
 		}
 		return nil
 	})
+}
+
+// upstreamsNote is the line under the DoH upstreams field.
+func upstreamsNote(d config.DNSConfig) string {
+	if len(d.Upstreams) == 0 {
+		names := make([]string, 0, 3)
+		for _, u := range config.DefaultDNSUpstreams() {
+			names = append(names, u.SNI)
+		}
+		return "Using defaults: " + strings.Join(names, ", ") + "."
+	}
+	return plural(len(d.Upstreams), "upstream configured.", "upstreams configured.")
 }
 
 var _ = templruntime.GeneratedTemplate

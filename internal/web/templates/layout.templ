@@ -26,12 +26,15 @@ templ Layout(title string, activePage string) {
 					<a href="/blocklist" if activePage == "blocklist" { class="active" }>Blocklist</a>
 					<a href="/diagnostics" if activePage == "diagnostics" { class="active" }>Diagnostics</a>
 					<a href="/settings" if activePage == "settings" { class="active" }>Settings</a>
+					if AppVersion != "" {
+						<span class="ver">v{ AppVersion }</span>
+					}
 				</div>
 			</div>
 		</nav>
-		<div class="container">
+		<main class="container">
 			{ children... }
-		</div>
+		</main>
 		<div id="toast"></div>
 		<script>
 			(function() {
@@ -42,11 +45,31 @@ templ Layout(title string, activePage string) {
 					var d = new Date(iso);
 					if (isNaN(d.getTime())) return;
 					var hh = pad(d.getHours()), mm = pad(d.getMinutes()), ss = pad(d.getSeconds());
-					if (el.getAttribute("data-fmt") === "time") {
+					var abs = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hh + ":" + mm;
+					var f = el.getAttribute("data-fmt");
+					if (f === "time") {
 						el.textContent = hh + ":" + mm + ":" + ss;
+					} else if (f === "rel") {
+						el.textContent = relTime(d, new Date());
+						el.title = abs;
 					} else {
-						el.textContent = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + hh + ":" + mm;
+						el.textContent = abs;
 					}
+				}
+				// relTime mirrors templates.RelTime (Go) in the viewer's time zone.
+				function relTime(t, now) {
+					var hm = pad(t.getHours()) + ":" + pad(t.getMinutes());
+					var day = function(x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+					var days = Math.round((day(now) - day(t)) / 86400000);
+					if (t > now || days === 0) return "today " + hm;
+					if (days === 1) return "yesterday " + hm;
+					if (days < 30) return days + " days ago";
+					var months = (now.getFullYear() - t.getFullYear()) * 12 + now.getMonth() - t.getMonth();
+					if (now.getDate() < t.getDate()) months--;
+					if (months < 1) months = 1;
+					if (months < 12) return months === 1 ? "1 month ago" : months + " months ago";
+					var years = Math.floor(months / 12);
+					return years === 1 ? "1 year ago" : years + " years ago";
 				}
 				function fmtAll(root) {
 					(root || document).querySelectorAll("time[data-fmt]").forEach(fmt);
@@ -110,8 +133,8 @@ templ Layout(title string, activePage string) {
 				}
 				// Completion is tied to the XHR itself, not to htmx:afterRequest:
 				// that event is dispatched on the element that fired the request,
-				// and when the request swaps that element out of the DOM (the
-				// dashboard Refresh button lives inside the content it replaces)
+				// and when the request swaps that element out of the DOM (a button
+				// inside the content it replaces)
 				// the event never bubbles to body and the bar would stay at 90%.
 				document.body.addEventListener("htmx:beforeRequest", function(e) {
 					if (isPoll(e.detail.elt)) return;

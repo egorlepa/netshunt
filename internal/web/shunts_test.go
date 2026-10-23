@@ -21,7 +21,6 @@ type countingReconciler struct{ mutations int }
 func (c *countingReconciler) Reconcile(context.Context) error      { return nil }
 func (c *countingReconciler) ApplyMutation(context.Context) error  { c.mutations++; return nil }
 func (c *countingReconciler) ApplyBlocklist(context.Context) error { return nil }
-func (c *countingReconciler) SwitchProxy(context.Context) error    { return nil }
 
 func newShuntsTestServer(t *testing.T) (*Server, *shunt.Store, *countingReconciler) {
 	t.Helper()
@@ -161,7 +160,7 @@ func TestShuntsPageMarkup(t *testing.T) {
 		// geosite: lazy read-only chips, source shown when there is no description
 		`class="chips ro"`,
 		`hx-get="/shunts/NETFLIX/entries"`,
-		`<span class="desc src">geosite:netflix</span>`,
+		`<span class="muted desc src">geosite:netflix</span>`,
 		`>geosite</span>`,
 	} {
 		if !strings.Contains(body, want) {

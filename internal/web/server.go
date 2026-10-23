@@ -16,8 +16,10 @@ import (
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/geosite"
+	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
+	"github.com/egorlepa/netshunt/internal/web/templates"
 )
 
 //go:generate go tool templ generate
@@ -30,7 +32,6 @@ type Reconciler interface {
 	Reconcile(ctx context.Context) error
 	ApplyMutation(ctx context.Context) error
 	ApplyBlocklist(ctx context.Context) error
-	SwitchProxy(ctx context.Context) error
 }
 
 // Scheduler is the optional interface the web server uses to apply auto-update
@@ -46,6 +47,9 @@ type TrackerStats interface {
 	// plus static entries); it spares the dashboard an `ipset list` exec on
 	// every poll.
 	Members() int
+	// FlushDynamic drops every DNS-tracked mapping (statics stay) and
+	// returns the number of kernel members removed.
+	FlushDynamic(ctx context.Context) int
 }
 
 // GeositeIndex is the read side of the geosite database the web server
@@ -77,6 +81,10 @@ type Server struct {
 	Version    string
 	mux        *http.ServeMux
 	ready      atomic.Bool
+
+	health     *healthRunner
+	ksDrops    *ksCounter
+	configFile string
 }
 
 // SetScheduler attaches a Scheduler after construction (the scheduler is
@@ -104,7 +112,11 @@ func NewServer(cfg *config.Live, shunts *shunt.Store, blocklistStore *blocklist.
 		Logger:     logger,
 		Version:    version,
 		mux:        http.NewServeMux(),
+		ksDrops:    &ksCounter{read: readKillSwitchDrops},
+		configFile: platform.ConfigFile,
 	}
+	s.health = newHealthRunner(func() []healthcheck.Check { return healthcheck.Checks(s.Config.Load(), s.Shunts) })
+	templates.AppVersion = version
 	s.routes()
 	return s
 }
@@ -116,7 +128,8 @@ func (s *Server) routes() {
 
 	// Pages.
 	s.mux.HandleFunc("GET /{$}", s.handleDashboard)
-	s.mux.HandleFunc("GET /dashboard-content", s.handleDashboardContent)
+	s.mux.HandleFunc("GET /dashboard/health", s.handleDashboardHealth)
+	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 	s.mux.HandleFunc("GET /shunts", s.handleShuntsPage)
 	s.mux.HandleFunc("GET /shunts/{name}", s.handleShuntDetail)
 	s.mux.HandleFunc("GET /shunts/{name}/entries", s.handleShuntEntries)
@@ -144,6 +157,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /geosite/download", s.handleGeositeDownload)
 	s.mux.HandleFunc("POST /geosite/update", s.handleGeositeUpdate)
 	s.mux.HandleFunc("PUT /geosite/auto-update", s.handleGeositeAutoUpdate)
+	s.mux.HandleFunc("GET /geosite/categories/{category}/entries", s.handleGeositeEntries)
 	s.mux.HandleFunc("POST /geosite/import/{category}", s.handleGeositeImport)
 	s.mux.HandleFunc("DELETE /geosite/import/{category}", s.handleGeositeRemove)
 
@@ -155,13 +169,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /blocklist/sources/{id}/update", s.handleBlocklistSourceUpdate)
 	s.mux.HandleFunc("POST /blocklist/update", s.handleBlocklistUpdateAll)
 	s.mux.HandleFunc("PUT /blocklist/auto-update", s.handleBlocklistAutoUpdate)
+	s.mux.HandleFunc("GET /blocklist/check", s.handleBlocklistCheck)
 
 	// Settings.
 	s.mux.HandleFunc("PUT /settings", s.handleUpdateSettings)
+	s.mux.HandleFunc("GET /settings/export", s.handleExportConfig)
 
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
-	s.mux.HandleFunc("POST /actions/switch-proxy", s.handleSwitchProxy)
+	s.mux.HandleFunc("POST /actions/flush-tracker", s.handleFlushTracker)
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {

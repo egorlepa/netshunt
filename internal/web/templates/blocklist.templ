@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"time"
+
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 )
@@ -11,155 +13,199 @@ type SourceView struct {
 	State  blocklist.SourceState
 }
 
-templ BlocklistPage(enabled bool, response config.BlocklistResponse, autoUpdate config.AutoUpdateConfig, sources []SourceView) {
+// BlocklistStats is the live matcher as the strip shows it.
+type BlocklistStats struct {
+	Domains   int       // entries of the installed matcher
+	AppliedAt time.Time // when it was built, zero before the first build
+	MemBytes  int       // SuffixSet data + offsets
+}
+
+// BlocklistPageData is what the Blocklist page renders.
+type BlocklistPageData struct {
+	Enabled      bool
+	Response     config.BlocklistResponse
+	AutoEnabled  bool
+	Schedule     string
+	ScheduleText string
+	Sources      []SourceView
+	Stats        BlocklistStats
+	Now          time.Time
+}
+
+templ BlocklistPage(d BlocklistPageData) {
 	@Layout("Blocklist", "blocklist") {
 		<div id="blocklist-content">
-			@BlocklistContent(enabled, response, autoUpdate, sources)
+			@BlocklistContent(d)
 		</div>
+		<script>
+			// A source toggle flips its dot at once; a failed request flips both back.
+			document.addEventListener('change', function (ev) {
+				if (!ev.target.matches('.b-head .tg input')) return;
+				ev.target.closest('.head').querySelector('.dot').classList.toggle('on', ev.target.checked);
+			});
+			document.body.addEventListener('htmx:afterRequest', function (e) {
+				var elt = e.detail.elt;
+				if (e.detail.successful || !elt.matches || !elt.matches('.b-head .tg input')) return;
+				elt.checked = !elt.checked;
+				elt.closest('.head').querySelector('.dot').classList.toggle('on', elt.checked);
+			});
+		</script>
 	}
 }
 
-templ BlocklistContent(enabled bool, response config.BlocklistResponse, autoUpdate config.AutoUpdateConfig, sources []SourceView) {
-	<div class="flex-between mb-16">
+templ BlocklistContent(d BlocklistPageData) {
+	<div class="toolbar plain">
 		<h1>Blocklist</h1>
-		<button
-			class="btn btn-accent"
-			hx-post="/blocklist/update"
-			hx-target="#blocklist-content"
-			hx-swap="innerHTML"
-			hx-indicator="#blocklist-spinner"
-		>
-			Update Enabled Sources
-			<span id="blocklist-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-		</button>
-	</div>
-	<div class="card mb-16">
-		<form
-			hx-put="/blocklist/enabled"
-			hx-trigger="change"
-			hx-swap="none"
-			hx-indicator="#blocklist-enabled-spinner"
-			hx-disabled-elt="find input[name='enabled']"
-		>
-			<label>
-				<input type="checkbox" autocomplete="off" name="enabled" if enabled { checked } value="1"/>
-				Enable DNS blocking
-				<span id="blocklist-enabled-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-			</label>
-		</form>
-		<div class="mt-8">
-			<form
-				hx-put="/blocklist/response"
-				hx-trigger="change"
-				hx-swap="none"
-				hx-indicator="#blocklist-response-spinner"
-				hx-disabled-elt="find select[name='response']"
+		<div class="actions">
+			<button
+				class="btn"
+				hx-post="/blocklist/update"
+				hx-target="#blocklist-content"
+				hx-swap="innerHTML"
+				hx-disabled-elt="this"
 			>
-				<label class="text-muted text-sm">Response when blocked</label>
-				<select name="response">
-					<option value="nxdomain" if response == config.BlocklistResponseNXDomain { selected }>NXDOMAIN (recommended)</option>
-					<option value="nodata" if response == config.BlocklistResponseNoData { selected }>NODATA (empty answer)</option>
-					<option value="zero" if response == config.BlocklistResponseZero { selected }>0.0.0.0 / :: sinkhole</option>
-				</select>
-				<span id="blocklist-response-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-			</form>
+				Update enabled
+				<span class="htmx-indicator"><span class="spinner"></span></span>
+			</button>
 		</div>
-		<div class="mt-8">
-			<form
-				hx-put="/blocklist/auto-update"
-				hx-trigger="change"
-				hx-swap="none"
-				hx-indicator="#blocklist-au-spinner"
-				class="flex gap-8 items-center flex-wrap"
-			>
-				<label class="flex gap-8 items-center">
-					<input type="checkbox" autocomplete="off" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
-					Auto-update enabled sources
-				</label>
-				<label class="text-muted text-sm ml-8">cron</label>
+	</div>
+	<div class="inline-form">
+		<span class="lbl">
+			<label class="tg">
 				<input
-					type="text"
-					name="schedule"
-					value={ autoUpdateSchedule(autoUpdate, config.DefaultBlocklistSchedule) }
-					placeholder={ config.DefaultBlocklistSchedule }
-					class="mono"
-					style="width:140px"
-				/>
-				<span class="text-muted text-sm">5-field cron expression</span>
-				<span id="blocklist-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-			</form>
-		</div>
-	</div>
-	<div class="card">
-		<div class="table-wrap">
-			<table id="blocklist-sources">
-				<thead>
-					<tr>
-						<th>Enabled</th>
-						<th>Source</th>
-						<th>Domains</th>
-						<th>Last updated</th>
-						<th style="text-align:right">Action</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, sv := range sources {
-						@BlocklistSourceRow(sv)
+					type="checkbox"
+					id="bl-enabled"
+					name="enabled"
+					value="1"
+					autocomplete="off"
+					if d.Enabled {
+						checked
 					}
-				</tbody>
-			</table>
+					hx-put="/blocklist/enabled"
+					hx-trigger="change"
+					hx-swap="none"
+					hx-disabled-elt="this"
+				/>
+				<i></i>
+			</label>
+			<label for="bl-enabled">DNS blocking</label>
+		</span>
+		<span class="sep"></span>
+		<label>
+			Answer
+			<select name="response" hx-put="/blocklist/response" hx-trigger="change" hx-swap="none" hx-disabled-elt="this" autocomplete="off">
+				<option value="nxdomain" if d.Response == config.BlocklistResponseNXDomain { selected }>NXDOMAIN</option>
+				<option value="nodata" if d.Response == config.BlocklistResponseNoData { selected }>NODATA</option>
+				<option value="zero" if d.Response == config.BlocklistResponseZero { selected }>0.0.0.0</option>
+			</select>
+		</label>
+		<span class="sep"></span>
+		<form class="grp" hx-put="/blocklist/auto-update" hx-trigger="change" hx-target="#bcronh" hx-swap="innerHTML">
+			<label class="chk"><input type="checkbox" name="enabled" value="1" autocomplete="off" if d.AutoEnabled { checked }/> auto-update</label>
+			<input type="text" class="cron" name="schedule" value={ d.Schedule } aria-label="cron schedule" autocomplete="off" spellcheck="false"/>
+			<span class="muted" id="bcronh">{ d.ScheduleText }</span>
+		</form>
+	</div>
+	@BlocklistStrip(d.Stats, false)
+	<div class="list">
+		for _, sv := range d.Sources {
+			@BlocklistSourceRow(sv, d.Now)
+		}
+	</div>
+	<div class="sec">Test a domain</div>
+	<form class="inline-form check-form" hx-get="/blocklist/check" hx-target="#bl-res" hx-swap="innerHTML">
+		<input type="text" name="domain" placeholder="ads.example.com" autocomplete="off" spellcheck="false" required/>
+		<button class="btn btn-sm" type="submit">Check</button>
+		<div class="check-res" id="bl-res"></div>
+	</form>
+}
+
+// BlocklistStrip is the live matcher summary; oob marks it for an
+// out-of-band swap after a change that rebuilds the matcher.
+templ BlocklistStrip(st BlocklistStats, oob bool) {
+	<div
+		class="strip"
+		id="bl-strip"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>
+		<span><b>@Num(st.Domains)</b> domains loaded</span>
+		<span>applied <b>@appliedAt(st.AppliedAt)</b></span>
+		<span>matcher <b>{ HumanBytes(int64(st.MemBytes)) }</b></span>
+	</div>
+}
+
+templ BlocklistSourceRow(sv SourceView, now time.Time) {
+	<div class="row" id={ "src-" + SlugID(sv.Preset.ID) } data-id={ sv.Preset.ID }>
+		<div class="head b-head">
+			<span class={ "dot", templ.KV("on", sv.State.Enabled) }></span>
+			<span class="name"><span class="t">{ sv.Preset.Name }</span></span>
+			<span class="num">@numOrDash(sv.State.DomainCount)</span>
+			if sv.State.LastError != "" {
+				<span class="muted err" title={ sv.State.LastError }>Update failed: { sv.State.LastError }</span>
+			} else {
+				<span class="muted" title={ sv.Preset.Description }>{ sv.Preset.Description }</span>
+			}
+			if sv.State.LastFetched.IsZero() {
+				<span class="muted when">never</span>
+			} else {
+				<span class="muted when">
+					<time datetime={ sv.State.LastFetched.UTC().Format(time.RFC3339) } data-fmt="rel" title={ sv.State.LastFetched.Format("2006-01-02 15:04") }>{ RelTime(sv.State.LastFetched, now) }</time>
+				</span>
+			}
+			<label class="tg" title="Use this source">
+				<input
+					type="checkbox"
+					name="enabled"
+					autocomplete="off"
+					if sv.State.Enabled {
+						checked
+					}
+					hx-put={ "/blocklist/sources/" + sv.Preset.ID + "/enabled" }
+					hx-trigger="change"
+					hx-swap="none"
+					hx-disabled-elt="this"
+				/>
+				<i></i>
+			</label>
+			<button
+				class="btn btn-sm"
+				hx-post={ "/blocklist/sources/" + sv.Preset.ID + "/update" }
+				hx-target={ "#src-" + SlugID(sv.Preset.ID) }
+				hx-swap="outerHTML"
+				hx-disabled-elt="this"
+			>
+				Update
+				<span class="htmx-indicator"><span class="spinner"></span></span>
+			</button>
 		</div>
 	</div>
 }
 
-templ BlocklistSourceRow(sv SourceView) {
-	<tr id={ "src-" + SlugID(sv.Preset.ID) } data-id={ sv.Preset.ID }>
-		<td data-col="enabled">
-			<input
-				type="checkbox" autocomplete="off"
-				name="enabled"
-				if sv.State.Enabled { checked }
-				hx-put={ "/blocklist/sources/" + sv.Preset.ID + "/enabled" }
-				hx-trigger="change"
-				hx-swap="none"
-				hx-indicator={ "#toggle-spinner-" + SlugID(sv.Preset.ID) }
-				hx-disabled-elt="this"
-			/>
-			<span id={ "toggle-spinner-" + SlugID(sv.Preset.ID) } class="htmx-indicator"><span class="spinner"></span></span>
-		</td>
-		<td data-col="source">
-			<div><strong>{ sv.Preset.Name }</strong></div>
-			<div class="text-muted text-sm">{ sv.Preset.Description }</div>
-		</td>
-		<td class="text-muted" data-col="domains">
-			if sv.State.DomainCount > 0 {
-				{ itoa(sv.State.DomainCount) }
-			} else {
-				<span class="text-muted">-</span>
-			}
-		</td>
-		<td class="text-muted text-sm" data-col="updated">
-			if !sv.State.LastFetched.IsZero() {
-				@LocalTime(sv.State.LastFetched, "datetime")
-			} else {
-				<span class="text-muted">never</span>
-			}
-			if sv.State.LastError != "" {
-				<div class="text-red text-sm">{ sv.State.LastError }</div>
-			}
-		</td>
-		<td style="text-align:right" data-col="action">
-			<button
-				class="btn btn-sm btn-accent"
-				hx-post={ "/blocklist/sources/" + sv.Preset.ID + "/update" }
-				hx-target={ "#src-" + SlugID(sv.Preset.ID) }
-				hx-swap="outerHTML"
-				hx-indicator={ "#spinner-" + SlugID(sv.Preset.ID) }
-				hx-disabled-elt="this"
-			>
-				Update
-				<span id={ "spinner-" + SlugID(sv.Preset.ID) } class="htmx-indicator"><span class="spinner"></span></span>
-			</button>
-		</td>
-	</tr>
+// BlocklistCheck answers "Test a domain".
+templ BlocklistCheck(domain, suffix string, blocked, enabled bool) {
+	if blocked && enabled {
+		<span class="bad">Blocked:</span> <b>{ domain }</b> by suffix <b>{ suffix }</b>.
+	} else if blocked {
+		<b>{ domain }</b> matches suffix <b>{ suffix }</b>, but DNS blocking is off.
+	} else {
+		<span class="ok">Not blocked:</span> <b>{ domain }</b> matches no loaded entry.
+	}
+}
+
+templ appliedAt(t time.Time) {
+	if t.IsZero() {
+		never
+	} else {
+		@LocalTime(t, "time")
+	}
+}
+
+templ numOrDash(n int) {
+	if n > 0 {
+		@Num(n)
+	} else {
+		-
+	}
 }

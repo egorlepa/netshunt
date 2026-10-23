@@ -2,101 +2,107 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egorlepa/netshunt/internal/healthcheck"
 	"github.com/egorlepa/netshunt/internal/platform"
 )
 
-templ DiagnosticsPage() {
+// DiagnosticsPage lists the health checks (each row fetches its own
+// result, so the list appears at once and fills in as checks finish) and
+// the in-memory log buffer with a client-side filter.
+templ DiagnosticsPage(names []string) {
 	@Layout("Diagnostics", "diagnostics") {
-		<h1 class="mb-16">Diagnostics</h1>
-		<div class="card mb-16">
-			<div class="flex-between mb-8">
-				<h2>Health Checks</h2>
-				<button class="btn btn-sm btn-accent" hx-get="/diagnostics/run" hx-target="#check-results" hx-swap="innerHTML">
-					Run Checks
-					<span class="htmx-indicator"><span class="spinner"></span></span>
-				</button>
+		<div id="diagnostics">
+			<div class="toolbar plain">
+				<h1>Diagnostics</h1>
+				<div class="actions">
+					<button class="btn" hx-post="/actions/reconcile" hx-swap="none" hx-disabled-elt="this">
+						Force reconcile
+						<span class="htmx-indicator"><span class="spinner"></span></span>
+					</button>
+					<button class="btn btn-accent" id="runchk" hx-get="/diagnostics/run" hx-target="#checks" hx-swap="innerHTML">Run checks</button>
+				</div>
 			</div>
-			<div id="check-results" hx-get="/diagnostics/run" hx-trigger="load" hx-swap="innerHTML">
-				<p class="text-muted text-sm">Running checks...</p>
+			<div class="strip"><span id="d-sum"><b id="d-pass">0</b> of <b id="d-total">{ itoa(len(names)) }</b> passed</span></div>
+			<div class="list" id="checks">
+				@DiagnosticsCheckList(names)
+			</div>
+			<div class="sec">Logs</div>
+			<div class="logs">
+				<div class="lt">
+					<input type="search" id="lq" placeholder="Filter messages and attributes" autocomplete="off"/>
+					<div class="lvl" role="group" aria-label="Level">
+						<button type="button" class="on" data-l="">All</button>
+						<button type="button" data-l="INFO">Info</button>
+						<button type="button" data-l="WARN">Warn</button>
+						<button type="button" data-l="ERROR">Error</button>
+					</div>
+					<label class="chk"><input type="checkbox" id="lwrap" autocomplete="off"/> wrap</label>
+					<button class="btn btn-sm" hx-get="/diagnostics/logs" hx-target="#logbody" hx-swap="innerHTML">Refresh</button>
+				</div>
+				<div class="logbody" id="logbody" hx-get="/diagnostics/logs" hx-trigger="load" hx-swap="innerHTML">
+					<div class="empty">Loading logs...</div>
+				</div>
 			</div>
 		</div>
-		<div class="card mb-16">
-			<h2 class="mb-8">Maintenance</h2>
-			<div class="flex gap-8 flex-wrap">
-				<button class="btn btn-accent" hx-post="/actions/reconcile" hx-swap="none" hx-disabled-elt="this">
-					Force Reconcile
-					<span class="htmx-indicator"><span class="spinner"></span></span>
-				</button>
-			</div>
-		</div>
-		<div class="card">
-			<div class="flex-between mb-8">
-				<h2>Logs</h2>
-				<button class="btn btn-sm" hx-get="/diagnostics/logs" hx-target="#log-lines" hx-swap="innerHTML">
-					Refresh
-				</button>
-			</div>
-			<div id="log-lines" hx-get="/diagnostics/logs" hx-trigger="load" hx-swap="innerHTML">
-				<p class="text-muted text-sm">Loading logs...</p>
-			</div>
-		</div>
+		<script src="/static/diagnostics.js"></script>
 	}
 }
 
+// DiagnosticsLogs renders the buffered log lines, newest first: time,
+// level, message, then the attributes as key=value with the keys dimmed.
 templ DiagnosticsLogs(entries []platform.LogEntry) {
 	if len(entries) == 0 {
-		<p class="text-muted text-sm">No log entries.</p>
+		<div class="empty">No log entries.</div>
 	} else {
-		<div class="log-viewer">
-			for _, e := range entries {
-				<div class="log-line" onclick="this.classList.toggle('expanded')">
-					<span class="log-time">@LocalTime(e.Time, "time")</span>
-					<span class={ logLevelClass(e.Level) }>{ e.Level }</span>
-					<span class="log-msg" title={ e.Msg }>{ e.Msg }</span>
-					if e.Attrs != "" {
-						<span class="log-attrs" title={ e.Attrs }>{ e.Attrs }</span>
+		for _, e := range entries {
+			<div class={ "ll", e.Level } data-l={ e.Level } data-s={ strings.ToLower(e.Msg + " " + attrsText(e)) }>
+				<span class="t">@LocalTime(e.Time, "time")</span>
+				<span class="l">{ e.Level }</span>
+				<span class="m" title={ e.Msg }>{ e.Msg }</span>
+				<span class="a" title={ attrsText(e) }>
+					for i, kv := range logAttrs(e) {
+						if i > 0 {
+							{ " " }
+						}
+						<em>{ kv.Key }=</em><span class="v">{ kv.Value }</span>
 					}
-				</div>
-			}
-		</div>
+				</span>
+			</div>
+		}
+		<div class="empty" id="lempty" hidden>No lines match.</div>
 	}
 }
 
-// DiagnosticsCheckList renders one placeholder row per check with a spinner.
-// Each row then fetches its own result via htmx, so the list appears instantly
-// and fills in ✓/✗ as each check completes.
+// DiagnosticsCheckList renders one placeholder row per check with a
+// spinning dot; each row then fetches its own result.
 templ DiagnosticsCheckList(names []string) {
-	<div class="check-list">
-		for i, name := range names {
-			<div
-				class="check-row"
-				id={ fmt.Sprintf("check-%d", i) }
-				hx-get={ fmt.Sprintf("/diagnostics/run/%d", i) }
-				hx-trigger="load"
-				hx-swap="outerHTML"
-			>
-				<span class="check-icon check-pending"><span class="spinner"></span></span>
-				<span class="check-name">{ name }</span>
-				<span class="check-detail text-muted">checking…</span>
+	for i, name := range names {
+		<div
+			class="row"
+			id={ fmt.Sprintf("check-%d", i) }
+			hx-get={ fmt.Sprintf("/diagnostics/run/%d", i) }
+			hx-trigger="load"
+			hx-swap="outerHTML"
+		>
+			<div class="head d-head">
+				<span class="dot spin"></span>
+				<span class="name"><span class="t">{ name }</span></span>
+				<span class="muted">checking</span>
+				<span class="num"></span>
 			</div>
-		}
-	</div>
+		</div>
+	}
 }
 
 templ DiagnosticsCheckResult(i int, r healthcheck.Result) {
-	<div class="check-row" id={ fmt.Sprintf("check-%d", i) }>
-		<span class="check-icon">
-			if r.Passed {
-				<span class="text-green">✓</span>
-			} else if r.Warn {
-				<span class="text-yellow">!</span>
-			} else {
-				<span class="text-red">✗</span>
-			}
-		</span>
-		<span class="check-name"><strong>{ r.Name }</strong></span>
-		<span class="check-detail text-muted" title={ r.Detail }>{ r.Detail }</span>
+	<div class="row" id={ fmt.Sprintf("check-%d", i) } data-passed?={ r.Passed }>
+		<div class="head d-head">
+			<span class={ "dot", templ.KV("on", r.Passed), templ.KV("warn", !r.Passed && r.Warn), templ.KV("bad", !r.Passed && !r.Warn) }></span>
+			<span class="name"><span class="t">{ r.Name }</span></span>
+			<span class="muted" title={ r.Detail }>{ r.Detail }</span>
+			<span class="num">{ seconds(r.Duration) }</span>
+		</div>
 	</div>
 }

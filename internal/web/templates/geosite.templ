@@ -2,157 +2,162 @@ package templates
 
 import (
 	"net/url"
+	"strings"
 
-	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/geosite"
 )
 
-templ GeositePage(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, categories []geosite.CategoryInfo, imported map[string]bool) {
+// GeositePageData is what the Geosite page renders.
+type GeositePageData struct {
+	Info        geosite.FileInfo
+	AutoEnabled bool
+	Schedule    string // cron expression
+	// ScheduleText is the schedule for people plus "next in ...".
+	ScheduleText string
+	Categories   []geosite.CategoryInfo
+	// Used maps a category name to the shunt that references it.
+	Used map[string]string
+}
+
+// Domains is the number of domains over all categories.
+func (d GeositePageData) Domains() int {
+	n := 0
+	for _, c := range d.Categories {
+		n += c.DomainCount
+	}
+	return n
+}
+
+templ GeositePage(d GeositePageData) {
 	@Layout("Geosite", "geosite") {
 		<div id="geosite-content">
-			@GeositeContent(info, autoUpdate, categories, imported)
+			@GeositeContent(d)
 		</div>
-		<script>
-			function filterCategories() {
-				var input = document.getElementById('geosite-search');
-				var q = input ? input.value.toLowerCase() : '';
-				var rows = document.querySelectorAll('#category-table tbody tr');
-				rows.forEach(function(row) {
-					var name = (row.getAttribute('data-name') || '').toLowerCase();
-					row.style.display = name.indexOf(q) !== -1 ? '' : 'none';
-				});
-			}
-			document.body.addEventListener('htmx:afterSwap', function() {
-				filterCategories();
-			});
-			// Re-apply the filter on (re)load so a browser-restored search value still
-			// filters the list instead of showing stale text over an unfiltered table.
-			document.addEventListener('DOMContentLoaded', filterCategories);
-			window.addEventListener('pageshow', filterCategories);
-		</script>
+		<script src="/static/geosite.js"></script>
 	}
 }
 
-templ GeositeContent(info geosite.FileInfo, autoUpdate config.AutoUpdateConfig, categories []geosite.CategoryInfo, imported map[string]bool) {
-	<div class="flex-between mb-16">
-		<h1>Geosite Database</h1>
-		if info.Downloaded {
-			<div class="flex gap-8">
+templ GeositeContent(d GeositePageData) {
+	<div class="toolbar plain static">
+		<h1>Geosite</h1>
+		<div class="actions">
+			if d.Info.Downloaded {
 				<button
-					class="btn btn-accent"
+					class="btn"
 					hx-post="/geosite/update"
 					hx-target="#geosite-content"
 					hx-swap="innerHTML"
-					hx-indicator="#geosite-spinner"
+					hx-disabled-elt="this"
 				>
-					Update Database
-					<span id="geosite-spinner" class="htmx-indicator"><span class="spinner"></span></span>
+					Update now
+					<span class="htmx-indicator"><span class="spinner"></span></span>
 				</button>
-			</div>
-		}
-	</div>
-	if info.Downloaded {
-		<div class="card mb-16">
-			<form
-				hx-put="/geosite/auto-update"
-				hx-trigger="change"
-				hx-swap="none"
-				hx-indicator="#geosite-au-spinner"
-				class="flex gap-8 items-center flex-wrap"
-			>
-				<label class="flex gap-8 items-center">
-					<input type="checkbox" autocomplete="off" name="enabled" if autoUpdate.Enabled { checked } value="1"/>
-					Auto-update database
-				</label>
-				<label class="text-muted text-sm ml-8">cron</label>
-				<input
-					type="text"
-					name="schedule"
-					value={ autoUpdateSchedule(autoUpdate, config.DefaultGeositeSchedule) }
-					placeholder={ config.DefaultGeositeSchedule }
-					class="mono"
-					style="width:140px"
-				/>
-				<span class="text-muted text-sm">5-field cron expression</span>
-				<span id="geosite-au-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-			</form>
+			}
 		</div>
-	}
-	if !info.Downloaded {
-		<div class="card">
-			<p class="text-muted mb-16">No geosite database found. Download the v2fly domain-list-community database to import curated domain categories.</p>
-			<button
-				class="btn btn-accent"
-				hx-post="/geosite/download"
-				hx-target="#geosite-content"
-				hx-swap="innerHTML"
-				hx-indicator="#download-spinner"
-			>
-				Download Database
-				<span id="download-spinner" class="htmx-indicator"><span class="spinner"></span></span>
-			</button>
+	</div>
+	if !d.Info.Downloaded {
+		<div class="list">
+			<div class="empty">
+				<p>No geosite database yet. Download the v2fly domain-list-community database to use its categories as shunts.</p>
+				<p style="margin-top:12px">
+					<button
+						class="btn btn-accent"
+						hx-post="/geosite/download"
+						hx-target="#geosite-content"
+						hx-swap="innerHTML"
+						hx-disabled-elt="this"
+					>
+						Download database
+						<span class="htmx-indicator"><span class="spinner"></span></span>
+					</button>
+				</p>
+			</div>
 		</div>
 	} else {
-		<div class="card mb-16">
-			<div class="flex gap-16">
-				<div>
-					<span class="text-muted text-sm">Categories</span>
-					<div>{ itoa(info.CategoryCount) }</div>
-				</div>
-				<div>
-					<span class="text-muted text-sm">Last updated</span>
-					<div>
-						@LocalTime(info.LastModified, "datetime")
-					</div>
-				</div>
-			</div>
+		<form
+			class="inline-form"
+			hx-put="/geosite/auto-update"
+			hx-trigger="change"
+			hx-target="#gcronh"
+			hx-swap="innerHTML"
+		>
+			<span class="grp">
+				<label class="chk"><input type="checkbox" name="enabled" value="1" autocomplete="off" if d.AutoEnabled { checked }/> auto-update</label>
+				<input type="text" class="cron" name="schedule" value={ d.Schedule } aria-label="cron schedule" autocomplete="off" spellcheck="false"/>
+				<span class="muted" id="gcronh">{ d.ScheduleText }</span>
+			</span>
+			<span class="sep"></span>
+			<span class="muted">dlc.dat { HumanBytes(d.Info.Size) } from v2fly/domain-list-community</span>
+		</form>
+		<div class="strip">
+			<span><b>@Num(len(d.Categories))</b> categories</span>
+			<span><b>@Num(d.Domains())</b> domains</span>
+			<span><b>@Num(len(d.Used))</b> used as shunts</span>
+			<span>updated <b>@LocalTime(d.Info.LastModified, "datetime")</b></span>
 		</div>
-		<div class="mb-16">
-			<input type="text" id="geosite-search" placeholder="Search categories..." oninput="filterCategories()"/>
+		<div class="listbar">
+			@SearchBox("gq", "Search categories")
+			<label class="chk tall"><input type="checkbox" id="gused" autocomplete="off"/> only used</label>
+			<span class="muted" id="gcount"></span>
 		</div>
-		<div class="card">
-			<div class="table-wrap">
-				<table id="category-table" class="responsive-table">
-					<thead>
-						<tr>
-							<th>Category</th>
-							<th>Domains</th>
-							<th style="text-align:right">Action</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, cat := range categories {
-							@GeositeCategoryRow(cat, imported[cat.Name])
-						}
-					</tbody>
-				</table>
-			</div>
+		<div class="list" id="glist">
+			for _, cat := range d.Categories {
+				@GeositeCategoryRow(cat, d.Used[cat.Name])
+			}
 		</div>
+		<div class="empty" id="gempty" hidden>Nothing matches.</div>
 	}
 }
 
-templ GeositeCategoryRow(cat geosite.CategoryInfo, imported bool) {
-	<tr id={ "cat-" + SlugID(cat.Name) } data-name={ cat.Name }>
-		<td data-col="name">{ cat.Name }</td>
-		<td class="text-muted" data-col="meta">{ itoa(cat.DomainCount) }</td>
-		<td style="text-align:right" data-col="action">
-			if imported {
-				<span class="badge badge-green" style="margin-right:8px">Imported</span>
-				<button
-					class="btn btn-sm btn-danger"
-					hx-delete={ "/geosite/import/" + url.PathEscape(cat.Name) }
-					hx-target={ "#cat-" + SlugID(cat.Name) }
-					hx-swap="outerHTML"
-					hx-confirm={ "Remove imported shunt \"" + cat.Name + "\"?" }
-				>Remove</button>
+// GeositeCategoryRow is one category; used is the name of the shunt that
+// references it, "" when none does. The panel is filled on first expand
+// from /geosite/categories/{name}/entries.
+templ GeositeCategoryRow(cat geosite.CategoryInfo, used string) {
+	<div class="row" id={ "cat-" + SlugID(cat.Name) } data-name={ cat.Name } data-used={ used }>
+		<div class="head g-head click" data-act="open">
+			<span class={ "dot", templ.KV("on", used != "") }></span>
+			<span class="name"><span class="t">{ cat.Name }</span></span>
+			<span class="num">@Num(cat.DomainCount)</span>
+			<span class="used">
+				if used != "" {
+					<span class="badge green">in shunts</span>
+					if !strings.EqualFold(used, cat.Name) {
+						<span title={ used }>as "{ used }"</span>
+					}
+				}
+			</span>
+			if used != "" {
+				<a class="btn btn-sm btn-ghost" href={ templ.SafeURL("/shunts?q=" + url.QueryEscape(used)) }>In shunts</a>
 			} else {
 				<button
-					class="btn btn-sm btn-accent"
+					type="button"
+					class="btn btn-sm btn-ghost"
+					data-act="add"
 					hx-post={ "/geosite/import/" + url.PathEscape(cat.Name) }
 					hx-target={ "#cat-" + SlugID(cat.Name) }
 					hx-swap="outerHTML"
-				>Import</button>
+					hx-disabled-elt="this"
+				>Add as shunt</button>
 			}
-		</td>
-	</tr>
+			@Chevron()
+		</div>
+		<div class="panel g-panel"></div>
+	</div>
+}
+
+// GeositePreview is the expanded panel of a category: its first entries as
+// chips, with a note when there are more.
+templ GeositePreview(entries []string, total int) {
+	if total == 0 {
+		<div class="chips"><span class="none">No domains in this category.</span></div>
+	} else {
+		<div class="chips">
+			for _, e := range entries {
+				<span class="chip" title={ e }><span>{ e }</span></span>
+			}
+		</div>
+		if total > len(entries) {
+			<div class="note">First { itoa(len(entries)) } of { groupDigits(total) }.</div>
+		}
+	}
 }
