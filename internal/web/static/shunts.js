@@ -34,7 +34,7 @@
   // are loaded lazily and only filtered inside their own panel.
   function entriesHit(row, t) {
     if (!t) return false;
-    var chips = row.querySelectorAll('.chips:not(.ro) .chip');
+    var chips = row.querySelectorAll('.chips:not(.ro) .chip:not(.gone)');
     for (var i = 0; i < chips.length; i++) {
       if (chips[i].dataset.v.toLowerCase().indexOf(t) >= 0) return true;
     }
@@ -43,7 +43,7 @@
 
   function filterEntries(row, t) {
     t = (t || '').trim().toLowerCase();
-    var chips = row.querySelectorAll('.chip'), n = 0;
+    var chips = row.querySelectorAll('.chip:not(.gone)'), n = 0;
     chips.forEach(function (c) {
       var v = c.dataset.v, hit = !t || v.toLowerCase().indexOf(t) >= 0;
       c.hidden = !hit;
@@ -205,6 +205,16 @@
   });
   document.body.addEventListener('htmx:afterRequest', function (e) {
     var elt = e.detail.elt;
+    // A removed entry leaves its slot empty instead of re-rendering the
+    // grid, so the other chips stay where they are; the counts arrive
+    // out of band. The next full render of the row compacts the grid.
+    if (e.detail.successful && elt && elt.matches && elt.matches('.chip button')) {
+      var chip = elt.closest('.chip'), crow = chip.closest('.row');
+      chip.classList.add('gone');
+      var ef = crow.querySelector('[data-act=efilter]');
+      if (ef && ef.value) filterEntries(crow, ef.value);
+      flash(crow);
+    }
     if (!e.detail.successful && elt && elt.matches) {
       if (elt.matches('.tg input') && elt.isConnected) {
         elt.checked = !elt.checked;

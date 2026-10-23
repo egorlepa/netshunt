@@ -141,6 +141,7 @@ mark { background: var(--accent-soft); color: inherit; border-radius: 2px; paddi
 .chip { height: 26px; padding: 0 8px; display: flex; align-items: center; gap: 6px; min-width: 0; border-radius: var(--radius-sm); font: 12.5px var(--mono); color: var(--fg); overflow: hidden; white-space: nowrap; }
 .chip > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip:hover { background: var(--bg-elev2); }
+.chip.gone { visibility: hidden; pointer-events: none; }
 .empty { padding: 28px; text-align: center; color: var(--fg3); }
 .note { margin-top: 14px; font-size: 12.5px; color: var(--fg3); }
 .sec { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg3); margin: 22px 0 8px; display: flex; align-items: center; gap: 10px; }

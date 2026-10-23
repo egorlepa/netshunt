@@ -278,8 +278,7 @@ templ EntryChips(shuntSlug string, shuntName string, entries []shunt.Entry, read
 					type="button"
 					title="Remove"
 					hx-delete={ entryPath(shuntName, e.Value) }
-					hx-target={ "#entry-items-" + shuntSlug }
-					hx-swap="innerHTML"
+					hx-swap="none"
 				>&times;</button>
 			}
 		</span>
