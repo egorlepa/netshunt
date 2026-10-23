@@ -167,19 +167,6 @@ func (r *Reconciler) loadTrackerLocked() error {
 	return nil
 }
 
-// SwitchProxy converges only the iptables rules so they target
-// cfg.Routing.ActivePort(): the redirect rules are replaced in place, the
-// ipset and matcher are left alone.
-func (r *Reconciler) SwitchProxy(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if err := r.Mode.Reconcile(ctx); err != nil {
-		return fmt.Errorf("reconcile rules: %w", err)
-	}
-	return nil
-}
-
 // ApplyBlocklist re-applies the configured response kind and rebuilds the
 // forwarder's blocklist matcher from the store when its inputs changed.
 func (r *Reconciler) ApplyBlocklist(ctx context.Context) error {

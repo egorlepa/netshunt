@@ -510,11 +510,8 @@ func TestRoutingReconcileOnlyOnFullReconcile(t *testing.T) {
 			t.Fatalf("after %d reconciles Mode.Reconcile ran %d times", i, h.mode.reconciles)
 		}
 	}
-	if err := h.r.SwitchProxy(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if h.mode.reconciles != 4 || h.mode.teardowns != 0 {
-		t.Fatalf("SwitchProxy: reconciles=%d teardowns=%d", h.mode.reconciles, h.mode.teardowns)
+	if h.mode.teardowns != 0 {
+		t.Fatalf("teardowns=%d", h.mode.teardowns)
 	}
 }
 
