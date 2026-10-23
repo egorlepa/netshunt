@@ -230,7 +230,7 @@ mark { background: var(--accent-soft); color: inherit; border-radius: 2px; paddi
 .br .v { font: 12px var(--mono); color: var(--fg2); text-align: right; }
 
 /* ================= Shunts ================= */
-.sp .head { grid-template-columns: 22px 10px minmax(0, max-content) 5.5ch minmax(0, 1fr) 44px 28px; height: 44px; padding: 0 10px 0 6px; cursor: pointer; user-select: none; }
+.sp .head { grid-template-columns: 22px 10px 240px 8ch minmax(0, 1fr) 44px 28px; height: 44px; padding: 0 10px 0 6px; cursor: pointer; user-select: none; }
 .sp .head:hover, .sp .row.open > .head { background: var(--bg-elev2); }
 .sp .row.flash > .head { animation: flash .5s ease-out; }
 .sp .handle { color: var(--fg3); cursor: grab; display: flex; justify-content: center; opacity: .55; touch-action: none; }
@@ -238,7 +238,7 @@ mark { background: var(--accent-soft); color: inherit; border-radius: 2px; paddi
 .sp .handle svg { width: 14px; height: 14px; }
 .sp .row.on .dot { background: var(--green); opacity: 1; }
 .sp .row.nodata .dot { background: var(--red); opacity: 1; }
-.sp .name { max-width: 42vw; }
+.sp .name { min-width: 0; }
 .sp .row:not(.on) .name { color: var(--fg2); font-weight: 500; }
 .sp .desc.src { font-family: var(--mono); font-size: 12px; }
 @media (max-width: 760px) {
