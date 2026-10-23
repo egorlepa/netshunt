@@ -92,19 +92,6 @@ func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// handleFlushTracker drops every DNS-tracked domain -> IP mapping and the
-// kernel members only they explained; static entries stay. The IPs come
-// back on the next DNS answer for their domains.
-func (s *Server) handleFlushTracker(w http.ResponseWriter, r *http.Request) {
-	if s.Tracker == nil {
-		errorResponse(w, "tracker not available", http.StatusServiceUnavailable)
-		return
-	}
-	n := s.Tracker.FlushDynamic(r.Context())
-	toastTrigger(w, fmt.Sprintf("Tracker flushed: %d IPs removed", n), "success")
-	w.WriteHeader(http.StatusOK)
-}
-
 // applyDNSUpstreams hands cfg's upstream list to the running forwarder,
 // which swaps it in without a restart.
 func (s *Server) applyDNSUpstreams(cfg *config.Config) error {

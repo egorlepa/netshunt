@@ -14,6 +14,8 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '<i class="k"></i>'); }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+  // Queries from the router itself (Keenetic's connectivity checks, local tools) arrive from loopback.
+  function clientLabel(c) { if (!c) return '-'; return (c === '127.0.0.1' || c === '::1') ? 'router' : c; }
   function hms(iso) { var d = new Date(iso); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
 
   // The part of the name the rule does not cover (the "www." before a
@@ -27,7 +29,7 @@
     var el = document.createElement('div');
     el.className = 'fr' + (fresh ? ' new' : '');
     var title = e.q ? e.q + ' via ' + e.d : e.d;
-    el.innerHTML = '<span class="t">' + hms(e.t) + '</span><span class="c">' + esc(e.c || '-') + '</span>' +
+    el.innerHTML = '<span class="t">' + hms(e.t) + '</span><span class="c">' + esc(clientLabel(e.c)) + '</span>' +
       '<span class="d" title="' + esc(title) + '">' + name(e) + '</span><span class="badge" title="' + esc(e.s) + '">' + esc(e.s) + '</span>';
     return el;
   }
@@ -37,7 +39,7 @@
     if (!list.length) { el.innerHTML = '<div class="empty">Nothing in the last hour.</div>'; return; }
     var max = list[0].n || 1;
     el.innerHTML = list.map(function (r) {
-      return '<div class="br"><span class="n" title="' + esc(r.name) + '">' + esc(r.name) + '</span><span class="b"><i style="width:' +
+      return '<div class="br"><span class="n" title="' + esc(r.name) + '">' + esc(clientLabel(r.name)) + '</span><span class="b"><i style="width:' +
         Math.max(1, Math.round(100 * r.n / max)) + '%"></i></span><span class="v">' + fmt(r.n) + '</span></div>';
     }).join('');
   }

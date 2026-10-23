@@ -25,18 +25,10 @@ import (
 
 type fakeTracker struct {
 	members, domains, ips int
-	flushed               int
 }
 
 func (f *fakeTracker) Count() (int, int) { return f.domains, f.ips }
 func (f *fakeTracker) Members() int      { return f.members }
-func (f *fakeTracker) FlushDynamic(context.Context) int {
-	f.flushed++
-	n := f.ips
-	f.domains, f.ips, f.members = 0, 0, f.members-n
-	return n
-}
-
 type fakeLogs struct{ entries []platform.LogEntry }
 
 func (f fakeLogs) Entries() []platform.LogEntry { return f.entries }
@@ -305,20 +297,6 @@ func TestBlocklistPageStrip(t *testing.T) {
 	}
 }
 
-func TestFlushTrackerEndpoint(t *testing.T) {
-	s, tr := newPagesTestServer(t)
-	rec := do(t, s, http.MethodPost, "/actions/flush-tracker")
-	if rec.Code != http.StatusOK || tr.flushed != 1 {
-		t.Fatalf("flush: %d, flushed %d", rec.Code, tr.flushed)
-	}
-	if msg, typ := toast(t, rec); msg != "Tracker flushed: 582 IPs removed" || typ != "success" {
-		t.Errorf("toast %q %q", msg, typ)
-	}
-	if rec := do(t, s, http.MethodGet, "/actions/flush-tracker"); rec.Code == http.StatusOK {
-		t.Error("flush answered GET")
-	}
-}
-
 func TestExportConfig(t *testing.T) {
 	s, _ := newPagesTestServer(t)
 	s.configFile = filepath.Join(t.TempDir(), "config.yaml")
@@ -417,7 +395,7 @@ func TestSettingsPageRender(t *testing.T) {
 		"<h2>Routing</h2>", "<h2>DNS</h2>", "<h2>Network</h2>", "<h2>Daemon</h2>", "<h2>Maintenance</h2>",
 		`name="routing_local_port" value="1080"`, `>awg0</textarea>`, "Using defaults: dns.google",
 		`href="/settings/export"`, `href="/shunts/export"`, `href="/shunts?import=1"`,
-		`hx-post="/actions/flush-tracker"`, `id="savebar"`, "Save and apply", "Discard",
+		`id="savebar"`, "Save and apply", "Discard",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings lack %s", want)

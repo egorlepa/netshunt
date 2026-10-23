@@ -95,27 +95,6 @@ templ SettingsPage(cfg *config.Config) {
 							<a class="btn btn-sm" href="/shunts?import=1">Import</a>
 						</div>
 					</div>
-					<div class="field">
-						<label>Danger zone</label>
-						<div class="h">Flushing the tracker drops every dynamic IP; they come back on the next DNS answer.</div>
-						<div class="c btns">
-							<div class="danger">
-								<button type="button" class="btn btn-sm btn-danger" data-act="arm">Flush tracker</button>
-								<span class="confirm">
-									Drop every DNS-tracked IP from the set?
-									<button
-										type="button"
-										class="btn btn-sm btn-danger"
-										hx-post="/actions/flush-tracker"
-										hx-swap="none"
-										hx-disabled-elt="this"
-										data-act="flush"
-									>Flush</button>
-									<button type="button" class="btn btn-sm btn-ghost" data-act="disarm">Cancel</button>
-								</span>
-							</div>
-						</div>
-					</div>
 				</div>
 				<div class="savebar" id="savebar">
 					<span class="grow"></span>

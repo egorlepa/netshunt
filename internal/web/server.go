@@ -47,9 +47,6 @@ type TrackerStats interface {
 	// plus static entries); it spares the dashboard an `ipset list` exec on
 	// every poll.
 	Members() int
-	// FlushDynamic drops every DNS-tracked mapping (statics stay) and
-	// returns the number of kernel members removed.
-	FlushDynamic(ctx context.Context) int
 }
 
 // GeositeIndex is the read side of the geosite database the web server
@@ -177,7 +174,6 @@ func (s *Server) routes() {
 
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
-	s.mux.HandleFunc("POST /actions/flush-tracker", s.handleFlushTracker)
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
