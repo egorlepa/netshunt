@@ -169,7 +169,18 @@ var undelegatedZones = []string{
 
 // isUndelegated reports whether name (lowercase, no trailing dot) is one of
 // undelegatedZones or below one.
+// dohCanary is Mozilla's canary domain: Firefox resolves it through the
+// network's resolver before enabling DNS over HTTPS by default and keeps DoH
+// off when the answer is NXDOMAIN. Answering it locally keeps Firefox's DNS
+// on the router, where its answers feed the ipset; a browser whose DoH is
+// switched on by hand ignores the canary and bypasses netshunt (see the
+// known limitations in README.md).
+const dohCanary = "use-application-dns.net"
+
 func isUndelegated(name string) bool {
+	if name == dohCanary || strings.HasSuffix(name, "."+dohCanary) {
+		return true
+	}
 	for name != "" {
 		if _, found := slices.BinarySearch(undelegatedZones, name); found {
 			return true

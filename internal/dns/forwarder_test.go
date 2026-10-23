@@ -296,6 +296,7 @@ func TestIsUndelegated(t *testing.T) {
 		"local": true, "a.b.local": true, "localhost": true, "x.home.arpa": true,
 		"168.192.in-addr.arpa": true, "1.1.168.192.in-addr.arpa": true, "8.8.8.8.in-addr.arpa": false,
 		"example.com": false, "notlocal": false, "": false, "mail": true, "mail.example.com": false,
+		"use-application-dns.net": true, "www.use-application-dns.net": true, "xuse-application-dns.net": false,
 	} {
 		if got := isUndelegated(name); got != want {
 			t.Errorf("isUndelegated(%q) = %v, want %v", name, got, want)
