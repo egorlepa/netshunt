@@ -84,6 +84,8 @@ type FileInfo struct {
 	Downloaded    bool
 	LastModified  time.Time
 	CategoryCount int
+	// Size is the file size in bytes.
+	Size int64
 }
 
 // Download fetches dlc.dat from GitHub and writes it to destPath.

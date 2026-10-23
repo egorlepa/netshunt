@@ -31,6 +31,8 @@ type Result struct {
 	// being unreachable shouldn't fail the overall healthcheck).
 	Warn   bool
 	Detail string
+	// Duration is how long the check took; set by Check.Execute.
+	Duration time.Duration
 }
 
 // Check is a single named health check that can be run on demand. Exposing the
@@ -39,6 +41,31 @@ type Result struct {
 type Check struct {
 	Name string
 	Run  func(ctx context.Context) Result
+}
+
+// Execute runs the check and records how long it took in the result.
+func (c Check) Execute(ctx context.Context) Result {
+	start := time.Now()
+	r := c.Run(ctx)
+	r.Duration = time.Since(start)
+	return r
+}
+
+// RunAll runs checks concurrently (each check is independent; the
+// connectivity checks isolate themselves by fwmark) and returns the
+// results in check order, with durations.
+func RunAll(ctx context.Context, checks []Check) []Result {
+	results := make([]Result, len(checks))
+	var wg sync.WaitGroup
+	for i, c := range checks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = c.Execute(ctx)
+		}()
+	}
+	wg.Wait()
+	return results
 }
 
 // Checks returns the ordered list of health checks without running them. The
@@ -89,7 +116,7 @@ func RunChecks(ctx context.Context, cfg *config.Config, shunts *shunt.Store) []R
 	checks := Checks(cfg, shunts)
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
-		results = append(results, c.Run(ctx))
+		results = append(results, c.Execute(ctx))
 	}
 	return results
 }

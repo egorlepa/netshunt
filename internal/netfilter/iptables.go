@@ -144,3 +144,36 @@ func (ipt *IPTables) Exec(ctx context.Context, table string, args ...string) err
 	cmd, full := ipt.iptables(append([]string{"-t", table}, args...)...)
 	return platform.OrDefault(ipt.Runner).RunSilent(ctx, cmd, full...)
 }
+
+// DropPackets returns the packet counter summed over the DROP rules of a
+// chain, from `iptables -t <table> -L <chain> -v -x -n`. A missing chain is
+// 0 without error: nothing was dropped by it.
+func (ipt *IPTables) DropPackets(ctx context.Context, table, chain string) (uint64, error) {
+	if exists, _ := ipt.ChainExists(ctx, table, chain); !exists {
+		return 0, nil
+	}
+	cmd, args := ipt.iptables("-t", table, "-L", chain, "-v", "-x", "-n")
+	out, err := platform.OrDefault(ipt.Runner).Run(ctx, cmd, args...)
+	if err != nil {
+		return 0, err
+	}
+	return ParseDropPackets(out), nil
+}
+
+// ParseDropPackets sums the pkts column of the DROP rules in an
+// `iptables -L <chain> -v -x -n` listing. The two header lines and rules
+// with another target are skipped.
+func ParseDropPackets(listing string) uint64 {
+	var total uint64
+	for _, line := range strings.Split(listing, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[2] != "DROP" {
+			continue
+		}
+		var n uint64
+		if _, err := fmt.Sscanf(f[0], "%d", &n); err == nil {
+			total += n
+		}
+	}
+	return total
+}

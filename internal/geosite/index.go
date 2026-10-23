@@ -77,6 +77,7 @@ func (x *Index) FileInfo() FileInfo {
 		Downloaded:    true,
 		LastModified:  time.Unix(0, x.st.modTime),
 		CategoryCount: len(x.infos),
+		Size:          x.st.size,
 	}
 }
 

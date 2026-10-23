@@ -17,6 +17,15 @@ type LogEntry struct {
 	Level string // "DEBUG", "INFO", "WARN", "ERROR"
 	Msg   string
 	Attrs string // formatted key=value pairs, empty if none
+	// KV holds the same attributes as key and formatted value, in order.
+	KV []LogAttr
+}
+
+// LogAttr is one attribute of a log record: its key and its value as
+// fmtAttr prints it (quoted when it contains spaces).
+type LogAttr struct {
+	Key   string
+	Value string
 }
 
 // LogBuffer is a thread-safe in-memory ring buffer of structured log entries.
@@ -63,11 +72,17 @@ func (h *logBufHandler) Enabled(_ context.Context, l slog.Level) bool {
 
 func (h *logBufHandler) Handle(_ context.Context, r slog.Record) error {
 	var parts []string
+	var kv []LogAttr
+	add := func(a slog.Attr) {
+		s := fmtAttr(a)
+		parts = append(parts, s)
+		kv = append(kv, LogAttr{Key: a.Key, Value: strings.TrimPrefix(s, a.Key+"=")})
+	}
 	for _, a := range h.preAttrs {
-		parts = append(parts, fmtAttr(a))
+		add(a)
 	}
 	r.Attrs(func(a slog.Attr) bool {
-		parts = append(parts, fmtAttr(a))
+		add(a)
 		return true
 	})
 	h.buf.appendEntry(LogEntry{
@@ -75,6 +90,7 @@ func (h *logBufHandler) Handle(_ context.Context, r slog.Record) error {
 		Level: r.Level.String(),
 		Msg:   r.Message,
 		Attrs: strings.Join(parts, "\n"),
+		KV:    kv,
 	})
 	return nil
 }
