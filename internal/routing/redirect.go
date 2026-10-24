@@ -120,6 +120,14 @@ func (r *Redirect) desired() desiredRules {
 	for _, n := range excluded {
 		d.ksChain = append(d.ksChain, []string{"-d", n, "-j", "RETURN"})
 	}
+	// DNS over TLS/QUIC (port 853) from the clients: a resolver reached past
+	// the forwarder never feeds the ipset, so those answers would route
+	// direct. Android "automatic" private DNS falls back to plain DNS when
+	// 853 is dead; "strict" loses DNS until it is switched off, which is
+	// the visible failure wanted here. DoH resolvers are blocked by name
+	// through the "hagezi-doh" blocklist preset instead.
+	d.ksChain = append(d.ksChain, []string{"-p", "tcp", "--dport", "853", "-j", "DROP"})
+	d.ksChain = append(d.ksChain, []string{"-p", "udp", "--dport", "853", "-j", "DROP"})
 	d.ksChain = append(d.ksChain, []string{"-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"})
 	d.ksJump = []string{"-j", KillSwitchChain}
 

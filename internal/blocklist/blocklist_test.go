@@ -421,9 +421,9 @@ func newTestStore(t *testing.T) *Store {
 
 func TestStoreFingerprint(t *testing.T) {
 	s := newTestStore(t)
-	// Defaults: hagezi-light enabled, no cache file yet.
+	// Defaults: hagezi-light and hagezi-doh enabled, no cache files yet.
 	missing := s.Fingerprint()
-	if missing != "hagezi-light:missing;" {
+	if missing != "hagezi-light:missing;hagezi-doh:missing;" {
 		t.Fatalf("Fingerprint = %q", missing)
 	}
 

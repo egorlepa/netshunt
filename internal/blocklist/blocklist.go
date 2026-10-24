@@ -70,6 +70,15 @@ var Presets = []Source{
 		Format:      FormatDomains,
 		DefaultOn:   false,
 	},
+	{
+		ID:          "hagezi-doh",
+		Name:        "Encrypted DNS servers",
+		Description: "DoH/DoT/DoQ resolver names (~3k). A browser or phone that resolves these gets NXDOMAIN and falls back to the router's DNS, so its answers keep feeding the ipset. netshunt's own upstreams are reached by IP and are not affected.",
+		URL:         hageziRaw + "doh-onlydomains.txt",
+		Mirrors:     hageziMirrors("doh-onlydomains.txt"),
+		Format:      FormatDomains,
+		DefaultOn:   true,
+	},
 }
 
 // Hagezi dropped the domains/ lists; wildcard/*-onlydomains.txt hold the

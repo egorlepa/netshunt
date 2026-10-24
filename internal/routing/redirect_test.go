@@ -329,6 +329,8 @@ var routerFilter = []string{
 	"-A NSHUNT_KS -d 10.0.0.0/8 -j RETURN",
 	"-A NSHUNT_KS -d 172.16.0.0/12 -j RETURN",
 	"-A NSHUNT_KS -d 192.168.0.0/16 -j RETURN",
+	"-A NSHUNT_KS -p tcp -m tcp --dport 853 -j DROP",
+	"-A NSHUNT_KS -p udp -m udp --dport 853 -j DROP",
 	"-A NSHUNT_KS -m set --match-set bypass dst -j DROP",
 }
 
@@ -556,6 +558,8 @@ func TestReconcileExcludedNetworkChanges(t *testing.T) {
 		"-A NSHUNT_KS -d 10.0.0.0/8 -j RETURN",
 		"-A NSHUNT_KS -d 100.64.0.0/10 -j RETURN",
 		"-A NSHUNT_KS -d 192.168.0.0/16 -j RETURN",
+		"-A NSHUNT_KS -p tcp -m tcp --dport 853 -j DROP",
+		"-A NSHUNT_KS -p udp -m udp --dport 853 -j DROP",
 		"-A NSHUNT_KS -m set --match-set bypass dst -j DROP",
 	}
 	if got := e.net.save("filter", "NSHUNT_KS"); !slices.Equal(got, wantKS) {
@@ -824,7 +828,9 @@ func TestKillSwitchFromEmpty(t *testing.T) {
 		"iptables -w -t filter -I NSHUNT_KS 1 -d 10.0.0.0/8 -j RETURN",
 		"iptables -w -t filter -I NSHUNT_KS 2 -d 172.16.0.0/12 -j RETURN",
 		"iptables -w -t filter -I NSHUNT_KS 3 -d 192.168.0.0/16 -j RETURN",
-		"iptables -w -t filter -I NSHUNT_KS 4 -m set --match-set bypass dst -j DROP",
+		"iptables -w -t filter -I NSHUNT_KS 4 -p tcp --dport 853 -j DROP",
+		"iptables -w -t filter -I NSHUNT_KS 5 -p udp --dport 853 -j DROP",
+		"iptables -w -t filter -I NSHUNT_KS 6 -m set --match-set bypass dst -j DROP",
 		"iptables -w -t filter -I FORWARD 1 -j NSHUNT_KS",
 	}
 	if !slices.Equal(m, want) {
@@ -903,7 +909,7 @@ func TestKillSwitchStaleRuleInChainReplaced(t *testing.T) {
 	e := routerEnv(t)
 	e.setConfig(func(c *config.Config) { c.IPSet.TableName = "bypass2" })
 	m := e.reconcile(t)
-	if !slices.Contains(m, "iptables -w -t filter -R NSHUNT_KS 4 -m set --match-set bypass2 dst -j DROP") {
+	if !slices.Contains(m, "iptables -w -t filter -R NSHUNT_KS 6 -m set --match-set bypass2 dst -j DROP") {
 		t.Fatalf("DROP rule not replaced in place: %v", m)
 	}
 }
