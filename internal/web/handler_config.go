@@ -164,5 +164,10 @@ func settingsFromForm(cfg *config.Config, r *http.Request) error {
 	if v := r.FormValue("log_level"); v != "" {
 		cfg.Daemon.LogLevel = v
 	}
+	// The form sends a hidden syslog=0 before the checkbox, so an unchecked
+	// box is told apart from a request without the field (kept as is).
+	if vs := r.Form["syslog"]; len(vs) > 0 {
+		cfg.Daemon.Syslog = vs[len(vs)-1] == "1"
+	}
 	return nil
 }

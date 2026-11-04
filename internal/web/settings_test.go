@@ -120,3 +120,31 @@ func TestSettingsUpstreamsApplyLive(t *testing.T) {
 		t.Errorf("upstreams after clearing = %d, want the 3 defaults", len(got))
 	}
 }
+
+func TestSettingsSyslogToggle(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		vals []string
+		from bool
+		want bool
+	}{
+		{"checked", []string{"0", "1"}, false, true},
+		{"unchecked", []string{"0"}, true, false},
+		{"field absent keeps value", nil, true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Defaults()
+			cfg.Daemon.Syslog = tt.from
+			form := url.Values{}
+			if tt.vals != nil {
+				form["syslog"] = tt.vals
+			}
+			if err := settingsFromForm(&cfg, formRequest(t, http.MethodPut, form)); err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Daemon.Syslog != tt.want {
+				t.Errorf("syslog = %v, want %v", cfg.Daemon.Syslog, tt.want)
+			}
+		})
+	}
+}

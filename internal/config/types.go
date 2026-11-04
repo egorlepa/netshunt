@@ -97,6 +97,9 @@ type IPSetConfig struct {
 type DaemonConfig struct {
 	WebListen string `yaml:"web_listen"`
 	LogLevel  string `yaml:"log_level"`
+	// Syslog also sends the daemon log to the local syslog socket (/dev/log,
+	// the Keenetic system log). A config without the key keeps the default.
+	Syslog bool `yaml:"syslog"`
 }
 
 // BlocklistResponse is the reply returned for blocklisted queries.
@@ -155,6 +158,7 @@ func Defaults() Config {
 		Daemon: DaemonConfig{
 			WebListen: ":8765",
 			LogLevel:  "info",
+			Syslog:    true,
 		},
 		Blocklist: BlocklistConfig{
 			Enabled:  false,

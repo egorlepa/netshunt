@@ -226,7 +226,17 @@ func SettingsPage(cfg *config.Config) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</select></div></div></div><div class=\"group\" id=\"maint\"><h2>Maintenance</h2><div class=\"field\"><label>Shunts</label><div class=\"h\">YAML export and import live on the Shunts page.</div><div class=\"c btns\"><a class=\"btn btn-sm\" href=\"/shunts/export\" download>Export shunts</a> <a class=\"btn btn-sm\" href=\"/shunts?import=1\">Import</a></div></div></div><div class=\"savebar\" id=\"savebar\"><span class=\"grow\"></span> <button class=\"btn btn-ghost\" type=\"button\" id=\"discard\">Discard</button> <button class=\"btn btn-accent\" type=\"submit\">Save and apply <span class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></div></form></div><script src=\"/static/settings.js\"></script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</select></div></div><div class=\"field narrow\"><label for=\"s-syslog\">Syslog</label><div class=\"h\">Also send the log to /dev/log, the router system log. Applied on daemon restart.</div><div class=\"c\"><input type=\"hidden\" name=\"syslog\" value=\"0\"> <label class=\"chk tall\"><input id=\"s-syslog\" type=\"checkbox\" name=\"syslog\" value=\"1\" autocomplete=\"off\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if cfg.Daemon.Syslog {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "> enabled</label></div></div></div><div class=\"group\" id=\"maint\"><h2>Maintenance</h2><div class=\"field\"><label>Shunts</label><div class=\"h\">YAML export and import live on the Shunts page.</div><div class=\"c btns\"><a class=\"btn btn-sm\" href=\"/shunts/export\" download>Export shunts</a> <a class=\"btn btn-sm\" href=\"/shunts?import=1\">Import</a></div></div></div><div class=\"savebar\" id=\"savebar\"><span class=\"grow\"></span> <button class=\"btn btn-ghost\" type=\"button\" id=\"discard\">Discard</button> <button class=\"btn btn-accent\" type=\"submit\">Save and apply <span class=\"htmx-indicator\"><span class=\"spinner\"></span></span></button></div></form></div><script src=\"/static/settings.js\"></script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

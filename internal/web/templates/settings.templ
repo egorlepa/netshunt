@@ -84,6 +84,14 @@ templ SettingsPage(cfg *config.Config) {
 							</select>
 						</div>
 					</div>
+					<div class="field narrow">
+						<label for="s-syslog">Syslog</label>
+						<div class="h">Also send the log to /dev/log, the router system log. Applied on daemon restart.</div>
+						<div class="c">
+							<input type="hidden" name="syslog" value="0"/>
+							<label class="chk tall"><input id="s-syslog" type="checkbox" name="syslog" value="1" autocomplete="off" if cfg.Daemon.Syslog { checked }/> enabled</label>
+						</div>
+					</div>
 				</div>
 				<div class="group" id="maint">
 					<h2>Maintenance</h2>

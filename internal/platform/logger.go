@@ -11,23 +11,39 @@ import (
 // writers (e.g. a FileLog) and to an in-memory ring buffer. The buffer can be
 // used to expose recent log entries via the web UI.
 func NewLogger(level string, extra ...io.Writer) (*slog.Logger, *LogBuffer) {
-	var lvl slog.Level
-	switch level {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
+	return NewDaemonLogger(level, nil, extra...)
+}
+
+// NewDaemonLogger is NewLogger plus an optional syslog output. Syslog
+// failures and dropped-line counts are reported through a logger over the
+// other outputs only, so a broken syslog path never logs into itself.
+func NewDaemonLogger(level string, sys *Syslog, extra ...io.Writer) (*slog.Logger, *LogBuffer) {
+	lvl := parseLevel(level)
 	buf := &LogBuffer{}
 	handlers := []slog.Handler{buf.Handler(lvl)}
 	for _, w := range append([]io.Writer{os.Stderr}, extra...) {
 		handlers = append(handlers, slog.NewTextHandler(w, &slog.HandlerOptions{Level: lvl}))
 	}
+	if sys != nil {
+		others := slog.New(&multiHandler{level: lvl, handlers: handlers})
+		sys.SetNotify(func(msg string, args ...any) { others.Warn(msg, args...) })
+		handlers = append(handlers[:len(handlers):len(handlers)], sys.Handler(lvl))
+	}
 	return slog.New(&multiHandler{level: lvl, handlers: handlers}), buf
+}
+
+// parseLevel maps a config log level to a slog level; unknown is info.
+func parseLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // multiHandler fans log records out to multiple slog.Handler implementations.
