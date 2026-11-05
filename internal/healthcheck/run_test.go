@@ -2,8 +2,11 @@ package healthcheck
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/egorlepa/netshunt/internal/config"
 )
 
 func TestRunAllKeepsOrderAndMeasures(t *testing.T) {
@@ -24,5 +27,24 @@ func TestRunAllKeepsOrderAndMeasures(t *testing.T) {
 	}
 	if time.Since(start) > 200*time.Millisecond {
 		t.Error("checks not run concurrently")
+	}
+}
+
+// Exactly the proxy connectivity checks are marked, so the background run
+// can leave them out.
+func TestChecksMarkConnectivity(t *testing.T) {
+	cfg := config.Defaults()
+	n := 0
+	for _, c := range Checks(&cfg, nil) {
+		want := strings.Contains(c.Name, "connectivity")
+		if c.Connectivity != want {
+			t.Errorf("%s: Connectivity = %v", c.Name, c.Connectivity)
+		}
+		if want {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("no connectivity check")
 	}
 }

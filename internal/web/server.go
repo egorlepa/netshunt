@@ -17,6 +17,7 @@ import (
 	"github.com/egorlepa/netshunt/internal/dns"
 	"github.com/egorlepa/netshunt/internal/geosite"
 	"github.com/egorlepa/netshunt/internal/healthcheck"
+	"github.com/egorlepa/netshunt/internal/metrics"
 	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web/templates"
@@ -79,9 +80,14 @@ type Server struct {
 	mux        *http.ServeMux
 	ready      atomic.Bool
 
-	health     *healthRunner
-	ksDrops    *ksCounter
-	configFile string
+	health      *healthRunner
+	ksDrops     *ksCounter
+	configFile  string
+	geositeFile string
+
+	metrics           *metrics.Registry
+	blocklistFailures metrics.Counter // failed source fetches
+	geositeFailures   metrics.Counter // failed dlc.dat downloads
 }
 
 // SetScheduler attaches a Scheduler after construction (the scheduler is
@@ -111,9 +117,13 @@ func NewServer(cfg *config.Live, shunts *shunt.Store, blocklistStore *blocklist.
 		mux:        http.NewServeMux(),
 		ksDrops:    &ksCounter{read: readKillSwitchDrops},
 		configFile: platform.ConfigFile,
+
+		geositeFile: platform.GeositeFile,
+		metrics:     metrics.NewRegistry(),
 	}
 	s.health = newHealthRunner(func() []healthcheck.Check { return healthcheck.Checks(s.Config.Load(), s.Shunts) })
 	templates.AppVersion = version
+	s.registerMetrics()
 	s.routes()
 	return s
 }
@@ -174,6 +184,9 @@ func (s *Server) routes() {
 
 	// Actions.
 	s.mux.HandleFunc("POST /actions/reconcile", s.handleActionReconcile)
+
+	// Prometheus metrics.
+	s.mux.Handle("GET /metrics", s.metrics.Handler())
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {

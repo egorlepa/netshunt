@@ -38,6 +38,14 @@ type Daemon struct {
 	Logger     *slog.Logger
 	LogBuf     *platform.LogBuffer
 	Version    string
+
+	// Conntrack is the process's conntrack handle (the tracker's), kept
+	// for the backend metric.
+	Conntrack *netfilter.Conntrack
+	// FileLog and Syslog are the asynchronous log outputs, nil when not
+	// open; set by the caller for the dropped-lines metric.
+	FileLog *platform.FileLog
+	Syslog  *platform.Syslog
 }
 
 // New creates a new Daemon with the DNS forwarder and reconciler wired up.
@@ -89,6 +97,7 @@ func New(cfg *config.Config, shunts *shunt.Store, logger *slog.Logger, logBuf *p
 		Logger:     logger,
 		LogBuf:     logBuf,
 		Version:    version,
+		Conntrack:  conntrack,
 	}, nil
 }
 
@@ -131,6 +140,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// 4. Start web server.
 	webServer := web.NewServer(d.Config, d.Shunts, d.Blocklist, d.Geosite, d.Forwarder, d.Reconciler, d.Forwarder.TrackerRef(), d.LogBuf, d.Logger, d.Version)
+	d.registerMetrics(webServer.Metrics())
 	httpServer := &http.Server{
 		Addr:    d.Config.Load().Daemon.WebListen,
 		Handler: webServer,
@@ -144,6 +154,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}()
 
 	webServer.MarkReady()
+	// Background healthcheck for /metrics and the dashboard; stops with ctx.
+	webServer.StartBackgroundHealth(ctx)
 
 	// 5. Start auto-update scheduler (blocklist + geosite). Web server gets
 	// a handle so settings changes can live-reconfigure without restart.

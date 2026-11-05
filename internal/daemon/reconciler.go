@@ -10,10 +10,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/egorlepa/netshunt/internal/blocklist"
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/dns"
+	"github.com/egorlepa/netshunt/internal/metrics"
 	"github.com/egorlepa/netshunt/internal/netfilter"
 	"github.com/egorlepa/netshunt/internal/routing"
 	"github.com/egorlepa/netshunt/internal/shunt"
@@ -67,6 +70,41 @@ type Reconciler struct {
 	// "disabled", or "enabled" plus the store fingerprint (enabled sources,
 	// cache file size and mtime). Empty until the first apply.
 	blocklistKey string
+
+	// Metrics, read at scrape time without r.mu.
+	stats           reconcileStats
+	blocklistCounts atomic.Pointer[[]sourceCount]
+}
+
+// reconcileStats counts reconciles per kind and the repair pass results.
+type reconcileStats struct {
+	mutation, full             reconcileKindStats
+	repairAdded, repairRemoved metrics.Counter
+}
+
+type reconcileKindStats struct {
+	ok, failed   metrics.Counter
+	lastDuration metrics.Gauge // seconds, of the last run, ok or not
+	lastSuccess  metrics.Gauge // unix seconds, 0 until the first success
+}
+
+func (k *reconcileKindStats) record(start time.Time, err error) {
+	end := time.Now()
+	k.lastDuration.Set(end.Sub(start).Seconds())
+	if err != nil {
+		k.failed.Inc()
+		return
+	}
+	k.ok.Inc()
+	k.lastSuccess.Set(float64(end.UnixNano()) / 1e9)
+}
+
+// sourceCount is the number of domains one enabled blocklist source
+// contributed to the installed matcher (0 when its file is missing or
+// empty; the domains read before an error otherwise).
+type sourceCount struct {
+	id    string
+	count int
 }
 
 // NewReconciler creates a Reconciler from the given configuration.
@@ -90,9 +128,10 @@ func NewReconciler(cfg *config.Live, shunts *shunt.Store, forwarder *dns.Forward
 // ones the kernel lacks (all of them after a reboot). The kernel ipset is
 // never flushed, so clients holding cached IPs keep going through the proxy
 // across a daemon restart.
-func (r *Reconciler) Reconcile(ctx context.Context) error {
+func (r *Reconciler) Reconcile(ctx context.Context) (err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer func(start time.Time) { r.stats.full.record(start, err) }(time.Now())
 
 	r.Logger.Info("starting reconcile", "cold", !r.bootstrapped)
 
@@ -116,10 +155,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// kernel ipset (manual flush, failed del) and, on the cold run, the
 	// difference between the loaded state and the kernel. Not run on
 	// ApplyMutation.
-	added, removed, err := tracker.Repair(ctx)
+	added, removed, repairErr := tracker.Repair(ctx)
+	r.stats.repairAdded.Add(uint64(added))
+	r.stats.repairRemoved.Add(uint64(removed))
 	switch {
-	case err != nil:
-		r.Logger.Warn("ipset repair failed", "error", err)
+	case repairErr != nil:
+		r.Logger.Warn("ipset repair failed", "error", repairErr)
 	case added > 0 || removed > 0:
 		r.Logger.Info("ipset repaired", "readded", added, "removed", removed)
 	}
@@ -197,6 +238,7 @@ func (r *Reconciler) applyBlocklistLocked() {
 	}
 
 	if key == "disabled" {
+		r.blocklistCounts.Store(nil)
 		r.Forwarder.Blocklist().Replace(nil)
 		r.blocklistKey = key
 		r.Logger.Info("blocklist cleared")
@@ -207,15 +249,18 @@ func (r *Reconciler) applyBlocklistLocked() {
 	// and copied straight into the new SuffixSet. No per-domain string, no
 	// []string or []shunt.Entry slice is materialised.
 	counts := map[string]int{}
+	var perSource []sourceCount
 	total := r.Forwarder.Blocklist().Replace(func(add func([]byte)) {
 		r.Blocklist.Stream(add, func(id string, c int, err error) {
 			counts[id] = c
+			perSource = append(perSource, sourceCount{id, c})
 			if err != nil {
 				r.Logger.Warn("blocklist source unreadable", "id", id, "error", err)
 			}
 		})
 	})
 	r.blocklistKey = key
+	r.blocklistCounts.Store(&perSource)
 
 	// Force reclamation of the old matcher rules + any transient parse
 	// allocations now, rather than waiting on the GC pacer. On a router the
@@ -238,9 +283,10 @@ func blockResponseFromConfig(r config.BlocklistResponse) dns.BlockResponse {
 
 // ApplyMutation updates the matcher and ipset after a shunt change.
 // It diffs against the previous snapshot. Never touches iptables.
-func (r *Reconciler) ApplyMutation(ctx context.Context) error {
+func (r *Reconciler) ApplyMutation(ctx context.Context) (err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer func(start time.Time) { r.stats.mutation.record(start, err) }(time.Now())
 	if err := r.IPSet.EnsureTable(ctx); err != nil {
 		return fmt.Errorf("ensure ipset table: %w", err)
 	}

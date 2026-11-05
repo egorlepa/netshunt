@@ -12,7 +12,6 @@ import (
 
 	"github.com/egorlepa/netshunt/internal/config"
 	"github.com/egorlepa/netshunt/internal/geosite"
-	"github.com/egorlepa/netshunt/internal/platform"
 	"github.com/egorlepa/netshunt/internal/shunt"
 	"github.com/egorlepa/netshunt/internal/web/templates"
 )
@@ -53,7 +52,7 @@ func (s *Server) handleGeositeEntries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGeositeDownload(w http.ResponseWriter, r *http.Request) {
-	if err := geosite.Download(r.Context(), platform.GeositeFile); err != nil {
+	if err := s.downloadGeosite(r.Context()); err != nil {
 		errorResponse(w, "Download failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -121,7 +120,7 @@ func (s *Server) handleGeositeAutoUpdate(w http.ResponseWriter, r *http.Request)
 // from a background goroutine (scheduler). Returns the number of geosite
 // shunts that have data in the new database; the others are logged and stay.
 func (s *Server) UpdateGeosite(ctx context.Context) (int, error) {
-	if err := geosite.Download(ctx, platform.GeositeFile); err != nil {
+	if err := s.downloadGeosite(ctx); err != nil {
 		return 0, fmt.Errorf("download: %w", err)
 	}
 
@@ -252,4 +251,14 @@ func (s *Server) loadGeositeState() (geosite.FileInfo, []geosite.CategoryInfo, m
 	}
 
 	return info, categories, used
+}
+
+// downloadGeosite fetches dlc.dat, counting a failure for the update
+// metrics (the success time is the file's mtime).
+func (s *Server) downloadGeosite(ctx context.Context) error {
+	err := geosite.Download(ctx, s.geositeFile)
+	if err != nil {
+		s.geositeFailures.Inc()
+	}
+	return err
 }

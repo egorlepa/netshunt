@@ -42,6 +42,10 @@ func newDaemonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if logErr == nil {
+				d.FileLog = fileLog
+			}
+			d.Syslog = sys
 			return d.Run(cmd.Context())
 		},
 	}

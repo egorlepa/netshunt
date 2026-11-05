@@ -50,6 +50,7 @@ type Syslog struct {
 	closed  bool
 	lines   chan []byte
 	dropped atomic.Int64
+	total   atomic.Uint64 // cumulative drops, for metrics
 	done    chan struct{}
 
 	conn    net.Conn
@@ -86,6 +87,10 @@ func (s *Syslog) SetNotify(fn func(msg string, args ...any)) {
 // Dropped returns the number of lines dropped and not yet reported.
 func (s *Syslog) Dropped() int64 { return s.dropped.Load() }
 
+// DroppedTotal returns the number of lines dropped since the output was
+// opened (never reset by reporting).
+func (s *Syslog) DroppedTotal() uint64 { return s.total.Load() }
+
 // Handler returns a slog.Handler that sends records at or above level.
 func (s *Syslog) Handler(level slog.Leveler) slog.Handler {
 	return &syslogHandler{s: s, level: level}
@@ -114,6 +119,7 @@ func (s *Syslog) enqueue(line []byte) {
 	case s.lines <- line:
 	default:
 		s.dropped.Add(1)
+		s.total.Add(1)
 	}
 }
 
@@ -157,6 +163,7 @@ func (s *Syslog) send(line []byte) {
 		return
 	}
 	s.dropped.Add(1)
+	s.total.Add(1)
 }
 
 func isTimeout(err error) bool {

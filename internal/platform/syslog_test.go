@@ -182,6 +182,10 @@ func TestSyslogMissingSocketThenRecovers(t *testing.T) {
 		t.Errorf("got %q", line)
 	}
 	waitFor(t, func() bool { return strings.Contains(n.find("recovered"), "dropped 1") })
+	// Reporting resets the pending count, not the cumulative one.
+	if s.Dropped() != 0 || s.DroppedTotal() != 1 {
+		t.Errorf("dropped %d, total %d; want 0, 1", s.Dropped(), s.DroppedTotal())
+	}
 }
 
 // The receiver socket is recreated (ndm restart): the next line goes to the

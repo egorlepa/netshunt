@@ -41,6 +41,10 @@ type Result struct {
 type Check struct {
 	Name string
 	Run  func(ctx context.Context) Result
+	// Connectivity marks the proxy connectivity checks: they insert and
+	// remove a nat OUTPUT rule and send real requests through the proxy, so
+	// the daemon's periodic background run leaves them out.
+	Connectivity bool
 }
 
 // Execute runs the check and records how long it took in the result.
@@ -96,8 +100,11 @@ func Checks(cfg *config.Config, shunts *shunt.Store) []Check {
 	// 5. Proxy connectivity (route a test request through the proxy via OUTPUT redirect)
 	for _, t := range proxyTargets(cfg) {
 		t := t
-		add(fmt.Sprintf("proxy %s connectivity%s", t.label, activeSuffix(t.active)),
-			func(ctx context.Context) Result { return checkProxyConnectivity(ctx, cfg, t.label, t.port, t.active) })
+		checks = append(checks, Check{
+			Name:         fmt.Sprintf("proxy %s connectivity%s", t.label, activeSuffix(t.active)),
+			Run:          func(ctx context.Context) Result { return checkProxyConnectivity(ctx, cfg, t.label, t.port, t.active) },
+			Connectivity: true,
+		})
 	}
 	// 6. IPSet v4
 	add("ipset", func(ctx context.Context) Result { return checkIPSet4(ctx, cfg) })

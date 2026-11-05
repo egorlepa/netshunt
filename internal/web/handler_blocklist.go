@@ -316,6 +316,7 @@ func (s *Server) fetchAndRecord(ctx context.Context, preset blocklist.Source) (i
 	}
 	res, err := blocklist.Download(ctx, preset, dest, prev.ETag, prev.LastModified, prevCount)
 	if err != nil {
+		s.blocklistFailures.Inc()
 		_ = s.Blocklist.RecordError(preset.ID, err.Error())
 		return 0, false, fmt.Errorf("%s: %w", preset.ID, err)
 	}

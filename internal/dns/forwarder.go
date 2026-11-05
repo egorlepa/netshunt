@@ -18,6 +18,7 @@ import (
 	"codeberg.org/miekg/dns"
 	"codeberg.org/miekg/dns/rdata"
 
+	"github.com/egorlepa/netshunt/internal/metrics"
 	"github.com/egorlepa/netshunt/internal/shunt"
 )
 
@@ -54,7 +55,48 @@ type Forwarder struct {
 	udpServer  *dns.Server
 	tcpServer  *dns.Server
 	logger     *slog.Logger
+
+	results     [numQueryResults]metrics.Counter
+	upstreamDur *metrics.Histogram
 }
+
+// QueryResult is how the forwarder answered a query, the label of
+// netshunt_dns_queries_total.
+type QueryResult int
+
+const (
+	ResultBlocked       QueryResult = iota // blocklist
+	ResultAAAANoData                       // AAAA answered locally with NODATA
+	ResultLocalNXDomain                    // unqualified name or undelegated zone
+	ResultCacheHit                         // response cache
+	ResultUpstream                         // answered by an upstream
+	ResultServFail                         // every upstream failed
+	numQueryResults
+)
+
+var queryResultNames = [numQueryResults]string{"blocked", "aaaa_nodata", "local_nxdomain", "cache_hit", "upstream", "servfail"}
+
+func (r QueryResult) String() string { return queryResultNames[r] }
+
+// QueryResults lists every QueryResult in label order.
+func QueryResults() []QueryResult {
+	out := make([]QueryResult, numQueryResults)
+	for i := range out {
+		out[i] = QueryResult(i)
+	}
+	return out
+}
+
+// UpstreamDurationBuckets are the bounds (seconds) of the upstream path
+// histogram; the fan-out gives up after 3 s.
+var UpstreamDurationBuckets = []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3}
+
+// QueryCount returns how many queries were answered with r since start.
+func (f *Forwarder) QueryCount(r QueryResult) uint64 { return f.results[r].Load() }
+
+// UpstreamDuration returns the histogram of the upstream path: from
+// receiving the query to having the upstream answer or giving up.
+func (f *Forwarder) UpstreamDuration() metrics.HistogramSnapshot { return f.upstreamDur.Snapshot() }
 
 // resolveCacheCap bounds the number of cached domains. Tuned for
 // home-router workloads.
@@ -71,6 +113,8 @@ func NewForwarder(listenAddr string, upstreams []Upstream, tracker *Tracker, log
 		cache:      NewResolveCache(resolveCacheCap),
 		activity:   NewActivity(),
 		logger:     logger,
+
+		upstreamDur: metrics.NewHistogram(UpstreamDurationBuckets...),
 	}
 	clients, err := newDoHClients(upstreams)
 	if err != nil {
@@ -250,6 +294,7 @@ func (f *Forwarder) ResolveCache() *ResolveCache {
 }
 
 func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) {
+	received := time.Now()
 	if err := r.Unpack(); err != nil {
 		f.logger.Debug("failed to unpack query", "error", err)
 		return
@@ -266,23 +311,27 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 
 	// Blocklist check: short-circuits before anything else.
 	if f.blocklist.Match(qname) {
+		f.results[ResultBlocked].Inc()
 		f.sendBlockResponse(w, r, qname)
 		return
 	}
 
 	// IPv4-only: never resolve AAAA, so clients cannot bypass the proxy.
 	if qtype == dns.TypeAAAA {
+		f.results[ResultAAAANoData].Inc()
 		f.writeMsg(w, blockReply(r, qname, BlockNoData))
 		return
 	}
 
 	if isUnqualified(qname, qtype, qclass) {
 		f.logger.Debug("dns answered locally", "name", qname, "reason", "unqualified")
+		f.results[ResultLocalNXDomain].Inc()
 		f.writeMsg(w, blockReply(r, qname, BlockNXDomain))
 		return
 	}
 	if isUndelegated(qname) {
 		f.logger.Debug("dns answered locally", "name", qname, "reason", "undelegated")
+		f.results[ResultLocalNXDomain].Inc()
 		f.writeMsg(w, blockReply(r, qname, BlockNXDomain))
 		return
 	}
@@ -291,6 +340,7 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	cacheable := r.Opcode == dns.OpcodeQuery && qclass == dns.ClassINET
 	if cacheable {
 		if resp := f.cachedResponse(qname, qtype); resp != nil {
+			f.results[ResultCacheHit].Inc()
 			f.trackMatched(ctx, client, qname, resp)
 			f.reply(w, r, resp)
 			return
@@ -304,7 +354,9 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 	query.Question = r.Question
 	start := time.Now()
 	resp, winner, errs := exchangeAll(ctx, *f.upstreams.Load(), query, f.logger)
+	f.upstreamDur.Observe(time.Since(received).Seconds())
 	if resp == nil {
+		f.results[ResultServFail].Inc()
 		msgs := make([]string, len(errs))
 		for i, err := range errs {
 			msgs[i] = err.Error()
@@ -313,6 +365,7 @@ func (f *Forwarder) handleQuery(ctx context.Context, w dns.ResponseWriter, r *dn
 		f.sendServFail(w, r)
 		return
 	}
+	f.results[ResultUpstream].Inc()
 	if f.logger.Enabled(ctx, slog.LevelDebug) {
 		st := winner.Stats()
 		f.logger.Debug("dns upstream answered", "name", qname, "type", dns.TypeToString[qtype],

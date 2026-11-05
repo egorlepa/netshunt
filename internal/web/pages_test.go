@@ -29,6 +29,7 @@ type fakeTracker struct {
 
 func (f *fakeTracker) Count() (int, int) { return f.domains, f.ips }
 func (f *fakeTracker) Members() int      { return f.members }
+
 type fakeLogs struct{ entries []platform.LogEntry }
 
 func (f fakeLogs) Entries() []platform.LogEntry { return f.entries }
@@ -139,7 +140,7 @@ func TestHealthRunnerCoalesces(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i], _, _ = h.Results(context.Background())
+			results[i], _, _ = h.BaseResults(context.Background())
 		}()
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -154,32 +155,32 @@ func TestHealthRunnerCoalesces(t *testing.T) {
 		}
 	}
 	// Fresh result reused; stale one re-run.
-	_, _, _ = h.Results(context.Background())
+	_, _, _ = h.BaseResults(context.Background())
 	if runs.Load() != 1 {
 		t.Error("fresh result not reused")
 	}
-	h.mu.Lock()
-	h.lastAt = time.Now().Add(-healthFresh)
-	h.mu.Unlock()
-	_, _, _ = h.Results(context.Background())
+	h.base.mu.Lock()
+	h.base.lastAt = time.Now().Add(-healthFresh)
+	h.base.mu.Unlock()
+	_, _, _ = h.BaseResults(context.Background())
 	if runs.Load() != 2 {
 		t.Error("stale result not re-run")
 	}
 	// A caller that gives up does not cancel the run for the others.
-	h.mu.Lock()
-	h.lastAt = time.Time{}
-	h.mu.Unlock()
+	h.base.mu.Lock()
+	h.base.lastAt = time.Time{}
+	h.base.mu.Unlock()
 	block := make(chan struct{})
 	h.checks = func() []healthcheck.Check {
 		return []healthcheck.Check{{Name: "b", Run: func(context.Context) healthcheck.Result { <-block; return healthcheck.Result{Name: "b"} }}}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, err := h.Results(ctx); err == nil {
+	if _, _, err := h.BaseResults(ctx); err == nil {
 		t.Error("cancelled wait returned no error")
 	}
 	close(block)
-	res, _, err := h.Results(context.Background())
+	res, _, err := h.BaseResults(context.Background())
 	if err != nil || len(res) != 1 || res[0].Name != "b" {
 		t.Errorf("after cancel: %+v %v", res, err)
 	}

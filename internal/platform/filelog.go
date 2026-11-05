@@ -29,7 +29,8 @@ type FileLog struct {
 	mu      sync.RWMutex // guards closed against sends racing Close
 	closed  bool
 	lines   chan []byte
-	dropped atomic.Int64
+	dropped atomic.Int64 // not yet reported in the file; swapped to 0
+	total   atomic.Uint64 // cumulative, for metrics
 	done    chan struct{}
 
 	f    *os.File
@@ -74,9 +75,14 @@ func (l *FileLog) Write(p []byte) (int, error) {
 	case l.lines <- line:
 	default:
 		l.dropped.Add(1)
+		l.total.Add(1)
 	}
 	return len(p), nil
 }
+
+// DroppedTotal returns the number of lines dropped since the file log was
+// opened (never reset, unlike the pending count written to the file).
+func (l *FileLog) DroppedTotal() uint64 { return l.total.Load() }
 
 // Close drains the queue, flushes and closes the file. Later writes are
 // discarded.
