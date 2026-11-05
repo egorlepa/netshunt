@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"sync/atomic"
 
 	"github.com/a-h/templ"
@@ -187,6 +188,9 @@ func (s *Server) routes() {
 
 	// Prometheus metrics.
 	s.mux.Handle("GET /metrics", s.metrics.Handler())
+	// Go profiler for memory/CPU investigations on the router (LAN only, like the rest of the UI).
+	s.mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+	s.mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
 
 	// Readiness probe.
 	s.mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
